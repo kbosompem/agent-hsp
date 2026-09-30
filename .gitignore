@@ -1,0 +1,8 @@
+node_modules/
+dist/
+target/
+*.bin
+models/
+.DS_Store
+desktop/public/verse-index.bin
+scripts/node_modules/

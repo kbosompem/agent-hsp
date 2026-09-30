@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMC Preso · Alpha 0.1</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;background:#0a0d13;color:#dbe2ee;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+button{font:inherit}
+.wrap{max-width:1440px;margin:0 auto;padding:12px 16px}
+.top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid #232a3a}
+.brand{font-weight:800;letter-spacing:.06em;color:#f0f3f9;font-size:14px}
+.brand small{color:#8b95a8;font-weight:500}
+.sep{width:1px;height:22px;background:#232a3a}
+.btn{display:inline-flex;align-items:center;gap:6px;background:#232c40;color:#c9d3e6;border:1px solid #33405c;border-radius:7px;padding:5px 12px;font-size:12.5px;cursor:pointer}
+.btn:hover{background:#2a3550}
+.btn.gold{background:#3a2f12;color:#eec96d;border-color:#6b541f}
+.btn.ok{background:#15321f;color:#7fd8a0;border-color:#2c5c3c}
+.btn.danger{background:#3a1c17;color:#f0a08c;border-color:#6b3226}
+.btn.ghost{background:transparent;border-color:#2c3446;color:#8b95a8}
+.btn.on{outline:2px solid #e9c465}
+.btn:disabled{opacity:.5;cursor:default}
+.chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;font-size:10.5px;background:#1d2334;color:#aeb6c9;border:1px solid #2a3350;white-space:nowrap}
+.chip.gold{background:#332a10;color:#e9c465;border-color:#6b541f}
+.chip.teal{background:#0f2b2a;color:#6fd3c2;border-color:#1f5a52}
+.chip.grn{background:#15321f;color:#7fd8a0;border-color:#2c5c3c}
+select,input[type=text]{background:#0d1119;border:1px solid #2a3350;border-radius:7px;color:#d7dfee;padding:5px 9px;font-size:12.5px}
+input[type=text]{width:100%}
+input[type=file]{color:#8b95a8;font-size:11.5px;max-width:100%}
+#err{display:none;background:#3a1c17;border:1px solid #6b3226;color:#f0a08c;border-radius:8px;padding:8px 14px;margin:10px 0;font-size:13px}
+.cols{display:grid;grid-template-columns:300px 1fr 320px;gap:12px;margin-top:12px}
+.pane{background:#10141d;border:1px solid #232a3a;border-radius:11px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.tiny{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#727d93;font-weight:700}
+.h{font-size:14px;font-weight:700;color:#f0f3f9}
+.sub{font-size:11.5px;color:#8b95a8}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rowsp{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+#transcript{height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.tr{font-size:12.5px;color:#98a2b8;padding:5px 8px;border-radius:6px}
+.tr.on{background:#131926}
+.tr.live{background:#0f2422;color:#9fd8cc}
+.pulse{width:7px;height:7px;border-radius:50%;background:#6fd3c2;display:inline-block;animation:blink 1.2s infinite;margin-right:4px}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+#preview{position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#07090e}
+.slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:5% 7%}
+.slide.verse{background:radial-gradient(120% 95% at 50% 0%,#24314e 0%,#101827 55%,#090d14 100%)}
+.slide.lyrics{background:linear-gradient(180deg,#182236,#0b0f17)}
+.slide.splash{background:radial-gradient(100% 120% at 50% 100%,#3a2f10 0%,#161207 60%,#0a0805 100%)}
+.slide.logo{background:radial-gradient(120% 95% at 50% 0%,#1c2333,#0a0d14)}
+.slide.idle{background:#07090e}
+.slide.video{background:repeating-linear-gradient(115deg,#1b2637 0 14px,#141d2c 14px 28px)}
+.slide.blacked{background:#000}
+.vlogo{position:absolute;top:8px;right:11px;font-size:8px;letter-spacing:.24em;color:#5c6b8a;text-transform:uppercase}
+.vtxt{font-family:Georgia,serif;color:#f3ecdc;max-width:80%;text-shadow:0 2px 18px rgba(0,0,0,.55);line-height:1.55}
+.vtxt.xl{font-size:19px}.vtxt.lg{font-size:15px}.vtxt.md{font-size:12px}
+.vref{font-family:Georgia,serif;font-size:9.5px;letter-spacing:.3em;color:#e9c465;margin-top:12px;text-transform:uppercase}
+.ltitle{position:absolute;top:8px;left:12px;font-size:8.5px;letter-spacing:.2em;color:#7e8aa5;text-transform:uppercase}
+.ltxt{font-family:Georgia,serif;font-size:15px;color:#f3ecdc;line-height:1.7}
+.dots{display:flex;gap:5px;margin-top:12px}
+.dots i{width:5px;height:5px;border-radius:50%;background:#3a4560}
+.dots i.on{background:#e9c465}
+.sptitle{font-size:15px;letter-spacing:.42em;color:#e9c465;margin-top:14px;font-weight:800}
+.sptitle.sm{font-size:11px;letter-spacing:.6em}
+.spsub{font-size:9.5px;color:#8b93a8;margin-top:6px}
+.ring{width:52px;height:52px;border-radius:50%;background:conic-gradient(#e9c465 300deg,#2a3350 0);display:grid;place-items:center}
+.ring span{width:42px;height:42px;border-radius:50%;background:#0d0a04;display:grid;place-items:center;font-size:14px;font-weight:800;color:#e9c465}
+.cdtime{font-family:Georgia,serif;font-size:30px;color:#f3ecdc}
+.cdlabel{font-size:9px;letter-spacing:.34em;color:#8b93a7;text-transform:uppercase;margin-top:6px}
+.banner{position:absolute;bottom:10%;left:0;right:0;display:flex;justify-content:center}
+.banner div{background:rgba(9,12,20,.88);border:1px solid #6b541f;border-left:4px solid #e9c465;border-radius:6px;padding:6px 16px;font-size:11px;color:#f3ecdc}
+.banner b{color:#e9c465;letter-spacing:.2em;font-size:9px;margin-right:8px}
+#cards{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto}
+.evcard{border:1px solid #2a3350;background:#141926;border-radius:10px;padding:11px}
+.evcard.act{border-color:#6b541f}
+.evcard h5{margin:0 0 3px;font-size:13px;color:#eef1f7;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.evcard .sub{margin-bottom:8px;font-size:11.5px}
+.bar{height:4px;border-radius:99px;background:#232c40;overflow:hidden;margin:7px 0}
+.bar i{display:block;height:100%;background:#e9c465;border-radius:99px;transition:width .2s linear}
+#schedule .li{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;font-size:12.5px;color:#c2cbdc;border:1px solid transparent}
+#schedule .li.on{background:#2a2410;outline:1px solid #6b541f;color:#eec96d}
+.cuephrase{font-size:10.5px;color:#6fd3c2;padding:1px 8px 4px 18px}
+#verseResult{min-height:44px;font-size:12px;color:#c9d3e6}
+#verseResult b{color:#eec96d}
+.snippetrow{cursor:pointer;padding:3px 4px;border-radius:5px}
+.snippetrow:hover{background:#1a2130}
+.snippetrow b{color:#eec96d}
+.meter{display:none;align-items:center;gap:8px;width:170px}
+.meter .track{flex:1;height:5px;border-radius:99px;background:#232c40;overflow:hidden}
+#levelBar{display:block;height:100%;width:0;background:#7fd8a0;border-radius:99px}
+.rawlabel{display:inline-flex;gap:5px;font-size:11px;color:#8b95a8;align-items:center;cursor:pointer}
+#listenStatus{font-size:11px;color:#8b93a7;min-height:17px}
+.lst-ok{color:#7fd8a0;font-weight:700}
+.lst-quiet{color:#c9a34e;font-weight:700}
+.hintbar{display:none;align-items:center;gap:8px;background:#332a10;border:1px solid #6b541f;color:#eec96d;border-radius:8px;padding:8px 14px;margin:10px 0;font-size:13px}
+.diagrow{display:flex;gap:7px;align-items:baseline;font-size:11px;padding:2px 0}
+.diagrow .dl{color:#727d93;min-width:84px;text-transform:uppercase;letter-spacing:.06em;font-size:9.5px}
+.diagrow .dv{color:#c2cbdc;flex:1;word-break:break-word}
+.dot{width:7px;height:7px;border-radius:50%;flex:none;transform:translateY(0.5px)}
+.dot.ok{background:#7fd8a0}
+.dot.warn{background:#e0a24e}
+details{background:#10141d;border:1px solid #232a3a;border-radius:11px;padding:12px 16px;margin-top:14px}
+summary{cursor:pointer;font-weight:700;color:#eef1f7;font-size:13.5px}
+details ol,details ul{font-size:13px;color:#c2cbdc;padding-left:22px}
+details li{margin:5px 0}
+kbd{display:inline-block;border:1px solid #33405c;border-bottom-width:2px;border-radius:5px;padding:0 6px;font:11.5px ui-monospace,Menlo,monospace;background:#0d1119;color:#c9d3e6}
+footer{margin:16px 0 40px;font-size:12px;color:#5c6579}
+@media (max-width:1100px){.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <span class="brand">AMC PRESO <small>· alpha 0.4</small></span>
+    <span class="sep"></span>
+    <span class="tiny">Mode</span>
+    <button class="btn" id="btnModeManual">Manual</button>
+    <button class="btn gold" id="btnModeCopilot">AI Copilot</button>
+    <button class="btn" id="btnModeAutopilot">AI Autopilot</button>
+    <span class="chip" id="statusMode">COPILOT</span>
+    <span class="chip gold" id="holdBadge" style="display:none">HOLD ACTIVE</span>
+    <span class="sep"></span>
+    <span class="tiny">Model</span>
+    <select id="modelSel"></select>
+    <button class="btn" id="btnLoadModel">Load model</button>
+    <span class="chip" id="modelStatus">not loaded</span>
+    <span class="chip" id="sttMs"></span>
+    <label class="rawlabel"><input type="checkbox" id="useGpu">WebGPU</label>
+    <span class="sep"></span>
+    <span class="tiny">Input</span>
+    <select id="micSel"></select>
+    <button class="btn ghost" id="btnRefreshMics">Refresh</button>
+    <span class="meter" id="micLevel"><span class="tiny">level</span><span class="track"><span id="levelBar"></span></span></span>
+    <label class="rawlabel"><input type="checkbox" id="rawInput">raw desk feed</label>
+    <button class="btn ghost" id="btnTestMic">Test input</button>
+    <button class="btn" id="btnSelfTest">Self test (no mic)</button>
+    <span style="flex:1"></span>
+    <button class="btn gold" id="btnOutput">Open output window</button>
+    <button class="btn" id="btnListen">Listen</button>
+    <button class="btn" id="btnDemo">Run scripted demo</button>
+    <button class="btn" id="btnHold">H · Hold</button>
+    <button class="btn danger" id="btnPanic">Panic</button>
+  </div>
+
+  <div id="err"><span id="errText"></span></div>
+  <div id="browserHint" class="hintbar">This browser may block the microphone or the AI model. Open this file in Chrome or Edge, then press D if you just need the scripted demo.</div>
+
+  <div class="cols">
+    <div class="pane">
+      <span class="tiny">Live transcript</span>
+      <div id="listenStatus"></div>
+      <div id="transcript"></div>
+      <span class="tiny">Type a line (no mic needed)</span>
+      <input type="text" id="typedInput" placeholder="e.g. turn to Romans five verse eight">
+      <div class="row"><button class="btn" id="btnTyped">Send through pipeline</button></div>
+    </div>
+
+    <div class="pane">
+      <div class="rowsp">
+        <span class="tiny">Live preview · projector + NDI (in the desktop app)</span>
+        <span class="chip" id="previewKind">idle</span>
+      </div>
+      <div id="preview"></div>
+      <div class="rowsp">
+        <span class="sub" id="slideInfo">—</span>
+        <span class="row">
+          <button class="btn" id="btnPrev">&larr; Prev</button>
+          <button class="btn gold" id="btnNext">Next &rarr;</button>
+          <button class="btn" id="btnBlack">B · Blackout</button>
+          <button class="btn" id="btnLogo">L · Logo</button>
+          <button class="btn" id="btnCountdown">Countdown 5:00</button>
+        </span>
+      </div>
+      <span class="tiny">AI decision cards · <b style="color:#eec96d">Enter</b> approve · <b style="color:#eec96d">Backspace</b> skip</span>
+      <div id="cards"></div>
+    </div>
+
+    <div class="pane">
+      <span class="tiny">Order of service</span>
+      <div id="schedule"></div>
+      <span class="tiny">Quick verse · or quote search</span>
+      <input type="text" id="verseInput" placeholder="john 3 16 · psalm 91 1-2 · “there is no god”">
+      <div id="verseResult"><span class="sub">Type a reference or a quote (“there is no god”)</span></div>
+      <label class="rawlabel"><input type="checkbox" id="snippetToggle" checked>quote detection from speech</label>
+      <span class="tiny">Soundtrack for the praise cue</span>
+      <input type="file" id="trackFile" accept="audio/*">
+      <span class="sub" id="trackName">No track loaded · lyrics auto-advance every 6.5 s</span>
+      <span class="tiny">Alert (lower third)</span>
+      <div class="row"><input type="text" id="alertInput" placeholder="Nursery: please come to room 204"><button class="btn" id="btnAlert">Show</button></div>
+      <span class="tiny">Session</span>
+      <div class="row"><button class="btn ghost" id="btnExport">Export session log (JSON)</button></div>
+      <span class="tiny">Diagnostics</span>
+      <div id="diag"></div>
+      <span class="sub">Everything stays on this machine.</span>
+    </div>
+  </div>
+
+  <details>
+    <summary>Demo checklist for tomorrow</summary>
+    <ol>
+      <li>Open this file in Chrome or Edge on the laptop. First run needs internet once to fetch the Whisper model (~40 to 80 MB); it is cached after that. All processing is local.</li>
+      <li>Click <b>Open output window</b>, drag that window to the projector or TV, then click <b>FULLSCREEN</b> (top right of that window) or double-click it. F11 also works.</li>
+      <li>Pick the input. For the desk feed choose <b>X-USB / XR16</b> (wiring below). Otherwise the built-in laptop mic works for a demo.</li>
+      <li>Click <b>Load model</b> and wait for the green <b>ready</b> chip.</li>
+      <li>Click <b>Self test (no mic)</b>. It must print the John 3:16 sentence and pop a verse card. If this fails, the problem is the model, not your microphone.</li>
+      <li>Click <b>Test input</b> and speak for ten seconds. It reports the input level and what it heard. If levels are low, untick <b>raw desk feed</b> (that lets the browser boost the mic) or pick another input.</li>
+      <li>Click <b>Listen</b>. Say: “turn with me to John chapter three verse sixteen”. Say “there is no god” to see quote matching (Psalm 14:1). Say “Philippians chapter one verses one through four”, then “next verse” to advance the range.</li>
+      <li>Say: <b>“it is time for praise and worship.”</b> A cue card appears. Press <b>Enter</b> to approve: 12-second splash, then “Amazing Grace” lyrics. Optional: load any MP3 first with <b>Choose track</b> and it will play under the lyrics.</li>
+      <li>If the mic, model, or internet fails: press <b>D</b>. The scripted demo runs the entire flow with no microphone at all.</li>
+      <li>Safety keys: <kbd>Enter</kbd> approve, <kbd>Backspace</kbd> skip, <kbd>H</kbd> hold all AI actions, <kbd>B</kbd> blackout, <kbd>Space</kbd>/<kbd>&larr;</kbd><kbd>&rarr;</kbd> slide control (or say “next verse”), <kbd>Shift</kbd>+<kbd>Esc</kbd> panic (clears everything and blacks out).</li>
+    </ol>
+    <p class="tiny" style="margin-bottom:6px">XR16 wiring (one-time, on the mixer)</p>
+    <ul>
+      <li>USB-B port on the back of the XR16 to the laptop. It appears as a 16-in / 4-out device, no driver needed.</li>
+      <li>X-Edit or the console: Routing &rarr; Card. Set Card Out 1 to a spare Mixbus (say Mixbus 6, named “Transcript”).</li>
+      <li>Send the pulpit mic post-fader at unity plus a little worship leader to that bus, out of the main mix path.</li>
+      <li>Peaks around -18 to -12 dBFS. Then select that device here as the input.</li>
+    </ul>
+  </details>
+
+  <footer>Alpha 0.4 · browser proof of the AMC Preso plan (see plan.html). Verse detection: spoken references, quote matching against all 31,102 verses, voice slide commands. The product build is the Tauri desktop app: same pipeline in Rust, bundled models, NDI output, full library, and a 3B model for paraphrase. This alpha runs entirely on-device; the model files download once from the Hugging Face CDN and everything after that is local.</footer>
+</div>
+
+<script src="js/kjv.js"></script>
+<script src="js/core.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/stt.js"></script>
+<script src="js/output.js"></script>
+<script src="js/fixture.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

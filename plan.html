@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMC Preso (working title) · Product &amp; Engineering Plan</title>
+<style>
+:root{
+  --paper:#f7f6f2; --ink:#1f2430; --muted:#66707f; --line:#e4e1d7; --card:#ffffff;
+  --gold:#8f6a1d; --goldsoft:#f3ead2; --navy:#22304a;
+  --ux:#6d5ae0; --dev:#0f8a7a; --ai:#c47a10;
+  --grn:#2e7d4f; --red:#b3402e;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:0 22px}
+nav.top{position:sticky;top:0;z-index:50;background:rgba(247,246,242,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav.top .wrap{display:flex;align-items:center;gap:4px;height:50px;overflow-x:auto}
+nav.top a{color:var(--muted);text-decoration:none;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-radius:6px;white-space:nowrap}
+nav.top a:hover{color:var(--ink)}
+nav.top a.act{color:var(--ink);background:var(--goldsoft)}
+nav.top .brand{font-weight:700;color:var(--ink);margin-right:auto;font-size:13px;letter-spacing:.02em}
+main section{padding:52px 0 58px;border-top:1px solid var(--line)}
+h1{font-size:36px;line-height:1.15;margin:8px 0 14px;letter-spacing:-.01em}
+h2{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
+h3{font-size:17.5px;margin:34px 0 10px}
+h4{font-size:14.5px;margin:22px 0 8px}
+p{margin:9px 0;max-width:74ch}
+.eyebrow{font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:700}
+.lead{font-size:18px;color:#3a4150;max-width:82ch}
+.muted{color:var(--muted)}
+.hat{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:4px 12px;border-radius:999px;margin-bottom:14px}
+.hat.ux{background:#ece9fb;color:var(--ux)}
+.hat.dev{background:#e0f2ef;color:var(--dev)}
+.hat.ai{background:#f7ecd6;color:var(--ai)}
+.hero{padding:64px 0 8px}
+.hero .meta{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+.mchip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px;font-size:12px;color:#4a5163}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.card h4{margin-top:0}
+.note{background:var(--goldsoft);border:1px solid #e3d5a8;border-radius:12px;padding:14px 18px;margin:16px 0;max-width:82ch}
+.note b{color:var(--gold)}
+ul.tight{margin:8px 0;padding-left:22px}
+ul.tight li{margin:4px 0}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.tbl th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 12px;background:#f2f0ea;border-bottom:1px solid var(--line)}
+.tbl td{padding:8px 12px;border-bottom:1px solid #eeede6;vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl code{background:#f2f0ea;border-radius:4px;padding:1px 5px;font-size:12px}
+.b{display:inline-block;padding:1px 9px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+.b.y{background:#e2efe5;color:#256b41}
+.b.n{background:#f6e5e0;color:#a03a26}
+.b.p{background:#f4ecd9;color:#8f6a1d}
+.kbd{display:inline-block;border:1px solid #cfcbbd;border-bottom-width:2px;border-radius:5px;padding:0 6px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:#fff;color:#3a4150}
+.co{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#e9c465;color:#33260a;font-size:9.5px;font-weight:800;margin:0 2px;vertical-align:1px}
+ol.legend{list-style:none;margin:12px 0 0;padding:0;columns:2;column-gap:28px;font-size:13px;color:#3a4150}
+ol.legend li{margin:5px 0;break-inside:avoid}
+ol.legend .co{float:left;margin-top:2px}
+ol.legend span{display:block;margin-left:24px}
+pre.tree{background:#1e2430;color:#c8d2e4;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;border-radius:10px;padding:16px 18px;overflow-x:auto}
+.scr{margin:26px 0 34px}
+.scr .frame-wrap{margin-top:12px}
+.scrnote{font-size:13.5px;color:#3a4150;max-width:80ch}
+
+.wf{background:#0e1218;color:#dbe2ee;border:1px solid #262d3d;border-radius:14px;overflow:hidden;font-size:12px;line-height:1.45;box-shadow:0 22px 60px -28px rgba(20,26,40,.5)}
+.wf-t{display:flex;align-items:center;gap:10px;padding:9px 13px;background:#12161f;border-bottom:1px solid #232a3a;font-size:10.5px;color:#8b95a8}
+.dots{display:inline-flex;gap:5px}
+.dots i{width:9px;height:9px;border-radius:50%;background:#2c3446;display:block}
+.wf-c{padding:12px}
+.pane{background:#161c27;border:1px solid #242c3d;border-radius:10px;padding:10px}
+.pane .tiny{margin-bottom:7px}
+.tiny{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#727d93;font-weight:700}
+.h{font-size:15px;font-weight:700;color:#f0f3f9}
+.sub{font-size:10.5px;color:#8b95a8}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row.sp{justify-content:space-between}
+.btn{display:inline-flex;align-items:center;gap:5px;background:#232c40;color:#c9d3e6;border:1px solid #33405c;border-radius:7px;padding:4px 10px;font-size:10.5px;white-space:nowrap}
+.btn.gold{background:#3a2f12;color:#eec96d;border-color:#6b541f}
+.btn.ok{background:#15321f;color:#7fd8a0;border-color:#2c5c3c}
+.btn.danger{background:#3a1c17;color:#f0a08c;border-color:#6b3226}
+.btn.ghost{background:transparent;border-color:#2c3446;color:#8b95a8}
+.chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 9px;font-size:9.5px;background:#1d2334;color:#aeb6c9;border:1px solid #2a3350;white-space:nowrap}
+.chip.gold{background:#332a10;color:#e9c465;border-color:#6b541f}
+.chip.teal{background:#0f2b2a;color:#6fd3c2;border-color:#1f5a52}
+.chip.red{background:#3a1c17;color:#f0a08c;border-color:#6b3226}
+.chip.grn{background:#15321f;color:#7fd8a0;border-color:#2c5c3c}
+.li{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;font-size:11px;color:#c2cbdc;border:1px solid transparent}
+.li .sub{font-size:9.5px}
+.li.on{background:#2a2410;outline:1px solid #6b541f;color:#eec96d}
+.li.next{outline:1px dashed #3d4c6b}
+.li.done{color:#5c6579}
+.num{display:inline-grid;place-items:center;min-width:17px;height:17px;border-radius:5px;background:#232c40;color:#aeb6c9;font-size:9.5px;font-weight:700}
+.num.g{background:#3a2f12;color:#eec96d}
+.search{display:flex;align-items:center;gap:7px;background:#0d1119;border:1px solid #2a3350;border-radius:7px;padding:5px 9px;color:#6b7490;font-size:10.5px}
+.search b{color:#d7dfee;font-weight:500}
+.rail{display:flex;flex-direction:column;gap:7px;align-items:center}
+.ric{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:#161c27;border:1px solid #242c3d;color:#8b95a8;font-size:11px;font-weight:700}
+.ric.on{background:#3a2f12;border-color:#6b541f;color:#eec96d}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.mode{background:#161c27;border:1px solid #242c3d;border-radius:11px;padding:12px}
+.mode.sel{border-color:#6b541f;background:#1c1a10}
+.mode .h{font-size:12.5px;margin:4px 0 4px}
+.mode p{margin:0 0 8px;font-size:10.5px;color:#8b95a8}
+.slide{position:relative;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8%;aspect-ratio:16/9}
+.slide.verse{background:radial-gradient(120% 95% at 50% 0%,#24314e 0%,#101827 55%,#090d14 100%)}
+.slide .vtxt{font-family:Georgia,"Times New Roman",serif;font-size:15px;line-height:1.5;color:#f3ecdc;max-width:34ch;text-shadow:0 2px 18px rgba(0,0,0,.55)}
+.slide .vref{font-family:Georgia,serif;font-size:10.5px;letter-spacing:.22em;color:#e9c465;margin-top:10px;text-transform:uppercase}
+.slide .vlogo{position:absolute;top:8px;right:11px;font-size:8px;letter-spacing:.18em;color:#5c6b8a}
+.slide.lyrics{background:linear-gradient(180deg,#182236,#0b0f17)}
+.slide .ltitle{position:absolute;top:8px;left:12px;font-size:8.5px;letter-spacing:.16em;color:#7e8aa5;text-transform:uppercase}
+.slide .ltxt{font-family:Georgia,serif;font-size:14px;color:#f3ecdc;line-height:1.7}
+.dots-p{display:flex;gap:5px;margin-top:12px}
+.dots-p i{width:5px;height:5px;border-radius:50%;background:#3a4560}
+.dots-p i.on{background:#e9c465}
+.slide.splash{background:radial-gradient(100% 120% at 50% 100%,#3a2f10 0%,#161207 60%,#0a0805 100%)}
+.ring{width:52px;height:52px;border-radius:50%;background:conic-gradient(#e9c465 300deg,#2a3350 0);display:grid;place-items:center}
+.ring span{width:42px;height:42px;border-radius:50%;background:#0d0a04;display:grid;place-items:center;font-size:14px;font-weight:800;color:#e9c465}
+.slide.video{background:linear-gradient(135deg,#1b2637 0%,#0c101a 50%,#232e44 100%)}
+.banner{position:absolute;bottom:9%;left:0;right:0;display:flex;justify-content:center}
+.banner div{background:rgba(9,12,20,.85);border:1px solid #6b541f;border-left:4px solid #e9c465;border-radius:6px;padding:6px 16px;font-size:10px;color:#f3ecdc;letter-spacing:.04em}
+.tr{font-size:10.5px;color:#98a2b8;padding:4px 6px;border-radius:6px}
+.tr.on{background:#10141d}
+.hl{padding:1px 4px;border-radius:4px}
+.hl.v{background:#332a10;color:#eec96d}
+.hl.c{background:#0f2b2a;color:#6fd3c2}
+.evcard{border:1px solid #2a3350;background:#141926;border-radius:10px;padding:10px}
+.evcard.act{border-color:#6b541f}
+.evcard h5{margin:0 0 3px;font-size:11.5px;color:#eef1f7}
+.evcard .sub{margin-bottom:7px}
+.bar{height:4px;border-radius:99px;background:#232c40;overflow:hidden;margin:7px 0}
+.bar i{display:block;height:100%;background:#e9c465;border-radius:99px}
+.pulse{width:8px;height:8px;border-radius:50%;background:#7fd8a0;display:inline-block;animation:blink 1.3s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.stat{display:flex;flex-direction:column;gap:1px;padding:7px 9px;background:#10141d;border-radius:8px;flex:1}
+.stat b{font-size:11px;color:#eef1f7}
+.swatch{border-radius:8px;border:2px solid transparent;height:34px}
+.swatch.on{border-color:#e9c465}
+.tgl{display:inline-flex;border:1px solid #33405c;border-radius:99px;overflow:hidden}
+.tgl span{padding:2px 10px;font-size:9.5px;color:#8b95a8;background:#161c27}
+.tgl span.on{background:#3a2f12;color:#eec96d}
+input[type=range]{accent-color:#e9c465}
+.wf input[type=range]{width:100%}
+.wf label{font-size:10px;color:#8b95a8;display:block}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.slides4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.w3a{display:grid;grid-template-columns:170px 1fr 190px;gap:10px}
+.w3b{display:grid;grid-template-columns:150px 1fr 230px;gap:10px}
+.w3c{display:grid;grid-template-columns:130px 1fr 200px;gap:10px}
+.w2a{display:grid;grid-template-columns:48px 1fr;gap:10px}
+.w2b{display:grid;grid-template-columns:130px 1fr;gap:10px}
+.wlive{display:grid;grid-template-columns:1fr 120px;gap:10px}
+.wac{display:grid;grid-template-columns:1fr 1.2fr 170px;gap:10px}
+
+.arch{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin:14px 0}
+.arow{display:flex;gap:10px;flex-wrap:wrap}
+.abox{flex:1;min-width:150px;border:1px solid var(--line);background:#faf9f6;border-radius:10px;padding:10px 12px;font-size:12.5px}
+.abox b{display:block;font-size:12.5px;margin-bottom:2px}
+.abox span{color:var(--muted);font-size:11.5px}
+.abox.ui{border-color:#cfd9ec;background:#f6f8fc}
+.abox.in{border-color:#dcd7c8;background:#fbfaf4}
+.abox.out{border-color:#cfe7e1;background:#f4fbf9}
+.aarrow{text-align:center;color:var(--muted);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;margin:8px 0}
+.acore{border:1.5px solid #c9b98a;background:#fdfbf4;border-radius:12px;padding:14px}
+.acore-title{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:10px}
+.apipe{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
+.astage{flex:1;min-width:150px;background:#fff;border:1px solid #e3d9ba;border-radius:9px;padding:9px 11px;font-size:12px}
+.astage b{display:block;font-size:12.5px}
+.astage span{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.arr{align-self:center;color:#c4a94e;font-weight:800}
+.astore{margin-top:10px;font-size:11.5px;color:var(--muted);background:#faf8f0;border:1px dashed #e0d4ab;border-radius:8px;padding:7px 11px}
+
+.tl{border-left:2px solid #d8d3c4;margin:16px 0;padding-left:24px}
+.tl-item{position:relative;margin-bottom:18px}
+.tl-item::before{content:"";position:absolute;left:-31px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--gold);border:3px solid var(--paper)}
+.tl-item .t{font:700 11px ui-monospace,Menlo,monospace;color:var(--gold);letter-spacing:.04em}
+.tl-item b{display:block;font-size:14.5px}
+.tl-item span{color:#3a4150;font-size:13.5px}
+
+.phases{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
+.phase{background:#fff;border:1px solid var(--line);border-top:4px solid var(--gold);border-radius:11px;padding:14px;font-size:12.5px}
+.phase b{display:block;font-size:13.5px;margin-bottom:2px}
+.phase .wk{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:800}
+.phase ul{margin:8px 0 0;padding-left:16px;color:#3a4150}
+.phase li{margin:3px 0}
+
+.qcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:10px;padding:14px 18px;margin:12px 0}
+.qcard b{font-size:15px}
+.qcard .opts{margin-top:6px;color:#3a4150;font-size:13.5px}
+footer{border-top:1px solid var(--line);padding:30px 0 50px;color:var(--muted);font-size:12.5px}
+@media (max-width:900px){.grid2,.grid3,.phases,.modes{grid-template-columns:1fr}.modes{gap:8px}ol.legend{columns:1}.slides4{grid-template-columns:1fr 1fr}.cols2,.cols3{grid-template-columns:1fr}.w3a,.w3b,.w3c,.w2a,.w2b,.wac{grid-template-columns:1fr}.wlive{grid-template-columns:1fr}}
+@media print{nav.top{display:none}section{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <span class="brand">AMC Preso · Plan v0.2</span>
+    <a href="#overview">Overview</a>
+    <a href="#modes">Modes</a>
+    <a href="#ux">Screens</a>
+    <a href="#eng">Engineering</a>
+    <a href="#ai">AI stack</a>
+    <a href="#walkthrough">Walkthrough</a>
+    <a href="#roadmap">Roadmap</a>
+    <a href="#risks">Risks</a>
+    <a href="#questions">Questions</a>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <div class="eyebrow">Product &amp; Engineering Plan · For Review · v0.2 · Sep 26, 2026</div>
+  <h1>AMC Preso <span class="muted" style="font-size:18px;font-weight:400">(working title)</span></h1>
+  <p class="lead">A local-first worship presentation app. It combines PewBeam's real-time AI scripture agent, VideoPsalm's complete manual presentation toolkit, and a new cue-driven automation engine that can run parts of a service on its own. Two modes: Manual and AI. Every model runs on the machine. No cloud, no subscription, no transcription metering.</p>
+  <div class="meta">
+    <span class="mchip">Windows + macOS</span>
+    <span class="mchip">100% local AI</span>
+    <span class="mchip">Manual / AI Copilot / AI Autopilot</span>
+    <span class="mchip">Verse detection: 1-3 s on the launch laptop, under 1.5 s after upgrade</span>
+    <span class="mchip">Free, no account</span>
+  </div>
+  <div class="note"><b>How to review this:</b> read top to bottom. Section 3 mocks up every screen, section 4 covers how we build it, section 5 covers the local AI. Open questions are collected at the end, along with the decisions I made that you can veto.</div>
+</header>
+
+<main>
+<div class="wrap">
+
+<section id="overview">
+  <div class="eyebrow">01 · Overview</div>
+  <h2>What we are building, and why</h2>
+  <p><b>PewBeam</b> is a desktop app (launched Feb 2026) that listens to a live sermon, transcribes it, and puts the referenced Bible verse on screen within about two seconds, including paraphrased references. It is AI-only: it does scripture, not songs, and it is a subscription ($14 to $30 per month) with metered transcription on the free tier.</p>
+  <p><b>VideoPsalm</b> is a free, full worship presentation suite: songbooks with instant search, thousands of Bible translations, bilingual display, chords with transposition, video loops under lyrics, alerts, countdowns, auto-played music, PowerPoint import, CCLI support. It is manual-only, Windows-only, and aging.</p>
+  <p><b>AMC Preso</b> is the union of the two, plus one thing neither has: a cue engine that listens for spoken cues like "it's time for praise and worship" and runs scripted sequences (splash screen, then the soundtrack with synced lyrics). And it works with zero internet, because every AI model runs locally.</p>
+
+  <h3>Positioning</h3>
+  <table class="tbl">
+    <tr><th>Capability</th><th>PewBeam</th><th>VideoPsalm</th><th>AMC Preso</th></tr>
+    <tr><td>Real-time verse detection from speech</td><td><span class="b y">Yes</span></td><td><span class="b n">No</span></td><td><span class="b y">Yes, local</span></td></tr>
+    <tr><td>Paraphrased scripture recognition</td><td><span class="b y">Yes</span></td><td><span class="b n">No</span></td><td><span class="b y">Yes</span></td></tr>
+    <tr><td>Full manual presentation control</td><td><span class="b p">Limited</span></td><td><span class="b y">Yes</span></td><td><span class="b y">Yes</span></td></tr>
+    <tr><td>Song library, instant search, chords</td><td><span class="b n">No</span></td><td><span class="b y">Yes</span></td><td><span class="b y">Yes</span></td></tr>
+    <tr><td>Bilingual verses / many translations</td><td><span class="b n">No</span></td><td><span class="b y">Yes</span></td><td><span class="b y">Yes</span></td></tr>
+    <tr><td>Cue-driven sequences (splash, soundtrack, synced lyrics)</td><td><span class="b n">No</span></td><td><span class="b n">No</span></td><td><span class="b y">New</span></td></tr>
+    <tr><td>Script following (AI aligns speech to order of service)</td><td><span class="b p">Partial</span></td><td><span class="b n">No</span></td><td><span class="b y">Yes</span></td></tr>
+    <tr><td>Works fully offline</td><td><span class="b p">Claims yes</span></td><td><span class="b y">Yes</span></td><td><span class="b y">Yes</span></td></tr>
+    <tr><td>NDI output for livestream</td><td><span class="b y">Yes</span></td><td><span class="b n">No</span></td><td><span class="b y">Yes</span></td></tr>
+    <tr><td>Price</td><td>$14 to $30 / month</td><td>Free</td><td>Free, unmetered</td></tr>
+  </table>
+
+  <h3>Non-goals for v1</h3>
+  <ul class="tight">
+    <li>No mobile or web companion app.</li>
+    <li>No cloud sync, accounts, or telemetry.</li>
+    <li>No livestream production tools. We complement OBS by sending clean output over NDI.</li>
+    <li>No AI voice or sermon generation. The AI listens and displays. It never speaks or edits the sermon.</li>
+  </ul>
+</section>
+
+<section id="modes">
+  <div class="eyebrow">02 · Product definition</div>
+  <h2>Two modes, three autonomy levels</h2>
+  <p>The core ask is "manual or AI." Manual mode is a complete VideoPsalm-class operator console with the AI completely off. AI mode turns on the listening pipeline, and inside it the operator picks how much authority the AI gets.</p>
+
+  <div class="grid3">
+    <div class="card"><h4>Manual</h4><p class="muted" style="font-size:13.5px">Operator drives everything: agenda, slides, verses, songs, videos, alerts. Zero AI code runs. This is Sunday-safe from day one and is the fallback if the machine or microphone misbehaves.</p></div>
+    <div class="card"><h4>AI Copilot <span class="b p">default</span></h4><p class="muted" style="font-size:13.5px">The AI listens and suggests. Every detected verse or cue appears as a card with a countdown. One key approves, one key skips. If the countdown expires, low-risk actions (verse display) auto-fire; risky ones just expire.</p></div>
+    <div class="card"><h4>AI Autopilot</h4><p class="muted" style="font-size:13.5px">The AI acts on whitelisted action types automatically, with a visible grace window to cancel. The operator can demote to Copilot or hold everything with one key at any moment.</p></div>
+  </div>
+
+  <h3>Two ways the AI knows what to do</h3>
+  <table class="tbl">
+    <tr><th>Source</th><th>How it works</th><th>Example</th></tr>
+    <tr><td><b>Listen mode</b> (free-run)</td><td>No plan is loaded. The AI reacts to whatever it hears: spoken verse references, quoted passages, and any cue phrases you have defined globally.</td><td>"As Paul says in Romans five eight..." shows Romans 5:8.</td></tr>
+    <tr><td><b>Script mode</b> (given a list)</td><td>An order of service is loaded. Each item carries cue phrases and actions. The AI aligns the live transcript to the script, auto-advances, and still handles off-script verses and cues.</td><td>"Let's enter into praise and worship" fires the Praise item: 12-second splash, then the soundtrack with synced lyrics.</td></tr>
+  </table>
+
+  <h3>Autonomy matrix (what may the AI do alone?)</h3>
+  <table class="tbl">
+    <tr><th>Action</th><th>Manual</th><th>Copilot</th><th>Autopilot</th></tr>
+    <tr><td>Display a detected verse</td><td><span class="b n">Never</span></td><td><span class="b p">Suggest, 3s auto-fire</span></td><td><span class="b y">Auto, cancel window</span></td></tr>
+    <tr><td>Advance song lyrics (script mode)</td><td><span class="b n">Never</span></td><td><span class="b p">Suggest</span></td><td><span class="b y">Auto</span></td></tr>
+    <tr><td>Cue sequences (splash, soundtrack, video)</td><td><span class="b n">Never</span></td><td><span class="b p">Suggest, needs approval</span></td><td><span class="b y">Auto, 6s cancel window</span></td></tr>
+    <tr><td>Alerts and messages</td><td><span class="b n">Operator only</span></td><td><span class="b n">Operator only</span></td><td><span class="b n">Operator only</span></td></tr>
+    <tr><td>Blackout / clear screen</td><td><span class="b n">Operator only</span></td><td><span class="b n">Operator only</span></td><td><span class="b n">Operator only</span></td></tr>
+  </table>
+
+  <h3>Safety rules (non-negotiable)</h3>
+  <ul class="tight">
+    <li><b>Hold key:</b> one key (H) freezes every queued AI action. No action fires while held.</li>
+    <li><b>Panic:</b> <span class="kbd">Shift</span>+<span class="kbd">Esc</span> blacks out all outputs and cancels the queue, in any mode.</li>
+    <li><b>Confidence floors:</b> below-threshold detections never auto-fire; they only log.</li>
+    <li><b>Cooldowns:</b> the same verse or cue cannot refire within a configurable window (default 3 minutes).</li>
+    <li><b>Everything is logged:</b> transcript plus every AI decision is saved per session for review after the service.</li>
+  </ul>
+</section>
+<section id="ux">
+  <div class="hat ux">Hat 1 · UI / UX</div>
+  <h2>Every screen, mocked up</h2>
+  <p class="scrnote">Wireframes below are structural mockups, not final art. Operator screens are dark for a dark room; congregation output uses themes designed separately. Gold numbered markers call out the decisions that matter.</p>
+
+  <h3>Design principles</h3>
+  <ul class="tight">
+    <li><b>Keyboard first.</b> A service can be run without touching the mouse. Every AI suggestion is one keystroke to accept or reject.</li>
+    <li><b>Glanceable trust.</b> The operator always knows what the AI heard, what it decided, and what happens next, without reading paragraphs.</li>
+    <li><b>Countdown before consequence.</b> Anything that changes the big screen shows a visible timer before it fires.</li>
+    <li><b>Dark room operator UI, bright congregation output.</b> The app never blinds the operator; the projector output never looks like the app.</li>
+    <li><b>Manual is always one click away.</b> Mode switching is instant and mid-service safe.</li>
+    <li><b>Zero setup Sundays.</b> Open the app, pick the schedule, press Go.</li>
+  </ul>
+
+  <h3>Core hotkeys</h3>
+  <table class="tbl">
+    <tr><th>Key</th><th>Action</th><th>Key</th><th>Action</th></tr>
+    <tr><td><span class="kbd">Space</span> / <span class="kbd">&rarr;</span></td><td>Next slide</td><td><span class="kbd">V</span></td><td>Quick verse search</td></tr>
+    <tr><td><span class="kbd">&larr;</span></td><td>Previous slide</td><td><span class="kbd">S</span></td><td>Quick song search</td></tr>
+    <tr><td><span class="kbd">Enter</span></td><td>Approve AI suggestion</td><td><span class="kbd">A</span></td><td>Alert composer</td></tr>
+    <tr><td><span class="kbd">Backspace</span></td><td>Dismiss AI suggestion</td><td><span class="kbd">B</span> / <span class="kbd">L</span></td><td>Blackout / logo</td></tr>
+    <tr><td><span class="kbd">H</span></td><td>Hold all AI actions</td><td><span class="kbd">Shift</span>+<span class="kbd">Esc</span></td><td>Panic blackout</td></tr>
+  </table>
+
+  <div class="scr">
+    <h3>Screen 0 · Dashboard and mode picker</h3>
+    <p class="scrnote">The first screen after launch. Pick today's schedule and how much autonomy you want before walking to the podium. Recent schedules are one click away.</p>
+    <div class="frame-wrap">
+      <div class="wf">
+        <div class="wf-t"><span class="dots"><i></i><i></i><i></i></span> Preso · Dashboard</div>
+        <div class="wf-c w2a">
+          <div class="rail">
+            <div class="ric on">P</div><div class="ric">L</div><div class="ric">S</div><div class="ric">C</div><div class="ric">T</div>
+          </div>
+          <div>
+            <div class="row sp">
+              <div><div class="h">Good morning, Kay</div><div class="sub">Sunday, October 4 · Service starts 10:00 · Machine: Windows laptop · 16 GB · integrated GPU</div></div>
+              <span class="btn gold">+ New schedule</span>
+            </div>
+            <div class="modes">
+              <div class="mode">
+                <span class="chip">AI OFF</span>
+                <div class="h">Manual</div>
+                <p>Operator runs every slide. Nothing listens.</p>
+                <span class="chip">Safe</span>
+              </div>
+              <div class="mode sel">
+                <span class="chip gold">AI · SUGGESTS</span>
+                <div class="h">AI Copilot</div>
+                <p>Listens, detects verses and cues, you approve.</p>
+                <span class="chip gold">Recommended</span>
+              </div>
+              <div class="mode">
+                <span class="chip gold">AI · ACTS</span>
+                <div class="h">AI Autopilot</div>
+                <p>Runs whitelisted actions. Hold with H anytime.</p>
+                <span class="chip">Cancel windows on</span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="tiny">Recent schedules</div>
+              <div class="row sp"><span class="li on" style="flex:1;justify-content:flex-start;gap:8px"><span class="num g">1</span> Sunday Service · Oct 4 <span class="sub" style="margin-left:auto">14 items · script mode</span></span><span class="btn ghost">Go live</span></div>
+              <div class="row sp" style="margin-top:6px"><span class="li" style="flex:1;justify-content:flex-start;gap:8px"><span class="num">2</span> Midweek Bible Study <span class="sub" style="margin-left:auto">6 items · listen mode</span></span><span class="btn ghost">Open</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>Machine check runs at launch: if the hardware cannot run the recommended models, the AI cards show the fallback tier instead.</span></li>
+      <li><span class="co">2</span><span>Mode is per-session and switchable mid-service from any screen. Autonomy defaults live here.</span></li>
+      <li><span class="co">3</span><span>Schedules tagged "script mode" load their cue list automatically.</span></li>
+    </ol>
+  </div>
+
+  <div class="scr">
+    <h3>Screen 1 · Live Console (Manual mode)</h3>
+    <p class="scrnote">The operator's home during a service. Left: order of service. Center: what is live and what is next. Right: the escape hatches that make a service recoverable: quick verse, quick song, alerts, blackout.</p>
+    <div class="frame-wrap">
+      <div class="wf">
+        <div class="wf-t"><span class="dots"><i></i><i></i><i></i></span> Preso · Live · Sunday Service Oct 4 <span style="margin-left:auto" class="chip">MANUAL</span></div>
+        <div class="wf-c w3a">
+          <div class="pane">
+            <div class="tiny">Order of service <span class="co">1</span></div>
+            <div class="li done"><span>1 · Prelude track</span></div>
+            <div class="li on"><span>2 · Praise &amp; Worship</span></div>
+            <div class="li next"><span>3 · Scripture reading</span></div>
+            <div class="li"><span>4 · Sermon: God so loved</span></div>
+            <div class="li"><span>5 · Offering</span></div>
+            <div class="li"><span>6 · Announcements</span></div>
+            <div class="li"><span>7 · Closing prayer</span></div>
+          </div>
+          <div>
+            <div class="wlive">
+              <div>
+                <div class="tiny" style="margin-bottom:5px">Live · Projector + NDI <span class="co">2</span></div>
+                <div class="slide verse">
+                  <span class="vlogo">AMC CHURCH</span>
+                  <div class="vtxt">For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.</div>
+                  <div class="vref">John 3 : 16 · KJV</div>
+                </div>
+              </div>
+              <div>
+                <div class="tiny" style="margin-bottom:5px">Next <span class="co">3</span></div>
+                <div class="slide lyrics">
+                  <span class="ltitle">Total Praise</span>
+                  <div class="ltxt" style="font-size:9.5px">When I look back over my life<br>and think things over...</div>
+                </div>
+                <div class="row" style="margin-top:8px;gap:5px">
+                  <span class="btn ghost">&larr;</span><span class="btn gold">Next &rarr;</span>
+                </div>
+                <div class="row" style="margin-top:6px;gap:5px">
+                  <span class="btn">B</span><span class="btn">Logo</span><span class="btn">Alert</span>
+                </div>
+              </div>
+            </div>
+            <div class="pane" style="margin-top:10px">
+              <div class="tiny">Upcoming slides in this item</div>
+              <div class="row" style="gap:6px">
+                <div class="slide lyrics" style="width:88px;font-size:7px;padding:6%"><span class="ltitle" style="font-size:6px">v1</span><div class="ltxt" style="font-size:7px">When I look back...</div></div>
+                <div class="slide lyrics" style="width:88px;font-size:7px;padding:6%"><span class="ltitle" style="font-size:6px">chorus</span><div class="ltxt" style="font-size:7px">You are the source...</div></div>
+                <div class="slide lyrics" style="width:88px;font-size:7px;padding:6%"><span class="ltitle" style="font-size:6px">v2</span><div class="ltxt" style="font-size:7px">I will lift my eyes...</div></div>
+                <div class="slide lyrics" style="width:88px;font-size:7px;padding:6%;outline:1px dashed #3d4c6b"><span class="ltitle" style="font-size:6px">end</span><div class="ltxt" style="font-size:7px">Total Praise</div></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="pane">
+              <div class="tiny">Quick verse <span class="co">4</span></div>
+              <div class="search">Q: <b>rom 5 8</b></div>
+              <div class="li on" style="margin-top:6px"><span>Romans 5:8</span><span class="chip gold">Enter</span></div>
+              <div class="li"><span>Romans 5:8-9</span></div>
+            </div>
+            <div class="pane">
+              <div class="tiny">Quick song</div>
+              <div class="search">Q: <b>total pr</b></div>
+              <div class="li"><span>Total Praise</span><span class="sub">E-flat</span></div>
+            </div>
+            <div class="pane">
+              <div class="tiny">Utilities <span class="co">5</span></div>
+              <div class="row" style="gap:5px">
+                <span class="btn">Countdown 5:00</span><span class="btn">Clock</span>
+              </div>
+              <div class="row" style="gap:5px;margin-top:6px">
+                <span class="btn danger">Blackout</span><span class="btn">Logo hold</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>Agenda auto-highlights the current item. Click or arrow keys jump anywhere; pressing <span class="kbd">Space</span> past the last slide of an item jumps to the next item.</span></li>
+      <li><span class="co">2</span><span>The Live tile is a true preview of the projector, including themes and motion backgrounds.</span></li>
+      <li><span class="co">3</span><span>Next preview removes the classic "what is about to appear" panic.</span></li>
+      <li><span class="co">4</span><span>Fuzzy verse parsing handles "rom 5 8", "jn 3 sixteen", "third chapter of John".</span></li>
+      <li><span class="co">5</span><span>Blackout is big, red, and always in the same place. Muscle memory for emergencies.</span></li>
+    </ol>
+  </div>
+
+  <div class="scr">
+    <h3>Screen 2 · Congregation output (what the room sees)</h3>
+    <p class="scrnote">Four output states. Everything is a themed HTML render, so transitions, motion backgrounds, and animated verse reveals (PewBeam's "Motion Canvas" equivalent) are pure CSS and web animations, GPU-composited in the output window.</p>
+    <div class="frame-wrap">
+      <div class="slides4">
+        <div>
+          <div class="slide verse">
+            <span class="vlogo">AMC CHURCH</span>
+            <div class="vtxt" style="font-size:11.5px">But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.</div>
+            <div class="vref" style="font-size:8.5px">Romans 5 : 8</div>
+          </div>
+          <div class="tiny" style="color:#8b93a7;margin-top:6px">Verse · animated reveal <span class="co">1</span></div>
+        </div>
+        <div>
+          <div class="slide lyrics">
+            <span class="ltitle">Total Praise · Richard Smallwood</span>
+            <div class="ltxt" style="font-size:11px">When peace, like a river, attendeth my way<br>When sorrows like sea billows roll...</div>
+            <div class="dots-p"><i></i><i></i><i class="on"></i><i></i><i></i></div>
+          </div>
+          <div class="tiny" style="color:#8b93a7;margin-top:6px">Lyrics · loop under text <span class="co">2</span></div>
+        </div>
+        <div>
+          <div class="slide splash">
+            <div class="ring"><span>8</span></div>
+            <div style="font-size:12px;letter-spacing:.3em;color:#e9c465;margin-top:12px;font-weight:800">PRAISE &amp; WORSHIP</div>
+            <div style="font-size:9px;color:#8b93a8;margin-top:5px">Next: Total Praise</div>
+          </div>
+          <div class="tiny" style="color:#8b93a7;margin-top:6px">Splash · 12s countdown <span class="co">3</span></div>
+        </div>
+        <div>
+          <div class="slide video">
+            <div style="position:absolute;inset:0;background:repeating-linear-gradient(115deg,#1b2637 0 14px,#141d2c 14px 28px)"></div>
+            <div class="banner"><div><b style="color:#e9c465;letter-spacing:.14em;font-size:8.5px;margin-right:8px">ALERT</b>Nursery: please come to room 204</div></div>
+          </div>
+          <div class="tiny" style="color:#8b93a7;margin-top:6px">Alert over any content <span class="co">4</span></div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>Verses fade in line by line with a subtle glow. Translation shown per theme.</span></li>
+      <li><span class="co">2</span><span>Lyrics advance with the soundtrack timing file (LRC). Progress dots show where you are in the song.</span></li>
+      <li><span class="co">3</span><span>The splash from the praise-and-worship cue: a countdown ring, the item title, and what is coming next.</span></li>
+      <li><span class="co">4</span><span>Alerts overlay current content as a lower third and auto-dismiss. Always operator-sent, never AI.</span></li>
+    </ol>
+  </div>
+  <div class="scr">
+    <h3>Screen 3 · Library and song editor</h3>
+    <p class="scrnote">VideoPsalm-class library: songbooks, instant full-text search across thousands of songs, chord display with transposition, and audio attached to songs so a soundtrack is always linked to the right lyric file.</p>
+    <div class="frame-wrap">
+      <div class="wf">
+        <div class="wf-t"><span class="dots"><i></i><i></i><i></i></span> Preso · Library</div>
+        <div class="wf-c w3b">
+          <div class="pane">
+            <div class="tiny">Songbooks <span class="co">1</span></div>
+            <div class="li on"><span>All songs</span><span class="sub">1,284</span></div>
+            <div class="li"><span>AMC Sunday</span><span class="sub">312</span></div>
+            <div class="li"><span>AMC Youth</span><span class="sub">148</span></div>
+            <div class="li"><span>Imported · CCLI</span><span class="sub">540</span></div>
+            <div class="tiny" style="margin-top:10px">Bibles</div>
+            <div class="li"><span>KJV</span></div>
+            <div class="li"><span>WEB</span></div>
+            <div class="li"><span>+ Import...</span></div>
+          </div>
+          <div class="pane">
+            <div class="search" style="margin-bottom:8px">Q: <b>blessed assurance</b> <span style="margin-left:auto" class="sub">instant · title, lyrics, author, CCLI no.</span></div>
+            <div class="li on"><span><b>Blessed Assurance</b></span><span class="sub">Fanny Crosby · E-flat · last: Sep 28</span></div>
+            <div class="li"><span>Blessed Assurance (Lower key)</span><span class="sub">Arr. AMC Choir · D-flat</span></div>
+            <div class="li"><span>Assured of Grace</span><span class="sub">Original · AMC Youth</span></div>
+          </div>
+          <div class="pane">
+            <div class="row sp"><div class="tiny" style="margin:0">Song editor</div><span class="tgl"><span class="on">Chords</span><span>Off</span></span></div>
+            <div class="sub" style="margin:4px 0 8px">Blessed Assurance · Fanny Crosby · key E-flat &nbsp;<span class="chip">Transpose</span><span class="co">2</span></div>
+            <div style="font-family:Georgia,serif;font-size:11px;color:#dbe2ee;line-height:1.7">
+              <span style="color:#e9c465;font-size:9px">Eb&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Bb/D</span><br>Blessed assurance, Jesus is mine<br>
+              <span style="color:#e9c465;font-size:9px">Ab&nbsp;&nbsp;&nbsp;Eb/G&nbsp;Fm7&nbsp;Bb</span><br>O what a foretaste of glory divine
+            </div>
+            <div class="row" style="margin-top:9px;gap:5px">
+              <span class="chip gold">Audio: assurance.mp3</span><span class="chip">Timing: LRC</span><span class="co">3</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>Songbooks keep imported and original songs separate, like VideoPsalm. Bibles live in the same library tree.</span></li>
+      <li><span class="co">2</span><span>ChordPro-style chords over lyrics with one-click transposition.</span></li>
+      <li><span class="co">3</span><span>Attached audio plus a synced-timing file is what lets a cue fire "soundtrack with lyrics" as a single action.</span></li>
+    </ol>
+  </div>
+
+  <div class="scr">
+    <h3>Screen 4 · Schedule builder (the AI's script)</h3>
+    <p class="scrnote">This is where "give the AI a list" happens. Each service item can carry spoken cue phrases and a stack of actions. The praise-and-worship item below is the exact flow you described: hear the cue, splash for 12 seconds, then the soundtrack with lyrics.</p>
+    <div class="frame-wrap">
+      <div class="wf">
+        <div class="wf-t"><span class="dots"><i></i><i></i><i></i></span> Preso · Sunday Service Oct 4 · Schedule</div>
+        <div class="wf-c w3c">
+          <div class="pane">
+            <div class="tiny">Item palette <span class="co">1</span></div>
+            <div class="li"><span>Song / set</span></div>
+            <div class="li"><span>Verse</span></div>
+            <div class="li"><span>Splash</span></div>
+            <div class="li"><span>Video</span></div>
+            <div class="li"><span>Track + lyrics</span></div>
+            <div class="li"><span>Countdown</span></div>
+            <div class="li"><span>Note / free</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="pane">
+              <div class="row sp"><span><span class="num">1</span> &nbsp;Welcome &amp; opening prayer</span><span class="chip">manual</span></div>
+            </div>
+            <div class="pane" style="outline:1px solid #6b541f">
+              <div class="row sp"><span><span class="num g">2</span> &nbsp;<b>Praise &amp; Worship</b> <span class="chip gold" style="margin-left:6px">AI item</span></span><span class="chip teal">test cue</span><span class="co">2</span></div>
+              <div class="row" style="margin-top:8px;align-items:flex-start">
+                <div style="flex:1;min-width:150px">
+                  <div class="tiny">Cues (AI listens for)</div>
+                  <div class="row" style="gap:5px;margin-top:4px">
+                    <span class="chip teal">"it's time for praise and worship"</span>
+                    <span class="chip teal">"let's enter into praise"</span>
+                    <span class="chip teal">"worship team, come up"</span>
+                    <span class="chip">+ add phrase</span>
+                  </div>
+                </div>
+                <div style="flex:1;min-width:150px">
+                  <div class="tiny">Actions (in order) <span class="co">3</span></div>
+                  <div class="row" style="gap:5px;margin-top:4px">
+                    <span class="chip gold">1 · Splash "Praise &amp; Worship" · 12s</span>
+                    <span class="chip gold">2 · Play track "Total Praise" + synced lyrics</span>
+                  </div>
+                </div>
+              </div>
+              <div class="row sp" style="margin-top:8px"><span class="sub">Autonomy for this item</span><span class="tgl"><span>Confirm</span><span class="on">Auto</span></span><span class="co">4</span></div>
+            </div>
+            <div class="pane">
+              <div class="row sp"><span><span class="num">3</span> &nbsp;Sermon · "God so loved" · Pastor Kay</span><span class="chip gold">AI verses ON</span></div>
+            </div>
+            <div class="pane">
+              <div class="row sp"><span><span class="num">4</span> &nbsp;Offering</span><span class="chip">manual</span></div>
+            </div>
+          </div>
+          <div class="pane">
+            <div class="tiny">Item inspector <span class="co">5</span></div>
+            <div class="sub" style="margin-bottom:8px">Praise &amp; Worship · 2 actions</div>
+            <div class="tiny">Action 1 · Splash</div>
+            <div class="li"><span>Duration</span><span class="chip">12 s</span></div>
+            <div class="li"><span>Cancel window</span><span class="chip">6 s</span></div>
+            <div class="tiny" style="margin-top:8px">Action 2 · Track + lyrics</div>
+            <div class="li"><span>Track</span><span class="sub">total-praise.mp3</span></div>
+            <div class="li"><span>Lyrics sync</span><span class="chip gold">LRC ready</span></div>
+            <div class="li"><span>If file missing</span><span class="chip teal">skip to logo</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>Drag or click to add items. Manual items are untouched by the AI; AI items carry cues and actions.</span></li>
+      <li><span class="co">2</span><span>"Test cue" speaks or types a phrase and shows whether it would match, with the score. This is how a volunteer checks the setup in five minutes.</span></li>
+      <li><span class="co">3</span><span>Actions run in order with optional delays. Any item can stack splash, then track, then lyrics, then a theme change.</span></li>
+      <li><span class="co">4</span><span>Per-item autonomy: the sermon item stays on "Confirm", the worship block can run "Auto".</span></li>
+      <li><span class="co">5</span><span>The inspector also defines fallbacks: if an audio file is missing, the action chain continues safely instead of failing.</span></li>
+    </ol>
+  </div>
+
+  <div class="scr">
+    <h3>Screen 5 · AI Command Center (the screen that builds trust)</h3>
+    <p class="scrnote">The AI mode home during a service. Live transcript on the left, decision cards with countdowns in the middle, script position and model health on the right. This screen answers the volunteer's only real question: "what is it about to do, and how do I stop it?"</p>
+    <div class="frame-wrap">
+      <div class="wf">
+        <div class="wf-t"><span class="dots"><i></i><i></i><i></i></span> Preso · AI Command Center <span style="margin-left:auto" class="chip grn"><span class="pulse" style="margin-right:5px"></span>LISTENING</span></div>
+        <div class="wf-c">
+          <div class="row" style="gap:8px">
+            <div class="stat"><span class="tiny" style="margin:0">Input</span><b>Desk feed · USB</b></div>
+            <div class="stat"><span class="tiny" style="margin:0">Detect latency</span><b>1.6 s avg</b></div>
+            <div class="stat"><span class="tiny" style="margin:0">Script item</span><b>2 of 6 · Praise</b></div>
+            <div class="stat"><span class="tiny" style="margin:0">Mode</span><b>Copilot</b></div>
+            <div class="stat" style="flex:0 0 auto"><span class="btn danger">H · Hold all</span> <span class="btn">Panic</span></div>
+          </div>
+          <div class="wac" style="margin-top:10px">
+            <div class="pane">
+              <div class="tiny">Live transcript <span class="co">1</span></div>
+              <div class="tr">...let's all turn to the book of</div>
+              <div class="tr on"><span class="hl v">Romans chapter five, verse eight</span>, where Paul writes...</div>
+              <div class="tr">and I love this, because while we were</div>
+              <div class="tr">still sinners, Christ died for us. And that</div>
+              <div class="tr">is the whole gospel in one line...</div>
+              <div class="tr on" style="margin-top:6px"><span class="hl c">"it is time for praise and worship"</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="evcard">
+                <h5>Verse detected · Romans 5:8 <span class="chip gold" style="float:right">92%</span></h5>
+                <div class="sub">"while we were yet sinners, Christ died for us" · KJV</div>
+                <div class="bar"><i style="width:35%"></i></div>
+                <div class="row sp"><span class="sub">displays in 2.1 s</span><span class="row" style="gap:5px"><span class="btn ok">Enter · Show</span><span class="btn ghost">Skip</span><span class="btn ghost">Edit</span></span></div>
+              </div>
+              <div class="evcard act">
+                <h5>Cue matched · Praise &amp; Worship <span class="chip teal" style="float:right">0.87</span></h5>
+                <div class="sub">Runs: splash 12 s, then "Total Praise" with lyrics</div>
+                <div class="bar"><i style="width:70%"></i></div>
+                <div class="row sp"><span class="sub">starts in 1.8 s · cancel window 6 s</span><span class="row" style="gap:5px"><span class="btn ok">Approve now</span><span class="btn danger">Cancel</span></span></div>
+              </div>
+              <div class="evcard">
+                <h5>Low confidence · logged only <span class="chip" style="float:right">61%</span></h5>
+                <div class="sub">Possible reference to Isaiah 53 · below floor, will not fire</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="pane">
+                <div class="tiny">Script position <span class="co">2</span></div>
+                <div class="li done"><span>1 Welcome</span></div>
+                <div class="li on"><span>2 Praise</span></div>
+                <div class="li"><span>3 Scripture</span></div>
+                <div class="li"><span>4 Sermon</span></div>
+                <div class="pane" style="margin-top:8px;padding:7px">
+                  <div class="tiny" style="margin:0 0 4px">Off-script</div>
+                  <div class="sub">Nothing unexpected heard</div>
+                </div>
+              </div>
+              <div class="pane">
+                <div class="tiny">Models <span class="co">3</span></div>
+                <div class="li"><span>Whisper small.en</span><span class="chip grn">CPU/Vulkan</span></div>
+                <div class="li"><span>Llama 3.2 3B</span><span class="chip gold">on demand</span></div>
+                <div class="li"><span>nomic-embed</span><span class="chip grn">ready</span></div>
+                <div class="li"><span>RAM</span><span class="sub">4.1 / 16 GB</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>Transcript is the source of truth. Gold highlights are detected references; teal highlights are cue matches. This is what makes the AI auditable rather than magical.</span></li>
+      <li><span class="co">2</span><span>In script mode the AI shows where it believes the service is. Disagreement is fixed with one click; the aligner learns from the correction.</span></li>
+      <li><span class="co">3</span><span>Model health is always visible. If the LLM is unloaded to save RAM, the badge shows "regex + embedding only".</span></li>
+    </ol>
+  </div>
+  <div class="scr">
+    <h3>Screen 6 · Settings · AI models and audio</h3>
+    <p class="scrnote">One settings area a volunteer never has to touch after setup day. Models download once (about 2.8 GB total for the recommended tier) and then everything works offline forever.</p>
+    <div class="frame-wrap">
+      <div class="wf">
+        <div class="wf-t"><span class="dots"><i></i><i></i><i></i></span> Preso · Settings · AI</div>
+        <div class="wf-c w2b">
+          <div class="pane">
+            <div class="li"><span>General</span></div>
+            <div class="li"><span>Audio</span></div>
+            <div class="li on"><span>AI models</span></div>
+            <div class="li"><span>Bible</span></div>
+            <div class="li"><span>Outputs &amp; NDI</span></div>
+            <div class="li"><span>Themes</span></div>
+            <div class="li"><span>Advanced</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="pane" style="outline:1px solid #6b541f">
+              <div class="tiny">Hardware detected <span class="co">1</span></div>
+              <div class="row sp"><span class="sub">Windows laptop · 16 GB RAM · integrated GPU · Vulkan available</span><span class="chip gold">Launch laptop tier</span></div>
+              <div class="row sp" style="margin-top:6px"><span class="sub">LLM loads on demand · 6 GB headroom</span><span class="chip teal">Auto-upgrades on better hardware</span></div>
+            </div>
+            <div class="cols3">
+              <div class="pane"><div class="tiny">Speech to text</div><b style="display:block;margin:2px 0 4px">Whisper small.en</b><span class="sub">480 MB · English · CPU/Vulkan path</span><div class="row sp" style="margin-top:7px"><span class="chip grn">Installed</span></div></div>
+              <div class="pane"><div class="tiny">Reasoning (LLM)</div><b style="display:block;margin:2px 0 4px">Llama 3.2 3B</b><span class="sub">2.0 GB · verify, cues, alignment</span><div class="row sp" style="margin-top:7px"><span class="chip gold">On demand</span><span class="chip">swap: Qwen 2.5 3B</span></div></div>
+              <div class="pane"><div class="tiny">Embeddings</div><b style="display:block;margin:2px 0 4px">nomic-embed-text</b><span class="sub">274 MB · semantic verse search</span><div class="row sp" style="margin-top:7px"><span class="chip grn">Installed</span></div></div>
+            </div>
+            <div class="pane">
+              <div class="row sp"><div class="tiny" style="margin:0">Detection confidence floors <span class="co">2</span></div><span class="chip gold">expert sliders</span></div>
+              <div class="row" style="margin-top:8px;gap:14px">
+                <label>Verse: 0.78<input type="range" min="50" max="95" value="78"></label>
+                <label>Cue: 0.72<input type="range" min="50" max="95" value="72"></label>
+                <label>Auto-fire delay: 3s<input type="range" min="0" max="10" value="3"></label>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="tiny">Audio input <span class="co">3</span></div>
+              <div class="row sp"><span class="sub">Focusrite Scarlett 2i2 · 48 kHz · mono mix-down</span><span class="chip teal">VAD active</span></div>
+              <div class="row" style="margin-top:6px;gap:5px"><span class="btn">Test 10 s and show transcript</span><span class="btn ghost">Level meter</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>The first-run wizard picks a model tier from the detected hardware and downloads it. Everything after that is offline.</span></li>
+      <li><span class="co">2</span><span>Defaults are tuned so Copilot almost never shows a wrong verse. Sliders are for power users.</span></li>
+      <li><span class="co">3</span><span>"Test 10 s" is the setup-day sanity check: speak a verse, watch it appear. No service needed to validate.</span></li>
+    </ol>
+  </div>
+
+  <div class="scr">
+    <h3>Screen 7 · Theme designer</h3>
+    <p class="scrnote">Themes are separate from the operator UI. A theme is a small bundle: background (gradient, image, or video loop), typography, transition style, logo placement, and lower-third style. Congregation output should never look like software.</p>
+    <div class="frame-wrap">
+      <div class="wf">
+        <div class="wf-t"><span class="dots"><i></i><i></i><i></i></span> Preso · Theme designer · "AMC Sundays"</div>
+        <div class="wf-c w3b">
+          <div class="pane">
+            <div class="tiny">Background <span class="co">1</span></div>
+            <div class="cols2" style="margin-top:6px">
+              <div class="swatch on" style="background:radial-gradient(120% 95% at 50% 0%,#24314e,#090d14)"></div>
+              <div class="swatch" style="background:linear-gradient(180deg,#182236,#0b0f17)"></div>
+              <div class="swatch" style="background:linear-gradient(135deg,#3a2f10,#0a0805)"></div>
+              <div class="swatch" style="background:#c9b98a"></div>
+            </div>
+            <div class="row" style="margin-top:8px;gap:5px"><span class="chip gold">Video loop: clouds.mp4</span><span class="chip">+ import</span></div>
+            <div class="tiny" style="margin-top:10px">Library</div>
+            <div class="li"><span>AMC Sundays</span><span class="chip gold">editing</span></div>
+            <div class="li"><span>Youth · bold</span></div>
+            <div class="li"><span>Hymn · serif</span></div>
+          </div>
+          <div>
+            <div class="slide verse">
+              <span class="vlogo">AMC CHURCH</span>
+              <div class="vtxt" style="font-size:12px">But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.</div>
+              <div class="vref" style="font-size:9px">Romans 5 : 8</div>
+            </div>
+            <div class="row" style="margin-top:8px;gap:5px"><span class="chip">Preview: verse</span><span class="chip">lyrics</span><span class="chip">splash</span><span class="chip">alert</span></div>
+          </div>
+          <div class="pane">
+            <div class="tiny">Typography</div>
+            <div class="li"><span>Face</span><span class="sub">Cormorant Garamond</span></div>
+            <div class="li"><span>Size</span><span class="chip">Auto-fit</span><span class="co">2</span></div>
+            <div class="li"><span>Shadow</span><span class="chip">Soft glow</span></div>
+            <div class="tiny" style="margin-top:8px">Motion</div>
+            <div class="li"><span>Verse reveal</span><span class="chip gold">Line fade</span></div>
+            <div class="li"><span>Song advance</span><span class="chip">Slide up</span></div>
+            <div class="tiny" style="margin-top:8px">Branding</div>
+            <div class="li"><span>Logo corner</span><span class="sub">top right</span></div>
+            <div class="li"><span>Lower third</span><span class="chip gold">gold bar</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="legend">
+      <li><span class="co">1</span><span>Video loops under lyrics and verses, the VideoPsalm staple, are just backgrounds here. Import any MP4/WebM loop.</span></li>
+      <li><span class="co">2</span><span>Auto-fit scales text per slide, so long verses never overflow and short verses never look tiny.</span></li>
+    </ol>
+  </div>
+</section>
+
+<section id="eng">
+  <div class="hat dev">Hat 2 · Software engineering</div>
+  <h2>Building a multi-platform desktop app (Windows + macOS)</h2>
+
+  <h3>Platform decision</h3>
+  <table class="tbl">
+    <tr><th>Option</th><th>Verdict</th><th>Why</th></tr>
+    <tr><td><b>Tauri 2 + Rust core</b></td><td><span class="b y">Choose</span></td><td>~15 MB installs, low RAM. Native audio capture via cpal. whisper.cpp and llama.cpp have solid Rust bindings. Multi-window webviews give us the console, projector output, and stage view from one codebase. One repo builds for both platforms.</td></tr>
+    <tr><td>Electron</td><td><span class="b n">Pass</span></td><td>Works, but ~150 MB installs and ~400 MB RAM baseline before any AI loads. Audio and AI would need native Node modules anyway, so we would maintain two runtimes for no gain.</td></tr>
+    <tr><td>Flutter</td><td><span class="b n">Pass</span></td><td>Great UI toolkit, weak desktop audio-capture story, and every whisper/llama binding would be custom plugin work.</td></tr>
+    <tr><td>Qt / C++</td><td><span class="b n">Pass</span></td><td>Licensing cost (or GPL), slower iteration, and we lose the HTML/CSS rendering layer that makes themed animated output cheap.</td></tr>
+  </table>
+
+  <h3>Stack</h3>
+  <table class="tbl">
+    <tr><th>Layer</th><th>Choice</th><th>Notes</th></tr>
+    <tr><td>Shell</td><td>Tauri 2.x</td><td>Rust backend, system webview (WebView2 on Windows, WKWebView on macOS)</td></tr>
+    <tr><td>Operator UI</td><td>React 18 + TypeScript (Vite)</td><td>Zustand for state; typed IPC layer generated from Rust commands</td></tr>
+    <tr><td>Output rendering</td><td>Dedicated webview windows</td><td>Main projector window, stage/alternate window; HTML/CSS animations, GPU composited</td></tr>
+    <tr><td>Audio capture</td><td>cpal</td><td>WASAPI on Windows, CoreAudio on macOS; 48 kHz mono mix-down; Windows loopback free, macOS system audio via BlackHole (optional)</td></tr>
+    <tr><td>Speech to text</td><td>whisper.cpp via whisper-rs</td><td>Metal on macOS, Vulkan or CUDA on Windows; streaming partials</td></tr>
+    <tr><td>LLM</td><td>llama.cpp via llama-cpp-2</td><td>GGUF models, GPU offload; auto-detects an existing Ollama install as an alternative backend</td></tr>
+    <tr><td>Embeddings + search</td><td>nomic-embed-text + usearch</td><td>Local vector index of every Bible verse (31k verses, ~100 MB)</td></tr>
+    <tr><td>Voice activity</td><td>Silero VAD via ort</td><td>2 MB model, gates audio chunks so Whisper only runs on speech</td></tr>
+    <tr><td>Storage</td><td>SQLite (rusqlite) + FTS5</td><td>Songs, Bibles, schedules, session logs, instant full-text search</td></tr>
+    <tr><td>Soundtrack playback</td><td>rodio</td><td>Sample-accurate start, fade in/out, sample clock drives lyric sync</td></tr>
+    <tr><td>NDI output</td><td>NDI SDK via ndi-rs</td><td>Optional module, enabled in settings; for OBS and ATEM workflows</td></tr>
+    <tr><td>Packaging</td><td>MSI/NSIS + DMG</td><td>Code signing on Windows, notarization on macOS; signed auto-updates via tauri-plugin-updater</td></tr>
+  </table>
+
+  <h3>Architecture</h3>
+  <div class="arch">
+    <div class="arow">
+      <div class="abox in"><b>Microphone / desk feed</b><span>USB audio interface from the mixing desk, or a podium mic</span></div>
+      <div class="abox in"><b>System audio (optional)</b><span>Loopback on Windows; BlackHole on macOS</span></div>
+      <div class="abox in"><b>Local content</b><span>Songs, Bibles, media, schedules, themes</span></div>
+    </div>
+    <div class="aarrow">captured natively by the Rust core</div>
+    <div class="acore">
+      <div class="acore-title">Rust core (Tauri backend, async with tokio)</div>
+      <div class="apipe">
+        <div class="astage"><b>Audio pipeline</b><span>cpal capture · Silero VAD · 16 kHz chunks</span></div>
+        <span class="arr">&rarr;</span>
+        <div class="astage"><b>Speech to text</b><span>whisper.cpp · partial results ~2&times;/s</span></div>
+        <span class="arr">&rarr;</span>
+        <div class="astage"><b>Transcript bus</b><span>timestamped events, broadcast to listeners</span></div>
+        <span class="arr">&rarr;</span>
+        <div class="astage"><b>AI engines</b><span>verse detector · cue matcher · script aligner</span></div>
+        <span class="arr">&rarr;</span>
+        <div class="astage"><b>Action engine</b><span>queue · delays · cancel windows · priority</span></div>
+      </div>
+      <div class="astore">Storage: SQLite + FTS5 (songs, Bibles, schedules, logs) · verse vector index · model files · media library. Session transcripts stay on this machine.</div>
+    </div>
+    <div class="aarrow">commands and state, over typed IPC</div>
+    <div class="arow">
+      <div class="abox ui"><b>Operator console</b><span>live console · library · schedule builder</span></div>
+      <div class="abox ui"><b>AI command center</b><span>transcript · decision cards · hold/panic</span></div>
+      <div class="abox ui"><b>Main output window</b><span>fullscreen on projector, themed renders</span></div>
+      <div class="abox ui"><b>Stage / alternate output</b><span>clock, next line, cues for the platform team</span></div>
+    </div>
+    <div class="aarrow">outputs to the room</div>
+    <div class="arow">
+      <div class="abox out"><b>NDI stream</b><span>clean lyric/verse feed for OBS or ATEM</span></div>
+      <div class="abox out"><b>Audio out</b><span>soundtracks with synced lyrics from rodio</span></div>
+      <div class="abox out"><b>Session log</b><span>transcript + every AI decision, reviewable</span></div>
+    </div>
+  </div>
+
+  <h3>Data model (SQLite)</h3>
+  <ul class="tight">
+    <li><code>songs</code>, <code>songbooks</code>, <code>song_slides</code> (ordered lyric slides), <code>chord_pro</code>, attached audio and LRC timing per song.</li>
+    <li><code>bibles</code> (one table set per translation, FTS5 indexed), verse text + canonical reference IDs.</li>
+    <li><code>verse_vectors</code> (precomputed embeddings for semantic search, built once per translation).</li>
+    <li><code>schedules</code>, <code>schedule_items</code> (type, payload, cue phrases, action stacks, per-item autonomy).</li>
+    <li><code>cue_rules</code> (global cues that work in listen mode without a schedule).</li>
+    <li><code>sessions</code>, <code>transcript_events</code>, <code>action_log</code> (what fired, what was canceled, what was overridden).</li>
+    <li><code>themes</code>, <code>media_assets</code>, <code>settings</code>.</li>
+    <li>Schedules also export as a portable <code>.preso</code> JSON file (VideoPsalm's "portable agenda" idea): copy it between home and church machines.</li>
+  </ul>
+
+  <h3>Content strategy</h3>
+  <ul class="tight">
+    <li><b>Bundled Bibles:</b> KJV and WEB (public domain). Other translations arrive via importers (OpenLP, Zefania, OSIS) so the church brings its own licensed files. No NIV/ESV redistribution.</li>
+    <li><b>Songs:</b> manual entry plus importers: CCLI SongSelect (.usr), OpenLP, plain text, and plain CSV. CCLI number field on every song for reporting.</li>
+    <li><b>Media:</b> any MP4/WebM video, MP3/WAV audio, images. Themes bundle backgrounds.</li>
+    <li><b>Fonts:</b> bundle one OFL serif and one OFL sans so output looks identical on Windows and macOS.</li>
+  </ul>
+
+  <h3>Cross-platform gotchas we plan for now</h3>
+  <ul class="tight">
+    <li><b>Webview differences:</b> standardize output video on H.264 MP4 (+ WebM); test both webviews. CSS animation performance is fine on both.</li>
+    <li><b>Integrated GPUs:</b> the first-run wizard benchmarks CPU against Vulkan on the iGPU and keeps the faster path; machines with weak iGPU drivers quietly stay on CPU.</li>
+    <li><b>macOS:</b> microphone permission prompt (info.plist usage string), hardened runtime, notarization. Desk feed over USB is a plain input device, so no virtual-audio dependency for the core flow.</li>
+    <li><b>Windows:</b> WASAPI loopback is native (nice for capturing tracks played from the same machine); code-signing cert for SmartScreen reputation.</li>
+    <li><b>Lyric sync:</b> the audio sample clock lives in Rust, not the webview, so lyrics never drift from the soundtrack.</li>
+  </ul>
+
+  <h3>Audio wiring: XR16 to the laptop</h3>
+  <ol class="tight">
+    <li>Connect the XR16's USB-B port (the square connector on the back) to the laptop. The built-in X-USB card shows up in Windows as a 16-in / 4-out audio device, no driver needed.</li>
+    <li>In X-Edit or the console app: Routing &rarr; Card. Assign Card Out 1 to a spare Mixbus (say Mixbus 6, named "Transcript").</li>
+    <li>Send the pulpit mic post-fader at unity, plus a little of the worship leader, to that bus. Keep the bus out of the main mix path so the feed stays steady no matter what the sound desk does mid-service.</li>
+    <li>Set the bus so speech peaks around -18 to -12 dBFS. Too hot clips; too low starves the transcriber.</li>
+    <li>In the app: input device "X-USB" (or "Behringer XR16"), channel 1, mono. The browser alpha reads it as a normal microphone.</li>
+    <li>No X-USB handy? Any USB interface (Scarlett 2i2) fed from an aux send works identically.</li>
+  </ol>
+
+  <h3>Testing</h3>
+  <ul class="tight">
+    <li><b>Fixture sermons:</b> ten recorded services with labeled verse references and cue timestamps, replayed through the whole pipeline in CI. We assert detection rate, false positives, and latency on every commit.</li>
+    <li><b>Reference parser corpus:</b> hundreds of spoken reference forms ("third chapter of John", "rom five eight", "jn three sixteen") as unit tests.</li>
+    <li><b>Visual regression:</b> golden screenshots of output slides on both platforms.</li>
+    <li><b>E2E:</b> tauri-driver (WebDriver) for operator flows.</li>
+  </ul>
+
+  <h3>Repository shape</h3>
+  <pre class="tree">preso/
+  crates/          Rust workspace
+    core/          schedule, action engine, storage
+    audio/         cpal capture, VAD, resample
+    stt/           whisper.cpp bindings, streaming
+    nlp/           ref parser, embeddings, verse index, cue matcher
+    llm/           llama.cpp bindings, prompts, verify
+    ndi/           optional NDI output module
+  apps/
+    desktop/       Tauri 2 app (React + TypeScript)
+      src/         operator UI, AI command center
+      output/      output window bundle (themes, renderer)
+  fixtures/        labeled sermon audio + expected detections
+  docs/</pre>
+</section>
+<section id="ai">
+  <div class="hat ai">Hat 3 · AI engineering</div>
+  <h2>Local models for listening, verses, and cues</h2>
+  <p>Everything below runs on the church machine. No API keys, no internet requirement, no per-minute billing. The stack is deliberately boring: Whisper for ears, a small LLM for judgment, embeddings for meaning, and plain code for everything that does not need a model at all.</p>
+
+  <h3>Principles</h3>
+  <ul class="tight">
+    <li><b>Deterministic first.</b> "John 3:16" is a regex problem, not an LLM problem. Models handle only what code cannot: paraphrase, ambiguity, intent.</li>
+    <li><b>Smallest model that passes the tests.</b> A 3B model beats 70B on this task if it fits the budget and answers in 300 ms.</li>
+    <li><b>Graceful degradation.</b> No GPU: drop the LLM, keep regex + embeddings. Low RAM: embeddings only. No models at all: manual mode with a warning. The app never bricks a Sunday.</li>
+    <li><b>Every decision is overridable, logged, and reviewable.</b></li>
+  </ul>
+
+  <h3>Model lineup</h3>
+  <table class="tbl">
+    <tr><th>Job</th><th>Model</th><th>Size on disk</th><th>License</th><th>Notes</th></tr>
+    <tr><td>Voice activity</td><td>Silero VAD</td><td>2 MB</td><td>MIT</td><td>Gates audio so Whisper only runs on speech</td></tr>
+    <tr><td>Speech to text</td><td>Whisper small.en (Q5)</td><td>480 MB</td><td>MIT</td><td>Recommended tier; Metal/Vulkan accelerated</td></tr>
+    <tr><td>Speech to text</td><td>Whisper base.en / tiny.en (Q5)</td><td>142 / 75 MB</td><td>MIT</td><td>Fallback tiers for weak hardware</td></tr>
+    <tr><td>Reasoning</td><td>Llama 3.2 3B Instruct (Q4_K_M)</td><td>2.0 GB</td><td>Llama community</td><td>Verse verification, gray-zone cues, script alignment</td></tr>
+    <tr><td>Reasoning (alt)</td><td>Qwen 2.5 3B Instruct (Q4_K_M)</td><td>1.9 GB</td><td>Apache 2.0</td><td>One-click swap in settings</td></tr>
+    <tr><td>Meaning</td><td>nomic-embed-text v1.5</td><td>274 MB</td><td>Apache 2.0</td><td>Semantic verse search and cue matching</td></tr>
+    <tr><td>Verse index</td><td>usearch over 31,102 verse embeddings</td><td>~100 MB</td><td>Apache 2.0</td><td>Built once per translation at first run</td></tr>
+  </table>
+  <p class="muted">Total recommended tier: about 2.8 GB of models, downloaded once, then fully offline.</p>
+
+  <h3>The pipeline, end to end</h3>
+  <ol class="tight">
+    <li><b>Capture:</b> 48 kHz mono from the desk feed, resampled to 16 kHz.</li>
+    <li><b>VAD:</b> Silero slices speech segments; a segment closes after ~0.6 s of silence.</li>
+    <li><b>Streaming STT:</b> Whisper runs on a rolling window and emits partial text ~2 times per second, so refs are detected mid-sentence, not after a pause.</li>
+    <li><b>Transcript bus:</b> every partial and final is timestamped and broadcast to three listeners: verse detector, cue matcher, script aligner.</li>
+    <li><b>Verse detection (two paths):</b> exact reference parsing (regex + fuzzy book-name table), and paraphrase matching (embed the last ~15 s of transcript, cosine search the verse index, top-k candidates).</li>
+    <li><b>LLM verify:</b> for candidates above threshold, a 3B model answers a strict yes/no ("is the speaker quoting or referencing Romans 5:8?"). This is what kills false positives from generic God-talk.</li>
+    <li><b>Cue matching:</b> schedule cues were embedded at load time; the rolling transcript window is compared to each. Gray-zone scores get an LLM confirm; clear scores fire.</li>
+    <li><b>Action engine:</b> fires or proposes according to autonomy settings, honoring holds, cancel windows, cooldowns, and priorities.</li>
+  </ol>
+
+  <h3>Verse detection detail</h3>
+  <ul class="tight">
+    <li><b>Path A, exact references:</b> a parser built for spoken forms: "rom 5 8", "Romans chapter five verse eight", "third chapter of John, verse sixteen". This path alone catches most sermon references, in milliseconds.</li>
+    <li><b>Path B, quotes and paraphrases:</b> the pastor says "while we were still sinners Christ died for us" without naming the verse. The transcript window embedding is matched against 31k verse embeddings; a strong match plus LLM confirmation displays Romans 5:8. This is PewBeam's headline feature, done locally.</li>
+    <li><b>Dedup:</b> same verse within 3 minutes is ignored (configurable). Adjacent verses roll up into ranges (Romans 5:8-9) instead of flashing card by card.</li>
+    <li><b>Long passages:</b> a detected reference to Romans 5 preloads verses 1-5 as next slides, so the operator just presses Space.</li>
+  </ul>
+
+  <h3>Cue engine detail</h3>
+  <p>A cue is data, not code. From the schedule builder, one item looks like this internally:</p>
+  <pre class="tree">{
+  "item": "Praise &amp; Worship",
+  "cues": [
+    { "phrase": "it's time for praise and worship" },
+    { "phrase": "let's enter into praise" },
+    { "phrase": "worship team, come up" }
+  ],
+  "match": { "type": "semantic", "threshold": 0.72 },
+  "actions": [
+    { "type": "splash", "template": "praise", "duration_s": 12 },
+    { "type": "play_track", "track": "total-praise.mp3",
+      "lyrics": "total-praise.lrc", "fade_in_s": 1.5 }
+  ],
+  "autonomy": "auto", "cancel_window_s": 6, "cooldown_s": 600
+}</pre>
+  <ul class="tight">
+    <li><b>Matching is semantic, not keyword:</b> "let us lift our hands in worship" should hit the praise cue even though no phrase matches word for word. Embeddings handle this; exact-phrase hits get a score boost.</li>
+    <li><b>Debounce:</b> a cue only fires on a completed phrase (VAD boundary or sentence end), never mid-sentence.</li>
+    <li><b>Global cues</b> (no schedule needed) work in listen mode: define "nursery call" style cues that highlight the alert composer pre-filled, never auto-send.</li>
+    <li><b>Test bench:</b> the "test cue" button in the schedule builder types or speaks a phrase and shows the match score against every cue in the schedule.</li>
+  </ul>
+
+  <h3>Script alignment detail</h3>
+  <ul class="tight">
+    <li>Each schedule item gets an expected-content embedding (title, songs, themes, preacher notes if pasted in).</li>
+    <li>The aligner scores the recent transcript against upcoming items, with hysteresis: item N must beat item N+1 by a margin for 2 consecutive windows before the pointer moves.</li>
+    <li>The pointer can also be moved manually at any time; the aligner treats operator jumps as ground truth and re-anchors.</li>
+    <li>This is what lets the app "follow a script" without the operator touching anything, while still catching off-script verses and cues.</li>
+  </ul>
+
+  <h3>Action vocabulary</h3>
+  <table class="tbl">
+    <tr><th>Action</th><th>Parameters</th><th>Default approval</th></tr>
+    <tr><td><code>show_verse</code></td><td>ref, translation, theme</td><td>Copilot: 3 s auto-fire</td></tr>
+    <tr><td><code>show_song</code> / <code>advance</code></td><td>song, slide index</td><td>Auto in script mode</td></tr>
+    <tr><td><code>splash</code></td><td>template, duration, title</td><td>Per-item autonomy</td></tr>
+    <tr><td><code>play_track</code></td><td>audio file, LRC file, fade</td><td>Per-item autonomy</td></tr>
+    <tr><td><code>countdown</code></td><td>seconds, label</td><td>Operator only</td></tr>
+    <tr><td><code>alert</code></td><td>text, style, duration</td><td>Operator only, always</td></tr>
+    <tr><td><code>logo</code> / <code>blackout</code></td><td>-</td><td>Operator only, always</td></tr>
+    <tr><td><code>set_theme</code></td><td>theme name</td><td>Auto</td></tr>
+  </table>
+  <p class="muted">Every action carries: pre-delay, duration, cancel window, cooldown, priority (alert &gt; blackout &gt; verse &gt; lyrics &gt; media), and a fallback if its file is missing. The H key freezes the whole queue; Shift+Esc clears it and blacks out.</p>
+
+  <h3>Latency budget (upgrade tier: RTX 3050+ / Apple M2)</h3>
+  <table class="tbl">
+    <tr><th>Stage</th><th>Budget</th><th>Typical</th></tr>
+    <tr><td>Audio chunk + VAD boundary</td><td>100 ms</td><td>40-100 ms</td></tr>
+    <tr><td>Whisper partial (rolling window)</td><td>400 ms</td><td>200-350 ms</td></tr>
+    <tr><td>Reference parse (regex/fuzzy)</td><td>10 ms</td><td>&lt;5 ms</td></tr>
+    <tr><td>Embed window + verse ANN search</td><td>60 ms</td><td>20-50 ms</td></tr>
+    <tr><td>LLM verify (3B, yes/no)</td><td>600 ms</td><td>250-500 ms</td></tr>
+    <tr><td>Action dispatch + render</td><td>100 ms</td><td>40-80 ms</td></tr>
+    <tr><td><b>End to end</b></td><td><b>~1.3 s</b></td><td><b>0.6-1.2 s</b></td></tr>
+  </table>
+  <p class="muted">Exact spoken references skip steps 4-5 and land in ~0.5 s on any hardware. This is how we match PewBeam's "under two seconds" without a data center. On the launch laptop the full pipeline lands at roughly 1-2.5 s; the LLM verify step is the only stage that slows materially on CPU.</p>
+
+  <h3>Hardware tiers</h3>
+  <table class="tbl">
+    <tr><th>Tier</th><th>Machine</th><th>Models</th><th>Expected verse latency</th></tr>
+    <tr><td><b>Launch laptop</b> (where we start)</td><td>Windows laptop, 16 GB RAM, integrated GPU</td><td>small.en on CPU or Vulkan, embeddings always on, 3B LLM loads on demand</td><td>Exact refs 0.5-1 s · paraphrased 1.5-3 s</td></tr>
+    <tr><td><b>Upgrade target</b></td><td>Desktop with RTX 3050+ or MacBook M-series, 16 GB+</td><td>small.en + resident 3B LLM + embeddings</td><td>0.6-1.5 s</td></tr>
+    <tr><td>Comfort</td><td>RTX 4070+ or M3/M4 Pro, 32 GB RAM</td><td>small.en + 7-8B LLM</td><td>0.5-1 s</td></tr>
+  </table>
+  <p class="muted">16 GB holds the whole stack with about 6 GB to spare (breakdown below). The app auto-detects better hardware and raises the tier when the upgrade happens; nothing is re-tuned. A modest RTX desktop or an M4 MacBook reaches the comfort tier.</p>
+
+  <h4>RAM budget on the launch laptop</h4>
+  <ul class="tight">
+    <li>Windows 11 idle: ~4.5 GB</li>
+    <li>Preso app + webview windows: ~1.5 GB</li>
+    <li>Whisper small.en (loaded while listening): ~0.8 GB</li>
+    <li>Embeddings + verse index: ~0.5 GB</li>
+    <li>Llama 3B (on demand, unloaded after 5 min idle): ~2.3 GB</li>
+    <li>Headroom remaining: ~6 GB</li>
+  </ul>
+
+  <h3>Honest accuracy expectations</h3>
+  <ul class="tight">
+    <li>Whisper small.en on a clean desk feed: roughly 5-8% word error rate. A noisy room mic degrades that; the fix is a better feed, not a bigger model.</li>
+    <li>Targets we will hold ourselves to on the fixture corpus: over 90% of spoken references detected, under 1 false verse per 10 minutes in Copilot, median latency under 1.5 s on the recommended tier.</li>
+    <li>A custom vocabulary boost (book names, preacher's favorite phrases, church member names for alerts) is loaded as Whisper's initial prompt. Cheap and effective.</li>
+  </ul>
+
+  <h3>Privacy</h3>
+  <ul class="tight">
+    <li>Audio never leaves the machine. Transcripts and decision logs are stored locally, optionally auto-deleted after N days.</li>
+    <li>No account, no telemetry, no phone-home checks. The app is fully functional offline forever.</li>
+  </ul>
+</section>
+
+<section id="walkthrough">
+  <div class="eyebrow">06 · Walkthrough</div>
+  <h2>The praise-and-worship flow, millisecond by millisecond</h2>
+  <p>The scenario you described, exactly as the system would run it in AI Autopilot with the sample schedule loaded.</p>
+  <div class="tl">
+    <div class="tl-item"><div class="t">T+0.0 s</div><b>Pastor: "...I believe it is time for praise and worship."</b><span>Desk feed audio enters the pipeline. Transcript window already contains the sentence.</span></div>
+    <div class="tl-item"><div class="t">T+0.4 s</div><b>Whisper partial finalized</b><span>Cue matcher scores the completed phrase: 0.87 against the "Praise &amp; Worship" cue (threshold 0.72). Clear hit, no LLM confirm needed.</span></div>
+    <div class="tl-item"><div class="t">T+1.0 s</div><b>Decision card appears; script pointer moves to item 2</b><span>AI Command Center shows the cue card with a 6 s cancel window. Output: still the current slide. Nothing has changed on screen yet.</span></div>
+    <div class="tl-item"><div class="t">T+1.8 s</div><b>Splash fires</b><span>No cancel received. Projector and NDI switch to the splash: countdown ring from 12, "PRAISE &amp; WORSHIP", "Next: Total Praise".</span></div>
+    <div class="tl-item"><div class="t">T+1.8 → 13.8 s</div><b>Splash runs its full 12 seconds</b><span>The ring counts down visibly. Pressing Esc or the Cancel button at any point reverts to the previous slide. The H key would have frozen this before it started.</span></div>
+    <div class="tl-item"><div class="t">T+13.8 s</div><b>Soundtrack starts, lyrics live</b><span>"Total Praise" fades in over 1.5 s from the Rust audio engine. Lyric line 1 appears, driven by the LRC timing file from the audio sample clock (no drift). NDI carries the same lyric feed to OBS.</span></div>
+    <div class="tl-item"><div class="t">T+14 s →</div><b>Operator hands free</b><span>Lyrics advance on their own; the operator can nudge with arrow keys, adjust the theme, or prep the next item. Verse detection keeps running underneath for any scripture the worship leader reads.</span></div>
+  </div>
+  <p class="muted">The same machinery in miniature handles verses: "...as Paul says in Romans five verse eight" becomes a Romans 5:8 card in ~0.6 s (exact-reference path), auto-fires after the 3 s Copilot window, and logs the decision.</p>
+</section>
+
+<section id="roadmap">
+  <div class="eyebrow">07 · Roadmap</div>
+  <h2>Phases, with exit criteria</h2>
+  <p class="muted">Assumes one developer with AI assistance, roughly full-time. Every phase ends with something usable in a real service.</p>
+  <p class="muted">Before P0: a browser-based alpha (in this repo, <code>alpha/</code>) proves the risky parts early: live verse detection, the praise-and-worship cue flow, and the dual-window operator + projector layout. Its verse parser and cue engine carry straight into the Rust core.</p>
+  <div class="phases">
+    <div class="phase"><span class="wk">Weeks 1-3</span><b>P0 · Foundations</b><ul><li>Tauri scaffold, CI for Windows + macOS</li><li>SQLite, KJV + WEB bundled, FTS5 search</li><li>Output window, verse render</li></ul><div class="muted" style="margin-top:8px">Exit: type a reference on either platform, see it on the projector.</div></div>
+    <div class="phase"><span class="wk">Weeks 4-9</span><b>P1 · Manual MVP</b><ul><li>Songbooks + editor + chords</li><li>Schedule, live console, hotkeys</li><li>Themes, transitions, alerts, countdown</li><li>Audio attachment playback</li></ul><div class="muted" style="margin-top:8px">Exit: run a full service manually, end to end, on both platforms.</div></div>
+    <div class="phase"><span class="wk">Weeks 10-15</span><b>P2 · AI scripture</b><ul><li>Audio capture + VAD + streaming Whisper</li><li>Verse pipeline (regex, embeddings, LLM verify)</li><li>AI command center, Copilot flow</li><li>Session logging</li></ul><div class="muted" style="margin-top:8px">Exit: fixture sermons hit &gt;90% reference recall, &lt;1 false positive per 10 min, under 3 s median on the launch laptop, under 2 s on upgraded hardware.</div></div>
+    <div class="phase"><span class="wk">Weeks 16-21</span><b>P3 · Cues &amp; script</b><ul><li>Schedule cues + action engine</li><li>Splash / track / synced-lyrics flow</li><li>Script alignment, autopilot whitelists</li><li>Hold, panic, cancel windows</li></ul><div class="muted" style="margin-top:8px">Exit: a full scripted service runs hands-off in rehearsal, vetoable at every step.</div></div>
+    <div class="phase"><span class="wk">Weeks 22-26+</span><b>P4 · Polish &amp; ecosystem</b><ul><li>NDI + stage/alternate output</li><li>Theme designer, importers (CCLI, OpenLP)</li><li>Sermon notes export</li><li>Installers, auto-update, docs</li></ul><div class="muted" style="margin-top:8px">Exit: another church can install it and run it on a Sunday.</div></div>
+  </div>
+
+  <h3>Deferred (post-v1 candidates)</h3>
+  <ul class="tight">
+    <li>Bilingual verse display scheduling (schema supports it from day one; UI comes later).</li>
+    <li>PowerPoint import (convert via external tool; display PDF/PPTX-as-images first).</li>
+    <li>AI sermon notes generation from the session transcript (local LLM, export to Markdown).</li>
+    <li>Per-church Whisper fine-tuning on the preacher's voice, using session logs the church already owns.</li>
+  </ul>
+</section>
+
+<section id="risks">
+  <div class="eyebrow">08 · Risks</div>
+  <h2>What could go wrong, and the plan for each</h2>
+  <table class="tbl">
+    <tr><th>Risk</th><th>Severity</th><th>Mitigation</th></tr>
+    <tr><td>Accents, room noise, or a bad mic degrade transcription</td><td><span class="b n">High</span></td><td>Insist on a desk feed (USB interface), not a room mic. Custom vocabulary boost. Fallback model tiers. Manual mode always works.</td></tr>
+    <tr><td>False-positive verses distract the congregation</td><td><span class="b n">High</span></td><td>Copilot is the default; LLM verification; confidence floors; dedup and cooldowns; one-key skip. Autopilot is opt-in per item.</td></tr>
+    <tr><td>The church PC is too weak for the recommended tier</td><td><span class="b p">Medium</span></td><td>First-run hardware check picks the tier; CPU-only path with tiny/base models is first-class, not an afterthought.</td></tr>
+    <tr><td>Webview video codec differences between Windows and macOS</td><td><span class="b p">Medium</span></td><td>Standardize on H.264 MP4 + WebM; visual regression tests on both platforms; reject unsupported files at import with a clear message.</td></tr>
+    <tr><td>Bible translation licensing</td><td><span class="b p">Medium</span></td><td>Bundle only KJV/WEB; importers let the church load translations it already licenses. Never redistribute copyrighted text.</td></tr>
+    <tr><td>NDI SDK is closed-source</td><td><span class="b p">Low</span></td><td>Optional module, off by default; the core projector output never depends on it.</td></tr>
+    <tr><td>Scope creep from VideoPsalm parity</td><td><span class="b n">High</span></td><td>Phase gates above; parity features marked must/should/later; every phase ships something usable on Sunday.</td></tr>
+    <tr><td>Solo-developer bandwidth</td><td><span class="b p">Medium</span></td><td>The roadmap assumes one dev; P1 alone is already a deployable product if everything else slips.</td></tr>
+  </table>
+</section>
+
+<section id="questions">
+  <div class="eyebrow">09 · For your review</div>
+  <h2>Open questions and decisions you can veto</h2>
+
+  <h3>Decisions I made in this plan</h3>
+  <ul class="tight">
+    <li>Tauri 2 + Rust core over Electron. Reason: native audio and AI bindings, tiny installs.</li>
+    <li>Copilot (AI suggests) as the default AI mode, not Autopilot. Reason: trust is earned in the first three services.</li>
+    <li>KJV + WEB bundled; everything else via import. Reason: licensing.</li>
+    <li>12-second splash and 6-second cancel window exactly as you described; both are configurable.</li>
+    <li>Splash, then soundtrack with LRC-synced lyrics, as one composable action stack.</li>
+    <li>Launch on the current Windows laptop (CPU/Vulkan tier); the AI tier auto-raises when the machine is upgraded.</li>
+  </ul>
+
+  <h3>Questions</h3>
+  <div class="qcard"><b>1. Name.</b><div class="opts">"AMC Preso" is a working title from the folder name. Keep it, or pick a product name? Options: keep AMC Preso; something else entirely (name it); decide later.</div></div>
+  <div class="qcard"><b>2. Bible translation and language.</b><div class="opts">KJV default? Any bilingual need (VideoPsalm-style two-language verses)? Which second language, if any?</div></div>
+  <div class="qcard"><b>3. The machine that will run it on Sundays. <span class="b y">answered</span></b><div class="opts">A Windows laptop, 16 GB RAM, integrated GPU, with a machine upgrade planned later. The plan ships a launch-laptop tier first (section 05, hardware tiers) and auto-raises the model tier when better hardware arrives.</div></div>
+  <div class="qcard"><b>4. Audio feed. <span class="b y">answered</span></b><div class="opts">A Behringer XR16 mixer is available. Wiring instructions for a dedicated USB feed are in section 04 (Audio wiring). The browser alpha reads the XR16 directly as a microphone device.</div></div>
+  <div class="qcard"><b>5. Audience.</b><div class="opts">Built for your church only, or intended as a product other churches can install? Affects licensing choices, hardening, CCLI integration priority, and how much P4 matters.</div></div>
+  <div class="qcard"><b>6. Song source.</b><div class="opts">CCLI SongSelect subscription (we import .usr files)? Existing songs in OpenLP, VideoPsalm, or EasyWorship to migrate? Roughly how many songs?</div></div>
+  <div class="qcard"><b>7. Target dates. <span class="b y">answered</span></b><div class="opts">First demo: an alpha proof (browser-based: verse detection plus the praise-and-worship cue flow) the day after this plan was written. The phase roadmap starts immediately after.</div></div>
+
+  <div class="note"><b>Status:</b> questions 3, 4, and 7 are answered. The browser alpha ships tonight (in this repo, <code>alpha/</code>); the Tauri build (P0) starts next.</div>
+</section>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap">AMC Preso (working title) · Product &amp; Engineering Plan v0.2 · Prepared and revised Sep 26, 2026 · Built from an analysis of pewbeam.com and videopsalm.com, current as of this date.</div>
+</footer>
+
+<script>
+try{
+  var links=Array.prototype.slice.call(document.querySelectorAll('nav.top a[href^="#"]'));
+  var map={};
+  links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a;});
+  var obs=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){l.classList.remove('act');});
+        var l=map[e.target.id];
+        if(l)l.classList.add('act');
+      }
+    });
+  },{rootMargin:'-40% 0px -55% 0px'});
+  Array.prototype.slice.call(document.querySelectorAll('main section[id]')).forEach(function(s){obs.observe(s);});
+}catch(e){}
+</script>
+</body>
+</html>
