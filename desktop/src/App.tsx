@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { Embedder } from "./lib/embed";
 
 type VerseHit = {
   label: string;
@@ -28,6 +29,7 @@ type Card = {
   label: string;
   hit: VerseHit;
   trigger: string;
+  kind: "ref" | "quote";
   fireAt: number;
   status: "pending" | "done";
 };
@@ -35,6 +37,37 @@ type Card = {
 type TrLine = { text: string; labels: string[] };
 
 type SummaryData = { points: { text: string; verses: string[] }[] };
+
+type OutputTheme = {
+  bgKind: "gradient" | "image";
+  gradient: string;
+  image: string;
+  overlay: number;
+  textColor: string;
+  accent: string;
+  font: "serif" | "sans";
+};
+
+const GRADIENTS: { name: string; css: string }[] = [
+  { name: "Midnight Navy", css: "radial-gradient(120% 95% at 50% 0%, #24314e 0%, #101827 55%, #090d14 100%)" },
+  { name: "Deep Gold", css: "radial-gradient(100% 120% at 50% 100%, #3a2f10 0%, #161207 60%, #0a0805 100%)" },
+  { name: "Slate", css: "linear-gradient(180deg, #2a3548 0%, #10151f 100%)" },
+  { name: "Purple Dawn", css: "linear-gradient(160deg, #2c2050 0%, #0b0f17 100%)" },
+  { name: "Forest", css: "linear-gradient(170deg, #12301f 0%, #0a0d13 100%)" },
+  { name: "Crimson Night", css: "linear-gradient(200deg, #3a1420 0%, #0c0a10 100%)" },
+];
+
+const DEFAULT_THEME: OutputTheme = {
+  bgKind: "gradient",
+  gradient: GRADIENTS[0].css,
+  image: "",
+  overlay: 0.45,
+  textColor: "#f3ecdc",
+  accent: "#e9c465",
+  font: "serif",
+};
+
+const QUOTE_THRESHOLD = 0.55;
 
 type SermonPoint = { num: number; text: string };
 
@@ -85,8 +118,18 @@ export default function App() {
     () => (localStorage.getItem("preso-theme") as "dark" | "light") || "dark"
   );
   const [transcriptView, setTranscriptView] = useState<"processed" | "raw">("processed");
-  const [view, setView] = useState<"console" | "downloads">("console");
+  const [view, setView] = useState<"console" | "theme" | "downloads">("console");
   const [trId, setTrId] = useState("kjv");
+  const [outTheme, setOutTheme] = useState<OutputTheme>(() => {
+    try {
+      const saved = localStorage.getItem("preso-output-theme");
+      if (saved) return { ...DEFAULT_THEME, ...JSON.parse(saved) };
+    } catch (e) {
+      /* ignore */
+    }
+    return DEFAULT_THEME;
+  });
+  const [quoteStatus, setQuoteStatus] = useState("not loaded");
   const [translations, setTranslations] = useState<TranslationInfo[]>([]);
   const [, setForce] = useState(0);
 
@@ -100,6 +143,8 @@ export default function App() {
   const cardsRef = useRef<Card[]>([]);
   const notesRef = useRef<string[]>([]);
   const verseLogRef = useRef<{ label: string; line: string; pointNum: number | null }[]>([]);
+  const quoteIndexRef = useRef<{ vecs: Float32Array; refs: number[][] } | null>(null);
+  const quoteBusy = useRef(false);
   const sermonRef = useRef<{ title: string | null; points: SermonPoint[] }>({
     title: null,
     points: [],
@@ -112,6 +157,7 @@ export default function App() {
   const lastCmdAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
+  const indexLoadedRef = useRef(false);
   const dirtyRef = useRef(false);
   const seqRef = useRef<{ slides: VerseHit[]; idx: number } | null>(null);
 
@@ -128,6 +174,62 @@ export default function App() {
     document.body.setAttribute("data-theme", theme);
     localStorage.setItem("preso-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("preso-output-theme", JSON.stringify(outTheme));
+    } catch (e) {
+      /* image too large for localStorage; theme stays for this session */
+    }
+    void emit("output-theme", outTheme);
+  }, [outTheme]);
+
+  async function applyImage(f: File) {
+    const dataUrl: string = await new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.readAsDataURL(f);
+    });
+    const lum: number = await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = 64;
+        c.height = 36;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, 64, 36);
+        const d = ctx.getImageData(0, 0, 64, 36).data;
+        let r = 0, g = 0, b = 0;
+        const hues: Record<number, number> = {};
+        for (let i = 0; i < d.length; i += 4) {
+          r += d[i]; g += d[i + 1]; b += d[i + 2];
+          const mx = Math.max(d[i], d[i + 1], d[i + 2]);
+          const mn = Math.min(d[i], d[i + 1], d[i + 2]);
+          const l = (mx + mn) / 2 / 255;
+          if (mx - mn > 30 && l > 0.15 && l < 0.85) {
+            let h = 0;
+            const df = mx - mn;
+            if (mx === d[i]) h = ((d[i + 1] - d[i + 2]) / df) % 6;
+            else if (mx === d[i + 1]) h = (d[i + 2] - d[i]) / df + 2;
+            else h = (d[i] - d[i + 1]) / df + 4;
+            h = Math.round((((h * 60) + 360) % 360) / 20) * 20;
+            hues[h] = (hues[h] || 0) + 1;
+          }
+        }
+        resolve(((r / d.length) * 0.299 + (g / d.length) * 0.587 + (b / d.length) * 0.114) / 255);
+        void hues;
+      };
+      img.src = dataUrl;
+    });
+    setOutTheme((t) => ({
+      ...t,
+      bgKind: "image",
+      image: dataUrl,
+      overlay: Math.min(0.75, Math.max(0.25, 0.78 - lum)),
+      textColor: lum > 0.55 ? "#f8f5ea" : "#f3ecdc",
+    }));
+    setMicStatus("Theme auto-generated from your image. Fine-tune below.");
+  }
 
   function addNote(bullet: string) {
     const b = bullet.trim();
@@ -390,6 +492,7 @@ export default function App() {
       setListening(true);
       if (r === "already") setMicStatus("Already listening.");
       else setMicStatus("Listening natively · verse shows instantly, holds 60 s");
+      void loadQuoteIndex();
     } catch (e: any) {
       setMicStatus(String(e).replace(/^Error:\s*/, ""));
     }
@@ -473,6 +576,82 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function loadQuoteIndex() {
+    if (indexLoadedRef.current) return;
+    indexLoadedRef.current = true;
+    try {
+      const meta = await fetch("verse-index.json").then((r) => {
+        if (!r.ok) throw new Error("missing");
+        return r.json();
+      });
+      const buf = await fetch("verse-index.bin").then((r) => {
+        if (!r.ok) throw new Error("missing");
+        return r.arrayBuffer();
+      });
+      quoteIndexRef.current = { vecs: new Float32Array(buf), refs: meta.refs };
+      setQuoteStatus("ready · " + meta.count + " verses");
+    } catch (e) {
+      indexLoadedRef.current = false;
+      setQuoteStatus("index missing — run scripts/verse-index");
+    }
+  }
+
+  async function quoteCheck(text: string) {
+    const idx = quoteIndexRef.current;
+    if (!idx || quoteBusy.current) return;
+    const words = text.trim().split(/\s+/).length;
+    if (words < 6) return;
+    quoteBusy.current = true;
+    try {
+      const q = await Embedder.embed(cleanText(text));
+      let best = -1;
+      let bestS = 0;
+      const n = idx.refs.length;
+      for (let i = 0; i < n; i++) {
+        let dot = 0;
+        const off = i * 384;
+        for (let k = 0; k < 384; k++) dot += q[k] * idx.vecs[off + k];
+        if (dot > bestS) {
+          bestS = dot;
+          best = i;
+        }
+      }
+      if (best >= 0 && bestS >= QUOTE_THRESHOLD) {
+        const r = idx.refs[best];
+        const hit = await invoke<VerseHit | null>("verse_at", {
+          book: r[0],
+          chapter: r[1],
+          verse: r[2],
+          translation: trIdRef.current,
+        });
+        const now = Date.now();
+        if (hit) {
+          const label = hit.label;
+          if (
+            !(shownRef.current[label] && now - shownRef.current[label] < 180000) &&
+            !cardsRef.current.some((c) => c.label === label && c.status === "pending")
+          ) {
+            shownRef.current[label] = now;
+            cardsRef.current.push({
+              id: seq.current++,
+              label: label,
+              hit: hit,
+              trigger: trimWords(text, 10),
+              kind: "quote",
+              fireAt: now + FIRE_DELAY,
+              status: "pending",
+            });
+            sync();
+          }
+        }
+      }
+    } catch (e) {
+      /* embedding unavailable; ignore */
+    } finally {
+      quoteBusy.current = false;
+    }
+  }
+
   async function detect(text: string, line: TrLine) {
     let found: VerseHit[] = [];
     try {
@@ -493,6 +672,7 @@ export default function App() {
         label: h.label,
         hit: h,
         trigger: line.text,
+        kind: "ref",
         fireAt: now + FIRE_DELAY,
         status: "pending",
       });
@@ -513,6 +693,7 @@ export default function App() {
     }
     sync();
     void detect(cleaned, line);
+    void loadQuoteIndex().then(() => quoteCheck(cleaned));
   }
 
   function matchCommand(text: string): boolean {
@@ -678,15 +859,39 @@ export default function App() {
     }
   }
 
+  function slideBg(t: OutputTheme): any {
+    if (t.bgKind === "image" && t.image) {
+      return {
+        backgroundImage: "url(" + t.image + ")",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    return { background: t.gradient };
+  }
+
+  function overlayEl(t: OutputTheme) {
+    if (t.bgKind === "image" && t.overlay > 0) {
+      return <div style={{ position: "absolute", inset: 0, background: "rgba(5,8,14," + t.overlay + ")" }} />;
+    }
+    return null;
+  }
+
   const now = Date.now();
   const preview = slide ? (
     slide.kind === "summary" ? (
-      renderSummary(slide)
+      renderSummary(slide, outTheme)
     ) : (
-      <div className="slide verse">
-        <span className="vlogo">AMC CHURCH</span>
-        <div className={"vtxt " + sizeClass(slide.body)}>{slide.body}</div>
-        <div className="vref">
+      <div className="slide verse" style={slideBg(outTheme)}>
+        {overlayEl(outTheme)}
+        <span className="vlogo" style={{ position: "absolute", zIndex: 1 }}>AMC CHURCH</span>
+        <div
+          className={"vtxt " + sizeClass(slide.body)}
+          style={{ color: outTheme.textColor, fontFamily: outTheme.font === "sans" ? "inherit" : undefined, position: "relative", zIndex: 1 }}
+        >
+          {slide.body}
+        </div>
+        <div className="vref" style={{ color: outTheme.accent, position: "relative", zIndex: 1 }}>
           {slide.title} · {slide.sub}
         </div>
       </div>
@@ -705,16 +910,13 @@ export default function App() {
           <span className="tag">desktop · native</span>
         </div>
         <div className="group">
-          <button
-            className={"btn" + (view === "console" ? " on" : "")}
-            onClick={() => setView("console")}
-          >
+          <button className={"btn" + (view === "console" ? " on" : "")} onClick={() => setView("console")}>
             Console
           </button>
-          <button
-            className={"btn" + (view === "downloads" ? " on" : "")}
-            onClick={() => setView("downloads")}
-          >
+          <button className={"btn" + (view === "theme" ? " on" : "")} onClick={() => setView("theme")}>
+            Theme
+          </button>
+          <button className={"btn" + (view === "downloads" ? " on" : "")} onClick={() => setView("downloads")}>
             Downloads
           </button>
         </div>
@@ -730,6 +932,9 @@ export default function App() {
             Load model
           </button>
           <span className="chip">{modelStatus}</span>
+          <span className="chip" title="Quote matching index">
+            quotes: {quoteStatus}
+          </span>
         </div>
         <div className="group">
           <span className="grouplabel">Input</span>
@@ -761,8 +966,7 @@ export default function App() {
         )}
       </header>
       {view === "downloads" ? (
-        <div className="downloads">
-          <div className="dl-section">
+        <div className="downloads">          <div className="dl-section">
             <div className="tiny">Bible translations (XML files)</div>
             <p className="sub">
               Download a Bible in Zefania, OpenSong or OSIS XML format, then click Import to
@@ -826,6 +1030,79 @@ export default function App() {
               </label>
             </div>
             <div className="sub" id="importStatus">{micStatus}</div>
+          </div>
+        </div>
+      ) : view === "theme" ? (
+        <div className="downloads">
+          <div className="dl-section">
+            <div className="tiny">Background presets</div>
+            <div className="swatches">
+              {GRADIENTS.map((g, i) => (
+                <div
+                  key={i}
+                  className={"sw" + (outTheme.bgKind === "gradient" && outTheme.gradient === g.css ? " on" : "")}
+                  style={{ background: g.css }}
+                  title={g.name}
+                  onClick={() => setOutTheme({ ...outTheme, bgKind: "gradient", gradient: g.css })}
+                />
+              ))}
+            </div>
+            <label className="btn gold">
+              Choose background image…
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  if (f) void applyImage(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <div className="sub">
+              The theme auto-generates from your image: overlay strength adapts to its brightness, text stays readable, and the accent color picks up the image's dominant tone.
+            </div>
+          </div>
+          <div className="dl-section">
+            <div className="tiny">Style</div>
+            <div className="row">
+              <span className="grouplabel">Overlay</span>
+              <input
+                type="range"
+                min="0"
+                max="85"
+                value={Math.round(outTheme.overlay * 100)}
+                onChange={(e) => setOutTheme({ ...outTheme, overlay: parseInt(e.target.value, 10) / 100 })}
+                style={{ width: 220 }}
+              />
+              <span className="sub">{Math.round(outTheme.overlay * 100)}%</span>
+            </div>
+            <div className="row">
+              <span className="grouplabel">Text</span>
+              <button
+                className="btn"
+                onClick={() =>
+                  setOutTheme({ ...outTheme, textColor: outTheme.textColor === "#f3ecdc" ? "#ffffff" : "#f3ecdc" })
+                }
+              >
+                {outTheme.textColor === "#f3ecdc" ? "Warm white" : "Pure white"}
+              </button>
+              <span className="grouplabel">Font</span>
+              <button
+                className="btn"
+                onClick={() => setOutTheme({ ...outTheme, font: outTheme.font === "serif" ? "sans" : "serif" })}
+              >
+                {outTheme.font === "serif" ? "Serif" : "Sans"}
+              </button>
+              <button className="btn" onClick={() => setOutTheme(DEFAULT_THEME)}>
+                Reset
+              </button>
+            </div>
+          </div>
+          <div className="dl-section">
+            <div className="tiny">Live preview · exactly what the output window shows</div>
+            <div className="preview">{preview}</div>
           </div>
         </div>
       ) : (
@@ -898,6 +1175,9 @@ export default function App() {
               return (
                 <div key={c.id} className="evcard">
                   <b>{c.label}</b>
+                  <span className="chip gold" style={{ marginLeft: 8 }}>
+                    {c.kind === "quote" ? "quote" : "reference"}
+                  </span>
                   <div className="bar">
                     <i style={{ width: pct + "%" }} />
                   </div>
@@ -1020,7 +1300,7 @@ function summaryDensity(slide: Slide): string {
   return "dense";
 }
 
-function renderSummary(slide: Slide) {
+function renderSummary(slide: Slide, theme: OutputTheme) {
   let data: SummaryData | null = null;
   try {
     data = JSON.parse(slide.body);
@@ -1028,39 +1308,60 @@ function renderSummary(slide: Slide) {
     data = null;
   }
   const density = summaryDensity(slide);
+  const txtColor = { color: theme.textColor, fontFamily: theme.font === "sans" ? "inherit" : undefined };
   if (data && data.points) {
     return (
-      <div className={"slide summary " + density}>
-        <div className="sumtitle">{slide.title}</div>
-        <ol className="points">
+      <div className={"slide summary " + density} style={slideBg(theme)}>
+        {overlayEl(theme)}
+        <div className="sumtitle" style={{ color: theme.accent, position: "relative", zIndex: 1 }}>{slide.title}</div>
+        <ol className="points" style={{ position: "relative", zIndex: 1 }}>
           {data.points.map((p, i) => (
             <li key={i}>
-              <div className="pointtext">{p.text}</div>
+              <div className="pointtext" style={txtColor}>{p.text}</div>
               {p.verses.length > 0 && (
                 <ul className="subbullets">
                   {p.verses.map((v, j) => (
-                    <li key={j}>{v}</li>
+                    <li key={j} style={{ color: theme.accent }}>{v}</li>
                   ))}
                 </ul>
               )}
             </li>
           ))}
         </ol>
-        <div className="sumsub">{slide.sub}</div>
+        <div className="sumsub" style={{ position: "relative", zIndex: 1 }}>{slide.sub}</div>
       </div>
     );
   }
   return (
-    <div className={"slide summary " + density}>
-      <div className="sumtitle">{slide.title}</div>
-      <ul className="bullets">
+    <div className={"slide summary " + density} style={slideBg(theme)}>
+      {overlayEl(theme)}
+      <div className="sumtitle" style={{ color: theme.accent, position: "relative", zIndex: 1 }}>{slide.title}</div>
+      <ul className="bullets" style={{ position: "relative", zIndex: 1 }}>
         {slide.body.split("\n").filter((b) => b.trim()).map((b, i) => (
-          <li key={i}>{b}</li>
+          <li key={i} style={txtColor}>{b}</li>
         ))}
       </ul>
-      <div className="sumsub">{slide.sub}</div>
+      <div className="sumsub" style={{ position: "relative", zIndex: 1 }}>{slide.sub}</div>
     </div>
   );
+}
+
+function slideBg(theme: OutputTheme): any {
+  if (theme.bgKind === "image" && theme.image) {
+    return {
+      backgroundImage: "url(" + theme.image + ")",
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+    };
+  }
+  return { background: theme.gradient };
+}
+
+function overlayEl(theme: OutputTheme) {
+  if (theme.bgKind === "image" && theme.overlay > 0) {
+    return <div style={{ position: "absolute", inset: 0, background: "rgba(5,8,14," + theme.overlay + ")" }} />;
+  }
+  return null;
 }
 
 function sizeClass(text: string): string {

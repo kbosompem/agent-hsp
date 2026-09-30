@@ -1,0 +1,9 @@
+{
+  "name": "verse-index",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "dependencies": {
+    "@huggingface/transformers": "^3.3.1"
+  }
+}
