@@ -90,6 +90,12 @@ function isJunk(text: string): boolean {
   return false;
 }
 
+const NUMBER_WORDS = /^(\d+([:.-]\d+)*|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)$/i;
+
+function isNumberWord(tail: string): boolean {
+  return NUMBER_WORDS.test(tail.replace(/^[\s,.:;-]+/, "").replace(/[.,!?]+$/, ""));
+}
+
 function cleanText(text: string): string {
   return text
     .replace(/\[[^\]]*\]/g, " ")
@@ -157,6 +163,14 @@ export default function App() {
   const lastCmdAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
+  // Streaming partials: live text of the segment still being spoken, the
+  // labels the previous partial saw, and labels already fired from partials.
+  const partialRef = useRef<{ seg: number; text: string; labels: Set<string>; fired: string[] }>({
+    seg: -1,
+    text: "",
+    labels: new Set(),
+    fired: [],
+  });
   const indexLoadedRef = useRef(false);
   const dirtyRef = useRef(false);
   const seqRef = useRef<{ slides: VerseHit[]; idx: number } | null>(null);
@@ -527,6 +541,9 @@ export default function App() {
   useEffect(() => {
     const subs = [
       listen<{ text: string; ms: number }>("transcript", (e) => onTranscript(e.payload.text, e.payload.ms)),
+      listen<{ text: string; ms: number; seg: number }>("transcript-partial", (e) =>
+        onPartial(e.payload.text, e.payload.ms, e.payload.seg)
+      ),
       listen<number>("level", (e) => {
         const pct = Math.min(100, Math.round(e.payload * 900));
         setMicLevelPct((prev) => (Math.abs(prev - pct) >= 3 ? pct : prev));
@@ -660,6 +677,10 @@ export default function App() {
       console.error(e);
       return;
     }
+    queueHits(found, line);
+  }
+
+  function queueHits(found: VerseHit[], line: TrLine) {
     const now = Date.now();
     for (const h of found) {
       const last = shownRef.current[h.label];
@@ -680,11 +701,12 @@ export default function App() {
     if (found.length) sync();
   }
 
-  function commitLine(text: string) {
+  function commitLine(text: string, carried: string[] = []) {
     const cleaned = cleanText(text);
     if (!cleaned || isJunk(cleaned)) return;
     extractSermonStructure(cleaned);
-    const line: TrLine = { text: cleaned, labels: [] };
+    // Verses already fired from this segment's partials belong to this line.
+    const line: TrLine = { text: cleaned, labels: carried.slice() };
     transcriptRef.current.push(line);
     if (transcriptRef.current.length > 200) transcriptRef.current.shift();
     const words = cleaned.split(/\s+/);
@@ -826,7 +848,47 @@ export default function App() {
     return true;
   }
 
+  // A partial is the segment so far, re-transcribed every half second while
+  // the speaker is still talking. Only chapter:verse hits that appear in two
+  // partials in a row fire, so "John 3" on the way to "John 3:16" never shows.
+  // Commands and corrections wait for the final transcript.
+  async function onPartial(text: string, ms: number, seg: number) {
+    const p = partialRef.current;
+    if (seg !== p.seg) {
+      partialRef.current = { seg, text: "", labels: new Set(), fired: [] };
+    }
+    const cleaned = cleanText(text);
+    partialRef.current.text = cleaned;
+    diagRef.current = "partial " + ms + " ms · " + trimWords(cleaned, 8);
+    sync();
+    if (!cleaned || isJunk(cleaned)) return;
+    // Drop a trailing number: "John 3 1" may be "John 3 16" half-spoken.
+    const settled = cleaned.replace(/[\s,.:;-]*\b[\w-]+[.,!?]*$/, (m) => (isNumberWord(m) ? "" : m));
+    let found: VerseHit[] = [];
+    try {
+      found = await invoke<VerseHit[]>("lookup", { input: settled, translation: trIdRef.current });
+    } catch (e) {
+      console.error(e);
+      return;
+    }
+    const cur = partialRef.current;
+    if (cur.seg !== seg) return;
+    const withVerse = found.filter((h) => h.reference && h.reference.verse != null);
+    const stable = withVerse.filter((h) => cur.labels.has(h.label));
+    cur.labels = new Set(withVerse.map((h) => h.label));
+    if (!stable.length) return;
+    const line: TrLine = { text: cleaned, labels: [] };
+    queueHits(stable, line);
+    for (const lb of line.labels) if (!cur.fired.includes(lb)) cur.fired.push(lb);
+  }
+
   function onTranscript(text: string, ms: number) {
+    const firedFromPartials = partialRef.current.fired;
+    partialRef.current = { seg: -1, text: "", labels: new Set(), fired: [] };
+    if (!text.trim()) {
+      sync();
+      return;
+    }
     rawRef.current.push(text);
     if (rawRef.current.length > 60) rawRef.current.shift();
     diagRef.current = "native " + ms + " ms · " + trimWords(text, 8);
@@ -842,7 +904,7 @@ export default function App() {
       sync();
       return;
     }
-    commitLine(text);
+    commitLine(text, firedFromPartials);
   }
 
   async function onQuery(v: string, setQ2: (s: string) => void, setHits2: (h: VerseHit[]) => void) {
@@ -1140,7 +1202,10 @@ export default function App() {
                     ))}
                   </div>
                 ))}
-                {transcriptRef.current.length === 0 && (
+                {partialRef.current.text && (
+                  <div className="tr dim">{partialRef.current.text}…</div>
+                )}
+                {transcriptRef.current.length === 0 && !partialRef.current.text && (
                   <div className="sub dim">Speech appears here as it is heard.</div>
                 )}
               </>

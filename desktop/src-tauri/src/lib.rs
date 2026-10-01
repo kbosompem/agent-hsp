@@ -1,4 +1,5 @@
-mod audio;
+pub mod audio;
+pub mod segmenter;
 
 use audio::ListenState;
 use preso_core::{engine, Engine, VerseHit};

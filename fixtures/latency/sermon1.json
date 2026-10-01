@@ -1,0 +1,36 @@
+{
+  "wav": "sermon1.wav",
+  "duration_s": 65.432,
+  "refs": [
+    {
+      "label": "John 3:16",
+      "spoken_end_s": 7.138,
+      "text": "John chapter 3 verse 16"
+    },
+    {
+      "label": "Romans 5:8",
+      "spoken_end_s": 18.048,
+      "text": "Romans 5 verse 8"
+    },
+    {
+      "label": "Philippians 4:13",
+      "spoken_end_s": 30.371,
+      "text": "Philippians 4 13"
+    },
+    {
+      "label": "Psalms 23:1",
+      "spoken_end_s": 39.278,
+      "text": "Psalm 23 verse 1"
+    },
+    {
+      "label": "Isaiah 40:31",
+      "spoken_end_s": 49.734,
+      "text": "Isaiah chapter 40 verse 31"
+    },
+    {
+      "label": "Hebrews 11:1",
+      "spoken_end_s": 57.874,
+      "text": "Hebrews 11 1"
+    }
+  ]
+}

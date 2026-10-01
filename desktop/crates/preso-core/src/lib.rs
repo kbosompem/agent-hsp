@@ -940,10 +940,14 @@ fn parse_refs_impl(
     while i < tokens.len() {
         if let Some((book, mlen)) = match_book(&tokens, i, aliases) {
             if let Some(p) = parse_ref_after_book(&tokens, i + mlen) {
-                push!(
-                    valid_ref_books(books, book, p.chapter, p.verse, p.end_verse),
-                    i
-                );
+                let r = valid_ref_books(books, book, p.chapter, p.verse, p.end_verse).or_else(|| {
+                    if p.verse.is_none() {
+                        split_glued(books, book, p.chapter)
+                    } else {
+                        None
+                    }
+                });
+                push!(r, i);
                 i = std::cmp::max(p.end, i + mlen);
                 continue;
             }
@@ -1016,6 +1020,31 @@ fn parse_refs_impl(
     }
     refs.sort_by_key(|r| r.pos);
     refs
+}
+
+/// Whisper often writes "Philippians 4 13" as "Philippians 413". When the
+/// number is not a real chapter, split it into chapter and verse, but only
+/// when exactly one split is a real verse ("Genesis 111" stays unresolved).
+fn split_glued(books: &[RawBook], book: usize, n: usize) -> Option<BibleRef> {
+    let s = n.to_string();
+    if s.len() < 3 {
+        return None;
+    }
+    let mut found = None;
+    for k in 1..s.len() {
+        if s[k..].starts_with('0') {
+            continue;
+        }
+        let c: usize = s[..k].parse().ok()?;
+        let v: usize = s[k..].parse().ok()?;
+        if let Some(r) = valid_ref_books(books, book, c, Some(v), None) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(r);
+        }
+    }
+    found
 }
 
 fn valid_ref_books(
@@ -1103,6 +1132,17 @@ mod tests {
     #[test]
     fn chapter_only() {
         assert_eq!(refs("Turn to Psalms twenty three"), vec!["Psalm 23"]);
+    }
+
+    #[test]
+    fn glued_chapter_verse() {
+        assert_eq!(refs("remember Philippians 413 and keep walking"), vec!["Philippians 4:13"]);
+        assert_eq!(refs("John 316"), vec!["John 3:16"]);
+        assert_eq!(refs("Psalm 1191"), vec!["Psalm 119:1"]);
+        // ambiguous: 1:11 or 11:1
+        assert!(refs("Genesis 111").is_empty());
+        // a real chapter is never split
+        assert_eq!(refs("Psalm 119"), vec!["Psalm 119"]);
     }
 
     #[test]
