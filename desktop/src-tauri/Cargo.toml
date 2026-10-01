@@ -18,3 +18,7 @@ preso-core = { path = "../crates/preso-core" }
 cpal = "0.15"
 whisper-rs = "0.13"
 ureq = "2"
+
+# GPU inference on Apple Silicon. Windows stays on CPU.
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.13", features = ["metal"] }

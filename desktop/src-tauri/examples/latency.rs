@@ -45,6 +45,29 @@ fn drop_trailing_number(t: &str) -> String {
     if numeric { trimmed[..cut].to_string() } else { t.to_string() }
 }
 
+/// Mirror of settleTail() in App.tsx.
+fn settle_tail(t: &str) -> String {
+    let mut s = drop_trailing_number(t);
+    loop {
+        let words: Vec<&str> = s.split_whitespace().collect();
+        if words.len() < 2 {
+            return s;
+        }
+        let last = words[words.len() - 1]
+            .trim_matches(|c: char| ",.:;-!?".contains(c))
+            .to_lowercase();
+        if !["and", "to", "through", "thru", "until", "till"].contains(&last.as_str()) {
+            return s;
+        }
+        let rest = words[..words.len() - 1].join(" ");
+        let dropped = drop_trailing_number(&rest);
+        if dropped.trim_end() == rest.trim_end() {
+            return s;
+        }
+        s = dropped;
+    }
+}
+
 fn norm(l: &str) -> String {
     l.to_lowercase().replace("psalms", "psalm")
 }
@@ -102,7 +125,7 @@ fn main() {
         // Partials only act on chapter:verse hits; "John chapter 3" mid-sentence
         // is usually the front half of "John chapter 3 verse 16".
         // ...and ignore a trailing number: "John 3 1" may be "John 3 16" half-spoken.
-        let settled = if partial { drop_trailing_number(&text) } else { text.clone() };
+        let settled = if partial { settle_tail(&text) } else { text.clone() };
         let labels: HashSet<String> = eng
             .lookup(&settled, None)
             .into_iter()

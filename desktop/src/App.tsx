@@ -96,6 +96,21 @@ function isNumberWord(tail: string): boolean {
   return NUMBER_WORDS.test(tail.replace(/^[\s,.:;-]+/, "").replace(/[.,!?]+$/, ""));
 }
 
+const RANGE_WORDS = new Set(["and", "to", "through", "thru", "until", "till"]);
+
+// Trim the unfinished end of a partial transcript. "John 3 1" may be "John 3 16"
+// half-spoken, and "Proverbs 3 verses 5 and" may be the start of "5 and 6".
+// Drops a trailing number, then any trailing "<number> <range word>".
+function settleTail(text: string): string {
+  const words = text.trim().split(/\s+/);
+  const bare = (w: string) => w.replace(/^[,.:;-]+/, "").replace(/[.,!?:;-]+$/, "").toLowerCase();
+  if (words.length && isNumberWord(words[words.length - 1])) words.pop();
+  while (words.length >= 2 && RANGE_WORDS.has(bare(words[words.length - 1])) && isNumberWord(words[words.length - 2])) {
+    words.splice(-2, 2);
+  }
+  return words.join(" ");
+}
+
 function cleanText(text: string): string {
   return text
     .replace(/\[[^\]]*\]/g, " ")
@@ -119,7 +134,9 @@ export default function App() {
   const [micLevelPct, setMicLevelPct] = useState(0);
   const [mics, setMics] = useState<string[]>([]);
   const [micId, setMicId] = useState("");
-  const [model, setModel] = useState("tiny.en");
+  // small.en finds the most verses in noisy-room tests; Macs run it on the GPU.
+  // Windows runs whisper on the CPU, where base.en is the safer default.
+  const [model, setModel] = useState(() => (/Mac/i.test(navigator.userAgent) ? "small.en" : "base.en"));
   const [theme, setTheme] = useState<"dark" | "light">(
     () => (localStorage.getItem("preso-theme") as "dark" | "light") || "dark"
   );
@@ -862,8 +879,7 @@ export default function App() {
     diagRef.current = "partial " + ms + " ms · " + trimWords(cleaned, 8);
     sync();
     if (!cleaned || isJunk(cleaned)) return;
-    // Drop a trailing number: "John 3 1" may be "John 3 16" half-spoken.
-    const settled = cleaned.replace(/[\s,.:;-]*\b[\w-]+[.,!?]*$/, (m) => (isNumberWord(m) ? "" : m));
+    const settled = settleTail(cleaned);
     let found: VerseHit[] = [];
     try {
       found = await invoke<VerseHit[]>("lookup", { input: settled, translation: trIdRef.current });
@@ -989,6 +1005,7 @@ export default function App() {
           <select value={model} onChange={(e) => setModel(e.target.value)}>
             <option value="tiny.en">Whisper tiny.en (75 MB, fast)</option>
             <option value="base.en">Whisper base.en (142 MB, better)</option>
+            <option value="small.en">Whisper small.en (466 MB, best)</option>
           </select>
           <button className="btn" onClick={loadModel}>
             Load model

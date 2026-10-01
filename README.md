@@ -22,7 +22,7 @@ It combines what PewBeam does (real-time AI scripture display) with what VideoPs
 - Verse lifecycle: instant show, 60-second hold, then a live summary slide
 - Sermon outline capture: "the title of my message is...", "point number one..." drive the summary
 - Instant show on the projector, NDI-ready layout, light/dark operator themes, output theme designer with auto-generated styling from any background image
-- Whisper speech-to-text (tiny.en / base.en) running natively via whisper.cpp: Metal on macOS, CPU on Windows
+- Whisper speech-to-text (tiny.en / base.en / small.en) running natively via whisper.cpp: Metal GPU on macOS, CPU on Windows. Default: small.en on Mac, base.en on Windows
 - Hold (H), blackout (B), logo (L) and panic (Shift+Esc) safety keys
 
 ## In flight
@@ -42,7 +42,7 @@ npm run tauri dev      # runs it
 npm run tauri build    # installers
 ```
 
-Prerequisites: Node 20+, Rust stable, CMake. The Whisper model (75 MB, tiny.en) downloads once into the app data folder on first use.
+Prerequisites: Node 20+, Rust stable, CMake. The Whisper model (466 MB small.en on Mac, 142 MB base.en on Windows) downloads once into the app data folder on first use.
 
 ### Rebuild the verse quote index
 
@@ -52,6 +52,16 @@ Quote matching ships without its embedding index (about 47 MB). Generate it once
 cd scripts/verse-index
 npm install
 node build.js
+```
+
+### Measure verse speed and accuracy
+
+`fixtures/latency/` holds synthetic sermons (macOS text-to-speech, some with simulated sanctuary echo and noise) with the time each reference is spoken. The harness replays them through the real segmenter, whisper and parser in simulated real time and reports verses found, wrong verses, and seconds from spoken to detected.
+
+```bash
+cd desktop && cargo build --release --example latency
+../scripts/latency-fixture/run-all.sh small.en      # one line per fixture
+python3 ../scripts/latency-fixture/make.py hard-tessa-hall Tessa 185 hall   # make a new fixture
 ```
 
 ## Repository layout

@@ -169,7 +169,9 @@ pub fn run_whisper_opts(
         if audio_ctx {
             // 1500 encoder frames cover 30 s; size the window to the audio plus margin.
             let secs = samples.len() as f32 / TARGET_SR as f32;
-            params.set_audio_ctx(((secs * 50.0) as i32 + 128).min(1500));
+            // Rounded to 64 frames: Metal kernels assert on unaligned row sizes.
+            let frames = ((secs * 50.0) as i32 + 128 + 63) / 64 * 64;
+            params.set_audio_ctx(frames.min(1500));
         }
     }
     let t0 = std::time::Instant::now();

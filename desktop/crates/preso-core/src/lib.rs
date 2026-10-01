@@ -24,7 +24,7 @@ const BOOK_ALIASES: [&[&str]; 66] = [
     &["job"],
     &["psalms", "psalm", "ps", "psa"],
     &["proverbs", "prov", "prv"],
-    &["ecclesiastes", "eccl", "eccles", "ec"],
+    &["ecclesiastes", "eccl", "eccles", "ec", "ecclesiast", "ecclesiastics", "ecclesiates"],
     &["song of solomon", "song of songs", "songs", "sos", "canticles", "song"],
     &["isaiah", "isa"],
     &["jeremiah", "jer"],
@@ -38,8 +38,8 @@ const BOOK_ALIASES: [&[&str]; 66] = [
     &["jonah", "jon"],
     &["micah", "mic"],
     &["nahum", "nah"],
-    &["habakkuk", "hab"],
-    &["zephaniah", "zeph"],
+    &["habakkuk", "hab", "habakuk", "habbakuk", "habbakkuk"],
+    &["zephaniah", "zeph", "zephania", "zephenia"],
     &["haggai", "hag"],
     &["zechariah", "zech", "zec"],
     &["malachi", "mal"],
@@ -53,7 +53,7 @@ const BOOK_ALIASES: [&[&str]; 66] = [
     &["2 corinthians", "second corinthians", "two corinthians", "2cor", "ii corinthians", "2 cor"],
     &["galatians", "gal"],
     &["ephesians", "eph"],
-    &["philippians", "phil", "php"],
+    &["philippians", "phil", "php", "phillipians", "philipians"],
     &["colossians", "col"],
     &["1 thessalonians", "first thessalonians", "one thessalonians", "1thess", "i thessalonians", "1 thess"],
     &["2 thessalonians", "second thessalonians", "two thessalonians", "2thess", "ii thessalonians", "2 thess"],
@@ -921,7 +921,8 @@ fn parse_refs_impl(
     if norm.is_empty() {
         return Vec::new();
     }
-    let tokens: Vec<&str> = norm.split(' ').collect();
+    let owned = rewrite_tokens(&norm);
+    let tokens: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     let mut refs: Vec<BibleRef> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     macro_rules! push {
@@ -1020,6 +1021,33 @@ fn parse_refs_impl(
     }
     refs.sort_by_key(|r| r.pos);
     refs
+}
+
+/// Undo transcription habits before matching: "1st John" means First John,
+/// and "Micah 6a" is "Micah six eight" with the eight heard as "a".
+fn rewrite_tokens(norm: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for t in norm.split(' ') {
+        match t {
+            "1st" => out.push("first".into()),
+            "2nd" => out.push("second".into()),
+            "3rd" => out.push("third".into()),
+            _ => {
+                let b = t.as_bytes();
+                if b.len() >= 2
+                    && b.len() <= 4
+                    && b[b.len() - 1] == b'a'
+                    && b[..b.len() - 1].iter().all(|c| c.is_ascii_digit())
+                {
+                    out.push(t[..t.len() - 1].to_string());
+                    out.push("8".into());
+                } else {
+                    out.push(t.to_string());
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Whisper often writes "Philippians 4 13" as "Philippians 413". When the
@@ -1143,6 +1171,16 @@ mod tests {
         assert!(refs("Genesis 111").is_empty());
         // a real chapter is never split
         assert_eq!(refs("Psalm 119"), vec!["Psalm 119"]);
+    }
+
+    #[test]
+    fn transcription_habits() {
+        assert_eq!(refs("1st Corinthians 13 verse 4"), vec!["1 Corinthians 13:4"]);
+        assert_eq!(refs("2nd Timothy 3, 16."), vec!["2 Timothy 3:16"]);
+        assert_eq!(refs("John writes in 1st John 1.9"), vec!["1 John 1:9"]);
+        assert_eq!(refs("the preacher in Ecclesiast 3 1 says"), vec!["Ecclesiastes 3:1"]);
+        assert_eq!(refs("And Micah 6a asks what does the Lord require"), vec!["Micah 6:8"]);
+        assert_eq!(refs("Turn to Jeremiah 2911 for I know"), vec!["Jeremiah 29:11"]);
     }
 
     #[test]

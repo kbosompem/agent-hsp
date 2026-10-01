@@ -3,7 +3,12 @@
 //
 // Positions are absolute sample counts at 16 kHz since capture started.
 
+use std::collections::VecDeque;
+
 pub const SR: u64 = 16000;
+
+/// How far back a forced cut may move to find a quiet spot.
+const CUT_LOOKBACK: u64 = 3 * SR;
 
 #[derive(Clone, Copy, Debug)]
 pub struct SegConfig {
@@ -54,6 +59,8 @@ pub struct Segmenter {
     seg_start: Option<u64>,
     last_voiced: u64,
     last_partial: u64,
+    /// Recent (position, level) pairs, for choosing where to force-cut.
+    history: VecDeque<(u64, f32)>,
 }
 
 impl Segmenter {
@@ -64,6 +71,7 @@ impl Segmenter {
             seg_start: None,
             last_voiced: 0,
             last_partial: 0,
+            history: VecDeque::new(),
         }
     }
 
@@ -78,6 +86,10 @@ impl Segmenter {
         }
         let threshold = (self.floor * 3.0).max(0.0035);
         let voiced = tail_rms > threshold;
+        self.history.push_back((total, tail_rms));
+        while self.history.front().map_or(false, |&(p, _)| p + CUT_LOOKBACK < total) {
+            self.history.pop_front();
+        }
 
         if voiced {
             self.last_voiced = total;
@@ -91,9 +103,20 @@ impl Segmenter {
                 }
             };
             if total - ss >= self.cfg.max_segment {
-                self.seg_start = Some(total);
-                self.last_partial = total;
-                return Some(Job::Final { start: ss, end: total, seg: ss });
+                // In a noisy, echoey room the level may never drop below the
+                // threshold, so segments hit the cap. Cut at the quietest
+                // recent moment rather than mid-word ("Ephesians 2 | 8").
+                let cut = self
+                    .history
+                    .iter()
+                    .filter(|&&(p, _)| p >= ss + SR)
+                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|&(p, _)| p.saturating_sub(SR / 4))
+                    .unwrap_or(total)
+                    .max(ss + SR);
+                self.seg_start = Some(cut);
+                self.last_partial = cut;
+                return Some(Job::Final { start: ss, end: cut, seg: ss });
             }
         } else if let Some(ss) = self.seg_start {
             if total - self.last_voiced >= self.cfg.silence_end {
@@ -168,6 +191,26 @@ mod tests {
         let jobs = run(SegConfig::streaming(), &[(true, 2000), (false, 400), (true, 2000), (false, 1500)]);
         let finals = jobs.iter().filter(|j| matches!(j, Job::Final { .. })).count();
         assert_eq!(finals, 1);
+    }
+
+    #[test]
+    fn forced_cut_lands_on_quiet_moment() {
+        let mut cfg = SegConfig::streaming();
+        cfg.silence_end = 10 * SR; // never close on silence in this test
+        let mut s = Segmenter::new(cfg, 0.002);
+        let mut t = 0u64;
+        let mut cut = None;
+        for i in 0..200 {
+            t += SR / 10;
+            // loud, with a dip 1.5 s before the cap
+            let rms = if i == 138 { 0.02 } else { 0.1 };
+            if let Some(Job::Final { end, .. }) = s.step(rms, t) {
+                cut = Some(end);
+                break;
+            }
+        }
+        let end = cut.expect("forced final");
+        assert_eq!(end, 139 * SR / 10 - SR / 4);
     }
 
     #[test]

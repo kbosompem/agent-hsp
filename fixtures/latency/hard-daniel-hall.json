@@ -1,0 +1,96 @@
+{
+  "wav": "hard-daniel-hall.wav",
+  "duration_s": 111.983,
+  "refs": [
+    {
+      "label": "1 Corinthians 13:4",
+      "spoken_end_s": 5.169,
+      "text": "First Corinthians 13 verse 4"
+    },
+    {
+      "label": "2 Timothy 3:16",
+      "spoken_end_s": 11.638,
+      "text": "Second Timothy 3 16"
+    },
+    {
+      "label": "Habakkuk 2:3",
+      "spoken_end_s": 19.185,
+      "text": "Habakkuk chapter 2 verse 3"
+    },
+    {
+      "label": "Ecclesiastes 3:1",
+      "spoken_end_s": 24.68,
+      "text": "Ecclesiastes 3 1"
+    },
+    {
+      "label": "Lamentations 3:22-23",
+      "spoken_end_s": 30.502,
+      "text": "Lamentations 3 22 to 23"
+    },
+    {
+      "label": "Zephaniah 3:17",
+      "spoken_end_s": 37.99,
+      "text": "Zephaniah 3 17"
+    },
+    {
+      "label": "Nahum 1:7",
+      "spoken_end_s": 41.931,
+      "text": "Nahum 1 7"
+    },
+    {
+      "label": "1 John 1:9",
+      "spoken_end_s": 47.621,
+      "text": "First John 1 9"
+    },
+    {
+      "label": "Deuteronomy 31:6",
+      "spoken_end_s": 55.607,
+      "text": "Deuteronomy 31 verse 6"
+    },
+    {
+      "label": "Micah 6:8",
+      "spoken_end_s": 59.249,
+      "text": "Micah 6 8"
+    },
+    {
+      "label": "Jeremiah 29:11",
+      "spoken_end_s": 64.643,
+      "text": "Jeremiah 29 11"
+    },
+    {
+      "label": "Proverbs 3:5-6",
+      "spoken_end_s": 72.347,
+      "text": "Proverbs 3 verses 5 and 6"
+    },
+    {
+      "label": "Matthew 6:33",
+      "spoken_end_s": 77.386,
+      "text": "Matthew 6 33"
+    },
+    {
+      "label": "Ephesians 2:8",
+      "spoken_end_s": 81.687,
+      "text": "Ephesians 2 8"
+    },
+    {
+      "label": "James 1:2",
+      "spoken_end_s": 88.535,
+      "text": "James 1 2"
+    },
+    {
+      "label": "Joshua 1:9",
+      "spoken_end_s": 93.274,
+      "text": "Joshua chapter 1 verse 9"
+    },
+    {
+      "label": "Malachi 3:10",
+      "spoken_end_s": 98.425,
+      "text": "Malachi 3 10"
+    },
+    {
+      "label": "Revelation 21:4",
+      "spoken_end_s": 105.382,
+      "text": "Revelation 21 4"
+    }
+  ]
+}
