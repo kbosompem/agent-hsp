@@ -1,6 +1,6 @@
 // Tests for src/lib/voice.ts.
 //   npx esbuild scripts/test-voice.ts --bundle --platform=node --outfile=/tmp/tv.js && node /tmp/tv.js
-import { contentWords, findLoaded, readPast, translationRequest } from "../src/lib/voice";
+import { contentWords, findLoaded, hasReferenceWords, normalizeSpeech, readPast, readingOverlap, translationRequest } from "../src/lib/voice";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -57,6 +57,15 @@ check("nirv not niv", translationRequest("show the new international reader's ve
 check("new king james not king james", translationRequest("read it in the new king james"), { code: "nkjv", name: "New King James Version" });
 check("loved vs love", readPast(heard("for god so love the world that he gave his only begotten son"), "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", null), false);
 check("loved vs love, finished", readPast(heard("for god so love the world he gave his only son whoever believes in him shall not perish but have eternal life"), "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", null), true);
+
+// James 3:3 being read must not look like a new quote (it matched 1 Cor 12:23)
+const J3_3 = "Behold, we put bits in the horses' mouths, that they may obey us; and we turn about their whole body.";
+check("reading James 3:3 overlaps it", readingOverlap("That they may obey us and we turn about their whole body.", J3_3) >= 0.3, true);
+check("a new thought does not", readingOverlap("God has a plan for every member of this church family", J3_3) < 0.3, true);
+check("go back with a reference is not navigation", hasReferenceWords(normalizeSpeech("Now go back to James chapter 3 verse 3.")), true);
+check("plain go back is navigation", hasReferenceWords(normalizeSpeech("Okay go back")), false);
+check("next verse is navigation", hasReferenceWords(normalizeSpeech("next verse please")), false);
+check("the next verse 4 is a reference", hasReferenceWords(normalizeSpeech("the next verse, verse 4")), true);
 
 const loaded = [
   { id: "kjv", name: "King James Version" },

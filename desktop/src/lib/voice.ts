@@ -61,6 +61,27 @@ export function readPast(spoken: string[], current: string, next: string | null)
   return false;
 }
 
+/**
+ * Share of a spoken line's content words that come from the verse on screen.
+ * High overlap means the preacher is reading it, so the line must not be
+ * treated as a new quote.
+ */
+export function readingOverlap(spoken: string, verseText: string): number {
+  const said = Array.from(new Set(contentWords(spoken)));
+  if (!said.length) return 0;
+  const verse = new Set(contentWords(verseText));
+  return said.filter((w) => verse.has(w)).length / said.length;
+}
+
+/**
+ * "go back", "next verse" and similar are navigation only when the sentence
+ * carries no reference of its own: "go back to James chapter 3 verse 3" is a
+ * reference to show, not a step backwards.
+ */
+export function hasReferenceWords(normalized: string): boolean {
+  return /\d|\b(chapter|chapters|verse|verses)\b/.test(normalized.replace(/\b(next|previous|last) verse\b/g, ""));
+}
+
 // ----------------------------------------------------------- translations
 
 /** Common English translations: code, full name, and the ways people say them. */

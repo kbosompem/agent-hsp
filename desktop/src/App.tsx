@@ -14,7 +14,7 @@ import {
   SummaryData,
   trimWords,
 } from "./lib/sermon";
-import { contentWords, findLoaded, readPast, translationRequest } from "./lib/voice";
+import { contentWords, findLoaded, hasReferenceWords, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
 type VerseHit = {
   label: string;
@@ -79,7 +79,12 @@ const DEFAULT_THEME: OutputTheme = {
   font: "serif",
 };
 
-const QUOTE_THRESHOLD = 0.55;
+// VerseCast's value from real sermon audio; tune on our sermons (issue 15).
+const QUOTE_THRESHOLD = 0.62;
+// A spoken reference is skipped if shown this recently (or still on screen).
+const REF_REPEAT_MS = 30000;
+// A quote match is not repeated within this window.
+const QUOTE_REPEAT_MS = 180000;
 
 const FIRE_DELAY = 600;
 const VERSE_HOLD_MS = 60000;
@@ -265,6 +270,18 @@ export default function App() {
 
   async function showVerse(h: VerseHit, trigger?: string) {
     const ref = h.reference;
+    // A single verse inside the range on screen: jump there and keep following.
+    const seqr = seqRef.current;
+    if (seqr && ref && ref.verse && !ref.end_verse) {
+      const at = seqr.slides.findIndex(
+        (s) => s.reference && s.reference.book === ref.book && s.reference.chapter === ref.chapter && s.reference.verse === ref.verse
+      );
+      if (at >= 0) {
+        await showSeqSlide(at);
+        setMicStatus("Following the reading: " + seqr.slides[at].label + " (" + (at + 1) + " of " + seqr.slides.length + ")");
+        return;
+      }
+    }
     if (ref && ref.verse && ref.end_verse && ref.end_verse > ref.verse) {
       const slides = await invoke<VerseHit[]>("verse_range", {
         book: ref.book,
@@ -559,9 +576,20 @@ export default function App() {
     }
   }
 
+  // Quote matching must never interrupt scripture being read: not while a
+  // range is up, and not when the line is the verse on screen read aloud.
+  function readingInProgress(text: string): boolean {
+    const onScreen = !!slideRef.current && slideRef.current.kind === "verse";
+    if (!onScreen) return false;
+    if (seqRef.current) return true;
+    const cur = lastVerse.current;
+    return !!cur && readingOverlap(text, cur.text) >= 0.3;
+  }
+
   async function quoteCheck(text: string) {
     const idx = quoteIndexRef.current;
     if (!idx || quoteBusy.current) return;
+    if (readingInProgress(text)) return;
     const words = text.trim().split(/\s+/).length;
     if (words < 6) return;
     quoteBusy.current = true;
@@ -591,7 +619,8 @@ export default function App() {
         if (hit) {
           const label = hit.label;
           if (
-            !(shownRef.current[label] && now - shownRef.current[label] < 180000) &&
+            !(shownRef.current[label] && now - shownRef.current[label] < QUOTE_REPEAT_MS) &&
+            !readingInProgress(text) &&
             !cardsRef.current.some((c) => c.label === label && c.status === "pending")
           ) {
             shownRef.current[label] = now;
@@ -630,7 +659,8 @@ export default function App() {
     const now = Date.now();
     for (const h of found) {
       const last = shownRef.current[h.label];
-      if (last && now - last < 180000) continue;
+      if (last && now - last < REF_REPEAT_MS) continue;
+      if (lastVerse.current && lastVerse.current.label === h.label && slideRef.current?.kind === "verse") continue;
       if (cardsRef.current.some((c) => c.label === h.label && c.status === "pending")) continue;
       shownRef.current[h.label] = now;
       line.labels.push(h.label);
@@ -704,15 +734,17 @@ export default function App() {
         );
       }
     }
+    // Navigation phrases yield to a reference in the same sentence.
+    const navOnly = !hasReferenceWords(norm);
     const nextPhrases = ["next verse", "next slide", "next one", "keep going"];
-    if (nextPhrases.some((p) => norm.includes(p))) {
+    if (navOnly && nextPhrases.some((p) => norm.includes(p))) {
       if (now - lastCmdAt.current < 1200) return true;
       lastCmdAt.current = now;
       void nextVerse();
       return true;
     }
     const prevPhrases = ["previous verse", "previous slide", "go back", "last verse", "back one"];
-    if (prevPhrases.some((p) => norm.includes(p))) {
+    if (navOnly && prevPhrases.some((p) => norm.includes(p))) {
       if (now - lastCmdAt.current < 1200) return true;
       lastCmdAt.current = now;
       void prevVerse();
@@ -727,7 +759,7 @@ export default function App() {
       "put it back up",
       "one more time",
     ];
-    if (reshowPhrases.some((p) => norm.includes(p))) {
+    if (navOnly && reshowPhrases.some((p) => norm.includes(p))) {
       if (now - lastCmdAt.current < 2000) return true;
       lastCmdAt.current = now;
       if (lastVerse.current) {
