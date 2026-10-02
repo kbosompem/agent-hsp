@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>AMC Preso listens to the sermon to put the Bible verses the preacher cites on screen. Audio stays on this computer.</string>
+  <string>Agent HSP listens to the sermon to put the Bible verses the preacher cites on screen. Audio stays on this computer.</string>
 </dict>
 </plist>

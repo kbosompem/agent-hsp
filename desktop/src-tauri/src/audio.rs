@@ -318,7 +318,7 @@ fn spawn_capture(
                         let _ = app.emit(
                             "listen-status",
                             format!(
-                                "No sound from {}. Allow AMC Preso in System Settings > Privacy & Security > Microphone, then press Listen again.",
+                                "No sound from {}. Allow Agent HSP in System Settings > Privacy & Security > Microphone, then press Listen again.",
                                 name
                             ),
                         );

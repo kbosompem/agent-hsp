@@ -5,7 +5,7 @@ var Output={
   currentKind:"idle",
 
   doc:function(){
-    return "<!DOCTYPE html><html><head><meta charset='utf-8'><title>AMC Preso · Output</title><style>"+
+    return "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Agent HSP · Output</title><style>"+
     "html,body{margin:0;height:100%;background:#07090e;overflow:hidden;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}"+
     "#stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}"+
     ".slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6% 8%}"+
@@ -39,8 +39,8 @@ var Output={
     "#fsbtn{position:absolute;top:2%;right:2%;z-index:200;font-size:1.2vmin;letter-spacing:.28em;color:#8b93a7;background:rgba(10,13,20,.65);border:1px solid #2a3350;border-radius:.4vmin;padding:.7vmin 1.6vmin;cursor:pointer}"+
     "#fsbtn:hover{color:#e9c465;border-color:#6b541f}"+
     "@keyframes fadein{from{opacity:0;transform:translateY(1.5vmin)}to{opacity:1;transform:none}}"+
-    "</style></head><body><div id='stage'><div class='slide idle'><div class='sp-sub'>AMC Preso</div></div></div></div>"+
-    "<div id='alertlayer'></div><div id='black'></div><div id='hint'>AMC Preso output</div><div id='fsbtn'>FULLSCREEN</div>"+
+    "</style></head><body><div id='stage'><div class='slide idle'><div class='sp-sub'>Agent HSP</div></div></div></div>"+
+    "<div id='alertlayer'></div><div id='black'></div><div id='hint'>Agent HSP output</div><div id='fsbtn'>FULLSCREEN</div>"+
     "<script>"+
     "var ringTimer=null,cdTimer=null,alertTimer=null;"+
     "function el(i){return document.getElementById(i);}"+
@@ -57,7 +57,7 @@ var Output={
     "function alertMsg(m){if(alertTimer)clearTimeout(alertTimer);var d=document.createElement('div');d.innerHTML='<b style=\"color:#e9c465;letter-spacing:.2em;font-size:1.6vmin;margin-right:1.4vmin\">ALERT</b>'+m.text;var layer=el('alertlayer');layer.innerHTML='';layer.appendChild(d);alertTimer=setTimeout(function(){layer.innerHTML='';},(m.seconds||20)*1000);}"+
     "function blackout(on){el('black').style.opacity=on?1:0;}"+
     "function logo(){stage(\"<div class='slide logo'><div class='sp-title' style='font-size:2.6vmin;letter-spacing:.7em'>AMC CHURCH</div></div>\");}"+
-    "function clearOut(){stage(\"<div class='slide idle'><div class='sp-sub'>AMC Preso</div></div>\");}"+
+    "function clearOut(){stage(\"<div class='slide idle'><div class='sp-sub'>Agent HSP</div></div>\");}"+
     "window.addEventListener('message',function(e){var m=e.data;if(!m||!m.cmd)return;"+
     "if(m.cmd==='verse')verse(m);else if(m.cmd==='lyrics')lyrics(m);else if(m.cmd==='splash')splash(m);else if(m.cmd==='countdown')countdown(m);else if(m.cmd==='alert')alertMsg(m);else if(m.cmd==='blackout')blackout(true);else if(m.cmd==='unblackout')blackout(false);else if(m.cmd==='logo')logo();else if(m.cmd==='clear')clearOut();});"+
     "document.addEventListener('dblclick',function(){if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen();});"+

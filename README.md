@@ -1,4 +1,6 @@
-# AMC Preso
+# Agent HSP
+
+*High Speed Projection.* The projectionist is called the HSP; Agent HSP is an AI projectionist that works alongside them. Say "HSP" and what follows is an instruction to the projectionist.
 
 **The sermon, on screen, by itself.**
 

@@ -10,7 +10,7 @@ import json, os, subprocess, sys, time, urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 APP = os.path.join(ROOT, "fixtures", "real", "app")
-MODEL = os.path.expanduser("~/Library/Application Support/com.amcpreso.desktop/models/llama-3.2-3b-instruct-q4_k_m.gguf")
+MODEL = os.path.expanduser("~/Library/Application Support/com.agenthsp.desktop/models/llama-3.2-3b-instruct-q4_k_m.gguf")
 PORT = 8099
 MAX_WORDS = 9000
 

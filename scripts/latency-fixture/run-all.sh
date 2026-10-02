@@ -6,7 +6,7 @@ set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MODEL="$1"; shift
 DIR="${1:-$ROOT/fixtures/latency}"; [ $# -gt 0 ] && shift
-MDIR="$HOME/Library/Application Support/com.amcpreso.desktop/models"
+MDIR="$HOME/Library/Application Support/com.agenthsp.desktop/models"
 BIN="$ROOT/desktop/target/release/examples/latency"
 for f in "$DIR"/*.json; do
   case "$f" in *.ref.json) continue;; esac

@@ -157,12 +157,25 @@ fn show_slide(
     slide
 }
 
+/// The app was called "AMC Preso" (bundle id com.amcpreso.desktop) before
+/// it became Agent HSP. Move its data (speech models, imported translations)
+/// to the new location once, so nothing has to be downloaded again.
+fn migrate_old_app_data(app: &tauri::AppHandle) {
+    let Ok(new_dir) = app.path().app_data_dir() else { return };
+    let Some(parent) = new_dir.parent() else { return };
+    let old_dir = parent.join("com.amcpreso.desktop");
+    if old_dir.is_dir() && !new_dir.exists() {
+        let _ = std::fs::rename(&old_dir, &new_dir);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(ListenState::new())
         .manage(Mutex::new(LiveLookup::new()))
         .setup(|app| {
+            migrate_old_app_data(app.handle());
             let dir = app
                 .path()
                 .app_data_dir()

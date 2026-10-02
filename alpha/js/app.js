@@ -491,7 +491,7 @@ function previewSplash(){
 function previewCountdown(){$("preview").innerHTML="<div class='slide verse'><div class='cdtime'>5:00</div><div class='cdlabel'>Service begins soon</div></div>";$("previewKind").textContent="countdown";}
 function previewLogo(){$("preview").innerHTML="<div class='slide logo'><div class='sptitle sm'>AMC CHURCH</div></div>";$("previewKind").textContent="logo";}
 function previewAlert(t){$("preview").innerHTML="<div class='slide video'><div class='banner'><div><b>ALERT</b> "+core.escapeHtml(t)+"</div></div></div>";$("previewKind").textContent="alert";}
-function previewClear(){$("preview").innerHTML="<div class='slide idle'><div class='spsub'>AMC Preso</div></div>";$("previewKind").textContent="idle";}
+function previewClear(){$("preview").innerHTML="<div class='slide idle'><div class='spsub'>Agent HSP</div></div>";$("previewKind").textContent="idle";}
 function previewBlack(){$("preview").innerHTML="<div class='slide blacked'></div>";$("previewKind").textContent="blackout";}
 
 function startDemo(){

@@ -1,4 +1,4 @@
-# AMC Preso · Alpha 0.4
+# Agent HSP · Alpha 0.4
 
 A browser-based proof of the plan in `../plan.html`. It demonstrates the three risky parts before any desktop code is written:
 

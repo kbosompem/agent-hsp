@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AMC Preso",
+  "productName": "Agent HSP",
   "version": "0.1.0",
-  "identifier": "com.amcpreso.desktop",
+  "identifier": "com.agenthsp.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "console",
-        "title": "AMC Preso · Console",
+        "title": "Agent HSP · Console",
         "width": 1280,
         "height": 820,
         "minWidth": 900,
@@ -21,7 +21,7 @@
       },
       {
         "label": "output",
-        "title": "AMC Preso · Output",
+        "title": "Agent HSP · Output",
         "url": "output.html",
         "width": 1280,
         "height": 720,

@@ -967,7 +967,7 @@ export default function App() {
     <div className="console">
       <header className="top">
         <div className="brandblock">
-          <span className="brand">AMC PRESO</span>
+          <span className="brand">AGENT HSP</span>
           <span className="tag">desktop · native</span>
         </div>
         <div className="group">

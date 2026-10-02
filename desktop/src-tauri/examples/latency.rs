@@ -12,8 +12,8 @@
 // the reference and the app knowing which verse to show. The operator-console
 // fire delay (600 ms) comes on top of this.
 
-use amc_preso_lib::audio::{run_whisper_opts, TARGET_SR};
-use amc_preso_lib::segmenter::{rms_of, Job, SegConfig, Segmenter};
+use agent_hsp_lib::audio::{run_whisper_opts, TARGET_SR};
+use agent_hsp_lib::segmenter::{rms_of, Job, SegConfig, Segmenter};
 use std::collections::HashSet;
 use whisper_rs::{WhisperContext, WhisperContextParameters};
 

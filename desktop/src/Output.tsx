@@ -62,7 +62,7 @@ export default function Output() {
     return (
       <div className="output">
         <div className="slide idle">
-          <div className="spsub">AMC Preso</div>
+          <div className="spsub">Agent HSP</div>
         </div>
       </div>
     );

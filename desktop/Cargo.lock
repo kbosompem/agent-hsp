@@ -9,6 +9,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "agent-hsp"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "preso-core",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "ureq",
+ "whisper-rs",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -52,20 +66,6 @@ checksum = "db8fee663d06c4e303404ef5f40488a53e062f89ba8bfed81f42325aafad1527"
 dependencies = [
  "libc",
  "pkg-config",
-]
-
-[[package]]
-name = "amc-preso"
-version = "0.1.0"
-dependencies = [
- "cpal",
- "preso-core",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "ureq",
- "whisper-rs",
 ]
 
 [[package]]
