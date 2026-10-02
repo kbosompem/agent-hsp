@@ -2,13 +2,35 @@ pub mod audio;
 pub mod segmenter;
 
 use audio::ListenState;
-use preso_core::{engine, Engine, VerseHit};
+use preso_core::{engine, Engine, LiveLookup, VerseHit};
+use std::sync::Mutex;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
 #[tauri::command]
 fn lookup(input: String, translation: Option<String>) -> Vec<VerseHit> {
     engine().lookup(&input, translation.as_deref())
+}
+
+/// Live-transcript lookup that follows the open passage ("verse 6 says...").
+/// Final transcripts commit; partials only read the context.
+#[tauri::command]
+fn lookup_live(
+    state: tauri::State<'_, Mutex<LiveLookup>>,
+    input: String,
+    translation: Option<String>,
+    commit: bool,
+) -> Vec<VerseHit> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    state.lock().unwrap().lookup(&input, translation.as_deref(), now, commit)
+}
+
+#[tauri::command]
+fn reset_live(state: tauri::State<'_, Mutex<LiveLookup>>) {
+    state.lock().unwrap().reset();
 }
 
 #[tauri::command]
@@ -139,6 +161,7 @@ fn show_slide(
 pub fn run() {
     tauri::Builder::default()
         .manage(ListenState::new())
+        .manage(Mutex::new(LiveLookup::new()))
         .setup(|app| {
             let dir = app
                 .path()
@@ -150,6 +173,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             lookup,
+            lookup_live,
+            reset_live,
             verse_at,
             verse_range,
             list_translations,

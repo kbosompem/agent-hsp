@@ -184,12 +184,33 @@ pub fn run_whisper_opts(
         .filter_map(|i| state.full_get_segment_text(i).ok())
         .map(|s| s.to_string())
         .collect();
-    (text.join(" ").trim().to_string(), ms)
+    let text = text.join(" ").trim().to_string();
+    if is_prompt_echo(&text) {
+        return (String::new(), ms);
+    }
+    (text, ms)
 }
 
 pub const PARTIAL_AUDIO_CTX: bool = true;
 
-const BIBLE_VOCAB_PROMPT: &str = "Bible reading. Genesis, Exodus, Leviticus, Numbers, Deuteronomy, Joshua, Judges, Ruth, Samuel, Kings, Chronicles, Ezra, Nehemiah, Esther, Job, Psalms, Proverbs, Ecclesiastes, Isaiah, Jeremiah, Lamentations, Ezekiel, Daniel, Hosea, Joel, Amos, Obadiah, Jonah, Micah, Nahum, Habakkuk, Zephaniah, Haggai, Zechariah, Malachi, Matthew, Mark, Luke, John, Acts, Romans, Corinthians, Galatians, Ephesians, Philippians, Colossians, Thessalonians, Timothy, Titus, Philemon, Hebrews, James, Peter, Jude, Revelation. Deuteronomy chapter 1. Micah chapter 3 verse 5.";
+const BIBLE_VOCAB_PROMPT: &str = "Bible reading. Genesis, Exodus, Leviticus, Numbers, Deuteronomy, Joshua, Judges, Ruth, Samuel, Kings, Chronicles, Ezra, Nehemiah, Esther, Job, Psalms, Proverbs, Ecclesiastes, Isaiah, Jeremiah, Lamentations, Ezekiel, Daniel, Hosea, Joel, Amos, Obadiah, Jonah, Micah, Nahum, Habakkuk, Zephaniah, Haggai, Zechariah, Malachi, Matthew, Mark, Luke, John, Acts, Romans, Corinthians, Galatians, Ephesians, Philippians, Colossians, Thessalonians, Timothy, Titus, Philemon, Hebrews, James, Peter, Jude, Revelation.";
+
+/// Whisper repeats its prompt back during music or silence. A transcript
+/// that is just a run of prompt words (book names) is dropped.
+fn is_prompt_echo(text: &str) -> bool {
+    let norm = |s: &str| -> Vec<String> {
+        s.to_lowercase()
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(|w| w.to_string())
+            .collect()
+    };
+    let prompt: std::collections::HashSet<String> = norm(BIBLE_VOCAB_PROMPT).into_iter().collect();
+    // "[BLANK_AUDIO]" and similar tags are not speech
+    let stripped: String = text.split('[').map(|p| p.split_once(']').map_or(p, |(_, r)| r)).collect();
+    let words = norm(&stripped);
+    words.len() >= 3 && words.iter().all(|w| prompt.contains(w))
+}
 
 fn spawn_capture(
     app: AppHandle,
@@ -380,6 +401,19 @@ pub fn slice_abs(buf: &[f32], total: u64, start: u64, end: u64) -> Vec<f32> {
         return Vec::new();
     }
     buf[s..e].to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_prompt_echo;
+
+    #[test]
+    fn prompt_echo_is_dropped() {
+        assert!(is_prompt_echo("Bible reading. Genesis, Exodus, Leviticus"));
+        assert!(!is_prompt_echo("Turn to Genesis chapter 1"));
+        assert!(!is_prompt_echo("Amen"));
+        assert!(is_prompt_echo("Genesis, Exodus, Leviticus.  [BLANK_AUDIO]"));
+    }
 }
 
 #[tauri::command]

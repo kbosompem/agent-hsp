@@ -1,0 +1,149 @@
+<title>LCI Sermon Replay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Public+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a single reading column for the story, wide tables and slide triptychs that break out of it.
+   Slides always use the app's own default projector theme (deep navy, gold accent, serif). */
+:root {
+  --bg: #f3f5f6;
+  --surface: #ffffff;
+  --fg: #16202a;
+  --muted: #5a6872;
+  --line: #d6dde1;
+  --accent: #2b4c9b;
+  --good: #1d7a4c;
+  --bad: #b3261e;
+  --slide-bg: #101826;
+  --slide-fg: #f3eee2;
+  --slide-accent: #e9c465;
+  --slide-dim: #9aa6b8;
+  --display: "Newsreader", Georgia, "Times New Roman", serif;
+  --body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1318; --surface: #151c23; --fg: #e4e9ec; --muted: #94a2ab; --line: #2a343d;
+    --accent: #8fb0ff; --good: #5fcf96; --bad: #ff8a80; --slide-bg: #0a101a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1318; --surface: #151c23; --fg: #e4e9ec; --muted: #94a2ab; --line: #2a343d;
+  --accent: #8fb0ff; --good: #5fcf96; --bad: #ff8a80; --slide-bg: #0a101a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body); margin: 0; padding-inline: 16px; padding-block: 40px 80px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 48px; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); }
+h2 { font-size: 1.6rem; margin-bottom: 12px; }
+h3 { font-size: 1.35rem; }
+h4 { font: 600 0.75rem/1 var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+p { margin: 0 0 12px; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font: 600 0.75rem/1 var(--body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+.lede { font-size: 1.1rem; color: var(--muted); margin-top: 14px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.stat { background: var(--surface); padding: 18px 20px; display: grid; gap: 6px; align-content: start; }
+.stat .k { font: 600 0.72rem/1.2 var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.stat .v { font: 600 1.9rem/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 1rem; color: var(--muted); font-weight: 400; }
+.stat .v .from { color: var(--muted); font-weight: 400; }
+.stat .d { font-size: 0.85rem; color: var(--muted); }
+.up { color: var(--good); }
+.down { color: var(--good); }
+
+.findings ol { padding-left: 1.3em; margin: 0; display: grid; gap: 12px; }
+.findings li::marker { font-family: var(--mono); color: var(--muted); }
+.findings b { font-weight: 600; }
+
+.tablebox { overflow-x: auto; border: 1px solid var(--line); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 0.92rem; }
+th, td { padding: 10px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { font: 600 0.72rem/1.2 var(--body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .meta { color: var(--muted); font-size: 0.82rem; }
+.arrow { color: var(--muted); }
+.pct { color: var(--muted); font-size: 0.8rem; margin-left: 4px; }
+tr:last-child td { border-bottom: 0; }
+
+.sermon { border-top: 1px solid var(--line); padding-top: 28px; display: grid; gap: 18px; scroll-margin-top: 16px; }
+.sermon .meta { color: var(--muted); font-size: 0.9rem; margin: 6px 0 0; }
+.slides { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.slide-wrap { margin: 0; display: grid; gap: 8px; min-width: 0; }
+.slide-wrap figcaption { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.slide-wrap .kind { font: 600 0.75rem/1 var(--body); letter-spacing: 0.08em; text-transform: uppercase; }
+.slide-wrap .sub { font-size: 0.8rem; color: var(--muted); }
+.slide { aspect-ratio: 16 / 9; max-width: 100%; background: var(--slide-bg); color: var(--slide-fg); padding: 5% 6%; overflow: hidden; display: flex; flex-direction: column; gap: 4%; font-family: var(--display); border-radius: 3px; }
+.s-title { color: var(--slide-accent); font-size: clamp(0.95rem, 1.6vw, 1.2rem); font-weight: 600; line-height: 1.2; }
+.slide ol { margin: 0; padding-left: 1.2em; display: grid; gap: 3%; font-size: clamp(0.72rem, 1.15vw, 0.86rem); line-height: 1.3; }
+.slide li::marker { color: var(--slide-accent); }
+.slide .vs { display: block; font-family: var(--mono); font-size: 0.85em; color: var(--slide-dim); margin-top: 1px; }
+.slide .empty { list-style: none; margin-left: -1.2em; color: var(--slide-dim); }
+.pending .slide { opacity: 0.55; }
+.bigidea { margin: 0; font-size: 0.95rem; }
+.bigidea span { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 6px; }
+
+.lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.lists > div { min-width: 0; }
+.lists ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 0.88rem; }
+.lists li { display: grid; grid-template-columns: 3.4em 1fr; column-gap: 8px; }
+.lists li > :not(.t) { grid-column: 2; }
+.lists .t { font-family: var(--mono); color: var(--muted); font-size: 0.8rem; padding-top: 2px; grid-row: span 3; }
+.lists q { color: var(--muted); quotes: "\201C" "\201D"; overflow-wrap: anywhere; }
+.lists em { color: var(--muted); font-size: 0.82rem; }
+.lists .none { color: var(--muted); display: block; }
+.method { font-size: 0.92rem; color: var(--muted); }
+.method h2 { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header class="col">
+    <div class="eyebrow">AMC Preso · real-sermon test</div>
+    <h1>{{n}} LCI sermons, replayed through the app</h1>
+    <p class="lede">Recorded sermons from Dropbox, played through the app's own speech recognition and verse detection as if live, then compared with a hand-checked answer key. Each sermon also shows the summary slide the room would see.</p>
+  </header>
+
+  <section class="stats" aria-label="Headline numbers">
+    <div class="stat"><span class="k">Audio tested</span><span class="v">{{hours}}<small> h</small></span><span class="d">{{n}} sermons, {{span}}, {{npreachers}} preachers</span></div>
+    <div class="stat"><span class="k">Full references caught</span><span class="v"><span class="from">{{pb}}%</span> → {{pa}}%</span><span class="d">{{fb}} → {{fa}} of {{exp}}, before and after this round of fixes</span></div>
+    <div class="stat"><span class="k">Wrong verses shown</span><span class="v"><span class="from">{{wb}}</span> → {{wa}}</span><span class="d">verses put on screen that the preacher did not cite</span></div>
+    <div class="stat"><span class="k">How preachers cite</span><span class="v">{{kinds_explicit}}<small> full</small></span><span class="d">plus {{kinds_followup}} "verse 6 says" follow-ups, {{kinds_chapter}} chapter-only, {{kinds_quote}} unnamed quotes</span></div>
+  </section>
+
+  <section class="findings col">
+    <h2>What the sermons showed</h2>
+    {{findings}}
+    <p class="method">{{stream_line}}</p>
+  </section>
+
+  <section>
+    <h2>Every sermon</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>Sermon</th><th class="n">Min</th><th class="n">Full refs</th><th class="n">Caught, before → after</th><th class="n">Wrong, before → after</th><th class="n">Follow-ups</th></tr></thead>
+        <tbody>
+{{rows}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sermon by sermon</h2>
+    <p class="col method">Each sermon shows three closing slides. <b>The app today</b> is the last summary slide the current rules would put up. <b>Local AI draft</b> is written by a small model running on this Mac from the app's own transcript. <b>Reference</b> is written from a careful transcript of the whole recording. Below them are the full references the app missed and any wrong verses it showed, with the words it heard.</p>
+  </section>
+{{details}}
+
+  <section class="method col">
+    <h2>How this was measured</h2>
+    <p>Each recording was converted to 16 kHz mono and replayed through the app's own segmenter, Whisper small.en speech model and verse parser, with the same rules the console uses (a verse is not repeated within 3 minutes). "After" re-runs verse detection on the same transcripts with this round's parser fixes.</p>
+    <p>The answer key comes from a slower, larger speech model (Whisper large-v3-turbo) on the full recording. Reviewers then read every transcript and marked each verse the preacher cited, correcting misheard book names from context. A full reference counts as caught if the right verse appears between 5 seconds before and 30 seconds after it is spoken, or if it was already on screen from the previous 3 minutes. A wrong verse is one no citation within a minute explains.</p>
+    <p>One recording (Proton 1, Feb 2008) was dropped: it is clipped noise with no intelligible speech.</p>
+  </section>
+</div>

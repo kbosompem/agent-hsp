@@ -86,6 +86,8 @@ const STOPWORDS: &[&str] = &[
     "him", "her", "she", "his", "you", "are", "was", "the", "and", "for", "not", "but",
     "all", "out", "who", "has", "had", "did", "does", "its", "our", "two", "one",
     "chapter", "verse", "today", "truth", "world", "heart", "soul", "life", "love",
+    // one letter from a book name, common in sermons: "point number one" is not Numbers 1
+    "number", "numbered", "palm", "king", "games", "arts", "part", "parts",
 ];
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -544,6 +546,20 @@ impl Engine {
             .collect()
     }
 
+    /// One hit spanning verses v..=e, labelled "Book C:V-E".
+    pub fn verse_range_hit(&self, tr_id: Option<&str>, book: usize, chapter: usize, v: usize, e: usize) -> Option<VerseHit> {
+        let tr = self.tr_index(tr_id);
+        let r = self.valid_ref(tr, book, chapter, Some(v), Some(e))?;
+        let trs = self.translations.read().unwrap();
+        let books = &trs[tr].books;
+        Some(VerseHit {
+            label: ref_label_books(books, &r),
+            text: get_verse_books(books, &r),
+            reference: Some(r),
+            translation: trs[tr].name.clone(),
+        })
+    }
+
     pub fn verse_at(
         &self,
         tr_id: Option<&str>,
@@ -860,6 +876,10 @@ fn parse_ref_after_book(tokens: &[&str], j: usize) -> Option<ParsedRef> {
     let mut k = j;
     if CHAPTER_WORDS.contains(&tokens.get(k).copied().unwrap_or("")) {
         k += 1;
+        // "Mark chapter number 2"
+        if matches!(tokens.get(k).copied(), Some("number") | Some("no")) {
+            k += 1;
+        }
     }
     let (chapter, chlen) = parse_num_seq(tokens, k)?;
     k += chlen;
@@ -1028,6 +1048,14 @@ fn parse_refs_impl(
 fn rewrite_tokens(norm: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for t in norm.split(' ') {
+        // "verse number 16", "chapter number 2"
+        if t == "number"
+            && out
+                .last()
+                .map_or(false, |p| VERSE_WORDS.contains(&p.as_str()) || CHAPTER_WORDS.contains(&p.as_str()))
+        {
+            continue;
+        }
         match t {
             "1st" => out.push("first".into()),
             "2nd" => out.push("second".into()),
@@ -1112,6 +1140,126 @@ fn valid_ref_books(
     })
 }
 
+/// Follows the passage the preacher has open, so "verse 6 says..." shows
+/// verse 6 of that chapter, including when the chapter was named in the
+/// previous sentence ("First Corinthians chapter 13. ... Verse 1.").
+///
+/// Call with `commit: true` for final transcripts, which move the context;
+/// partials pass `commit: false` and only read it.
+pub struct LiveLookup {
+    ctx: Option<(usize, usize, f64)>,
+    /// Last words of the previous final, for a book named at the end of one
+    /// sentence and its chapter at the start of the next ("Because Daniel..."
+    /// / "Chapter 11, I believe, and verse 32").
+    tail: Vec<String>,
+    tail_labels: Vec<String>,
+    tail_at: f64,
+}
+
+const TAIL_WORDS: usize = 4;
+/// The carried-over tail only joins sentences this close together.
+const TAIL_TTL_S: f64 = 30.0;
+
+/// An open passage is forgotten after this long without a mention.
+const CONTEXT_TTL_S: f64 = 600.0;
+
+impl LiveLookup {
+    pub fn new() -> LiveLookup {
+        LiveLookup { ctx: None, tail: Vec::new(), tail_labels: Vec::new(), tail_at: 0.0 }
+    }
+
+    pub fn reset(&mut self) {
+        self.ctx = None;
+        self.tail.clear();
+        self.tail_labels.clear();
+    }
+
+    pub fn lookup(&mut self, text: &str, tr_id: Option<&str>, now_s: f64, commit: bool) -> Vec<VerseHit> {
+        let eng = engine();
+        let mut hits = self.resolve(text, tr_id, now_s, eng.lookup(text, tr_id));
+        if hits.is_empty() && !self.tail.is_empty() && now_s - self.tail_at <= TAIL_TTL_S {
+            // Retry with the end of the previous sentence in front; keep only
+            // references that start in that carried-over tail and were not
+            // already shown from it.
+            let joined = format!("{} {}", self.tail.join(" "), text);
+            let n = self.tail.len();
+            let carried: Vec<VerseHit> = eng
+                .lookup(&joined, tr_id)
+                .into_iter()
+                .filter(|h| h.reference.as_ref().map_or(false, |r| r.pos < n))
+                .filter(|h| !self.tail_labels.contains(&h.label))
+                .collect();
+            if !carried.is_empty() {
+                hits = self.resolve(&joined, tr_id, now_s, carried);
+            }
+        }
+        if commit {
+            let toks = rewrite_tokens(&normalize(text));
+            self.tail = toks[toks.len().saturating_sub(TAIL_WORDS)..].to_vec();
+            self.tail_labels = hits.iter().map(|h| h.label.clone()).collect();
+            self.tail_at = now_s;
+            if let Some(r) = hits.last().and_then(|h| h.reference.clone()) {
+                self.ctx = Some((r.book, r.chapter, now_s));
+            }
+        }
+        hits
+    }
+
+    /// Add follow-up verses ("verse 21 says") to the parsed hits, in the
+    /// chapter opened earlier in `text` or in the remembered context.
+    fn resolve(&self, text: &str, tr_id: Option<&str>, now_s: f64, mut hits: Vec<VerseHit>) -> Vec<VerseHit> {
+        let eng = engine();
+        let owned = rewrite_tokens(&normalize(text));
+        let tokens: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        let refs: Vec<BibleRef> = hits.iter().filter_map(|h| h.reference.clone()).collect();
+        let ctx = self.ctx.filter(|c| now_s - c.2 <= CONTEXT_TTL_S).map(|c| (c.0, c.1));
+        let mut resolved_chapters: Vec<(usize, usize)> = Vec::new();
+        let mut i = 0;
+        while i < tokens.len() {
+            if tokens[i] == "verse" || tokens[i] == "verses" {
+                if let Some((v, len)) = parse_num_seq(&tokens, i + 1) {
+                    // "John 3 verse 16": the parser already has this verse.
+                    let owned_by_ref = refs.iter().any(|r| r.verse.is_some() && r.pos <= i && i - r.pos <= 6);
+                    let open = refs.iter().filter(|r| r.pos < i).last().map(|r| (r.book, r.chapter)).or(ctx);
+                    if let (false, Some((b, c))) = (owned_by_ref, open) {
+                        let k = i + 1 + len;
+                        let end = if RANGE_WORDS.contains(&tokens.get(k).copied().unwrap_or("")) {
+                            parse_num_seq(&tokens, k + 1).map(|(e, _)| e)
+                        } else {
+                            None
+                        };
+                        let h = match end {
+                            Some(e) if e > v => eng.verse_range_hit(tr_id, b, c, v, e),
+                            _ => None,
+                        }
+                        .or_else(|| eng.verse_at(tr_id, b, c, v));
+                        if let Some(h) = h {
+                            if !hits.iter().any(|x| x.label == h.label) {
+                                hits.push(h);
+                            }
+                            resolved_chapters.push((b, c));
+                        }
+                    }
+                    i += 1 + len;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        // "Jeremiah chapter 2 ... verse 21": show the verse, not the chapter too.
+        hits.retain(|h| {
+            h.reference.as_ref().map_or(true, |r| r.verse.is_some() || !resolved_chapters.contains(&(r.book, r.chapter)))
+        });
+        hits
+    }
+}
+
+impl Default for LiveLookup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1181,6 +1329,67 @@ mod tests {
         assert_eq!(refs("the preacher in Ecclesiast 3 1 says"), vec!["Ecclesiastes 3:1"]);
         assert_eq!(refs("And Micah 6a asks what does the Lord require"), vec!["Micah 6:8"]);
         assert_eq!(refs("Turn to Jeremiah 2911 for I know"), vec!["Jeremiah 29:11"]);
+    }
+
+    #[test]
+    fn number_is_not_numbers() {
+        assert!(refs("What is point number one? Then now").is_empty());
+        assert!(engine().lookup("What is point number one? Then now", None).is_empty());
+        assert_eq!(refs("The Gospel according to St. Mark chapter number 2"), vec!["Mark 2"]);
+    }
+
+    fn live(l: &mut LiveLookup, text: &str, t: f64) -> Vec<String> {
+        l.lookup(text, None, t, true).into_iter().map(|h| h.label).collect()
+    }
+
+    #[test]
+    fn followup_verse_in_same_sentence() {
+        let mut l = LiveLookup::new();
+        assert_eq!(live(&mut l, "Jeremiah chapter 2. Are you there? Verse 21 says that", 0.0), vec!["Jeremiah 2:21"]);
+        assert_eq!(live(&mut l, "Luke chapter 8. From verse 18. This is about the parable", 5.0), vec!["Luke 8:18"]);
+        assert_eq!(live(&mut l, "Isaiah chapter 42 verse number 16.", 9.0), vec!["Isaiah 42:16"]);
+    }
+
+    #[test]
+    fn followup_verse_across_sentences() {
+        let mut l = LiveLookup::new();
+        assert_eq!(live(&mut l, "First Corinthians chapter 13.", 0.0), vec!["1 Corinthians 13"]);
+        assert_eq!(live(&mut l, "Verse 1.", 3.0), vec!["1 Corinthians 13:1"]);
+        assert_eq!(live(&mut l, "and verse 6 now says", 40.0), vec!["1 Corinthians 13:6"]);
+        assert_eq!(live(&mut l, "verses 4 to 7", 60.0), vec!["1 Corinthians 13:4-7"]);
+    }
+
+    #[test]
+    fn followup_needs_open_passage_and_expires() {
+        let mut l = LiveLookup::new();
+        assert!(live(&mut l, "verse 6 says", 0.0).is_empty());
+        live(&mut l, "Mark chapter 2", 10.0);
+        assert!(live(&mut l, "verse 6 says", 10.0 + 700.0).is_empty());
+    }
+
+    #[test]
+    fn book_at_end_of_previous_sentence() {
+        let mut l = LiveLookup::new();
+        assert!(live(&mut l, "And along greener pastures, you must know God. Because Daniel...", 0.0).is_empty());
+        assert_eq!(live(&mut l, "Chapter 11, I believe, and verse 32. The B part says that", 5.0), vec!["Daniel 11:32"]);
+        // a reference already shown from the previous sentence is not repeated
+        live(&mut l, "turn to Romans 8", 10.0);
+        assert!(live(&mut l, "and he said it is good", 12.0).is_empty());
+    }
+
+    #[test]
+    fn explicit_verse_is_not_doubled() {
+        let mut l = LiveLookup::new();
+        assert_eq!(live(&mut l, "John chapter 3 verse 16", 0.0), vec!["John 3:16"]);
+    }
+
+    #[test]
+    fn partials_do_not_move_context() {
+        let mut l = LiveLookup::new();
+        live(&mut l, "Mark chapter 2", 0.0);
+        let p: Vec<String> = l.lookup("Romans 8", None, 1.0, false).into_iter().map(|h| h.label).collect();
+        assert_eq!(p, vec!["Romans 8"]);
+        assert_eq!(live(&mut l, "verse 5", 2.0), vec!["Mark 2:5"]);
     }
 
     #[test]

@@ -1,0 +1,10 @@
+<ol>
+  <li><b>Preachers rarely say "John 3:16".</b> Across these sermons they gave 99 full references. They also opened a chapter and then said "verse 6 says" 36 times, and quoted scripture without naming it 119 times. The app was built for the first habit only.</li>
+  <li><b>Full references caught rose from 67% to 82%</b> (66 to 81 of 99) after this round of parser fixes. Wrong verses fell from 31 to 27.</li>
+  <li><b>Follow-ups now work.</b> "Turn to Luke 8 … verse 18" used to show nothing. With the app now tracking the open chapter, it catches 21 of 36 of these, up from 0.</li>
+  <li><b>Most remaining misses are mishearings by the speech model,</b> not parser gaps. Examples: Hosea heard as "Isaiah", Nahum as "Matthew", Revelation 2:10 dropped entirely. A few are the preacher's own slips ("Acts 4:47", corrected to 2:47).</li>
+  <li><b>The follow-up feature also causes some wrong verses.</b> When the app has the wrong chapter open, "and verse 3" lands in that wrong chapter. Requiring a fresher open chapter would trade some of the 21 catches for fewer of these.</li>
+  <li><b>Today's summary slide does not work for these preachers.</b> It relies on phrases like "point number one", and not one of the 10 sermons used them. Half the slides read just "Sermon summary", and the points are sentence fragments.</li>
+  <li><b>A small AI model running on the church's own computer writes a usable slide.</b> It usually matches the reference's title and big idea and two or three of its points. It repeats verses across points and once invented a title. On this Mac it writes the slide in 20 to 35 seconds from the transcript so far, fast enough to refresh the summary every few minutes during the sermon.</li>
+  <li><b>The speech model can fail silently.</b> When this Mac was overloaded, one sermon lost 29 minutes of transcript with no warning. The app should show the operator when transcription stops.</li>
+</ol>

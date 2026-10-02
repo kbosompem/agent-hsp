@@ -2,7 +2,11 @@
 // and whisper in simulated real time: while whisper runs, audio keeps
 // "arriving", exactly as it would from a live microphone.
 //
-//   cargo run --release --example latency -- <model.bin> <fixture.json> [legacy|streaming] [--no-actx]
+//   cargo run --release --example latency -- <model.bin> <fixture.json> [legacy|streaming|finals] [--no-actx] [--dump out.json]
+//
+// "finals" is the streaming segmenter without partials: same final
+// transcripts as the app, several times faster, but no latency figures.
+// --dump writes the final transcripts and shown verses for the summary replay.
 //
 // Reports, per expected reference, the seconds between the speaker finishing
 // the reference and the app knowing which verse to show. The operator-console
@@ -10,7 +14,7 @@
 
 use amc_preso_lib::audio::{run_whisper_opts, TARGET_SR};
 use amc_preso_lib::segmenter::{rms_of, Job, SegConfig, Segmenter};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use whisper_rs::{WhisperContext, WhisperContextParameters};
 
 fn read_wav16(path: &str) -> Vec<f32> {
@@ -78,28 +82,53 @@ fn main() {
     let fixture = &args[2];
     let mode = args.get(3).map(|s| s.as_str()).unwrap_or("streaming");
     let actx = !args.iter().any(|a| a == "--no-actx");
-    let cfg = if mode == "legacy" { SegConfig::legacy() } else { SegConfig::streaming() };
+    let dump = args.iter().position(|a| a == "--dump").and_then(|i| args.get(i + 1)).cloned();
+    let cfg = match mode {
+        "legacy" => SegConfig::legacy(),
+        "finals" => SegConfig { partials: false, ..SegConfig::streaming() },
+        _ => SegConfig::streaming(),
+    };
 
     let meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(fixture).unwrap()).unwrap();
     let dir = std::path::Path::new(fixture).parent().unwrap();
-    let audio = read_wav16(dir.join(meta["wav"].as_str().unwrap()).to_str().unwrap());
-    let expected: Vec<(String, f64)> = meta["refs"]
+    let full = read_wav16(dir.join(meta["wav"].as_str().unwrap()).to_str().unwrap());
+    // Optional "clip": [start_s, end_s] tests part of a long recording.
+    // All times in the fixture and in the report are on the full recording.
+    let (clip_start, clip_end) = match meta["clip"].as_array() {
+        Some(c) => (c[0].as_f64().unwrap(), c[1].as_f64().unwrap()),
+        None => (0.0, full.len() as f64 / TARGET_SR as f64),
+    };
+    let audio = &full[(clip_start * TARGET_SR as f64) as usize..((clip_end * TARGET_SR as f64) as usize).min(full.len())];
+    let expected: Vec<Expected> = meta["refs"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|r| (r["label"].as_str().unwrap().to_string(), r["spoken_end_s"].as_f64().unwrap()))
+        .map(|r| {
+            let end = r["spoken_end_s"].as_f64().unwrap();
+            Expected {
+                label: r["label"].as_str().unwrap().to_string(),
+                start: r["spoken_start_s"].as_f64().unwrap_or(end),
+                end,
+                scored: r["kind"].as_str().map_or(true, |k| k == "explicit"),
+            }
+        })
+        .filter(|e| e.start >= clip_start && e.end <= clip_end)
         .collect();
 
     preso_core::init_engine(None);
-    let eng = preso_core::engine();
+    let mut live = preso_core::LiveLookup::new();
     let ctx = WhisperContext::new_with_params(model, WhisperContextParameters::default()).unwrap();
     let mut state = ctx.create_state().unwrap();
 
     let sr = TARGET_SR as u64;
     let mut seg = Segmenter::new(cfg, 0.002);
     let mut t: u64 = sr;
-    let mut first: HashMap<String, (f64, &'static str)> = HashMap::new();
+    // Accepted detections after the console's rule: a label shown in the
+    // last 180 s is not shown again.
+    let mut shown: Vec<(f64, String, &'static str)> = Vec::new();
+    let mut finals_log: Vec<serde_json::Value> = Vec::new();
+    let mut shown_log: Vec<serde_json::Value> = Vec::new();
     let mut prev: HashSet<String> = HashSet::new();
     let mut prev_seg = u64::MAX;
     let (mut n_partial, mut n_final, mut whisper_ms) = (0usize, 0usize, 0usize);
@@ -121,17 +150,20 @@ fn main() {
         whisper_ms += ms;
         if partial { n_partial += 1 } else { n_final += 1 }
         t += (ms as u64) * sr / 1000;
-        let now = t as f64 / sr as f64;
+        let now = clip_start + t as f64 / sr as f64;
         // Partials only act on chapter:verse hits; "John chapter 3" mid-sentence
         // is usually the front half of "John chapter 3 verse 16".
         // ...and ignore a trailing number: "John 3 1" may be "John 3 16" half-spoken.
         let settled = if partial { settle_tail(&text) } else { text.clone() };
-        let labels: HashSet<String> = eng
-            .lookup(&settled, None)
+        let hits: Vec<_> = live
+            .lookup(&settled, None, now, !partial)
             .into_iter()
             .filter(|h| !partial || h.reference.as_ref().map_or(false, |r| r.verse.is_some()))
-            .map(|h| h.label)
             .collect();
+        let labels: HashSet<String> = hits.iter().map(|h| h.label.clone()).collect();
+        if !partial && !text.is_empty() {
+            finals_log.push(serde_json::json!({ "t": now, "text": text }));
+        }
         // Same rule as the console: a partial hit must repeat in the next
         // partial of the same segment; a final hit counts at once.
         let accepted: Vec<String> = if partial {
@@ -147,36 +179,108 @@ fn main() {
             labels.iter().cloned().collect()
         };
         for l in accepted {
-            first.entry(l).or_insert((now, if partial { "partial" } else { "final" }));
+            if !shown.iter().any(|(at, sl, _)| *sl == l && now - at < 180.0) {
+                let vt = hits.iter().find(|h| h.label == l).map(|h| h.text.clone()).unwrap_or_default();
+                // The console fires a verse 600 ms after detection.
+                shown_log.push(serde_json::json!({ "t": now + 0.6, "label": l, "text": vt, "trigger": text }));
+                shown.push((now, l, if partial { "partial" } else { "final" }));
+            }
         }
         if std::env::var("VERBOSE").is_ok() {
             println!("{:7.2}s {} {:4}ms {:?} {:?}", now, if partial { "P" } else { "F" }, ms, text, labels);
         }
     }
 
+    if let Some(path) = &dump {
+        let out = serde_json::json!({ "clip": [clip_start, clip_end], "finals": finals_log, "shown": shown_log });
+        std::fs::write(path, serde_json::to_string_pretty(&out).unwrap()).unwrap();
+    }
     println!("mode={} audio_ctx={} partials={} finals={} whisper_total={}ms", mode, actx, n_partial, n_final, whisper_ms);
     let mut lat = Vec::new();
-    for (label, spoken) in &expected {
-        let hit = first.iter().find(|(k, _)| norm(k) == norm(label));
+    let (mut found, mut already, mut scored) = (0usize, 0usize, 0usize);
+    for e in expected.iter().filter(|e| e.scored) {
+        scored += 1;
+        let hit = shown
+            .iter()
+            .find(|(at, l, _)| covers(&e.label, l) && *at >= e.start - 5.0 && *at <= e.end + 30.0);
         match hit {
-            Some((_, (at, via))) => {
-                let l = at - spoken;
-                lat.push(l);
-                println!("  {:18} {:+6.2}s  via {}", label, l, via);
+            Some((at, _, via)) => {
+                found += 1;
+                lat.push(at - e.end);
+                println!("  {:8.1}s {:22} {:+6.2}s  via {}", e.end, e.label, at - e.end, via);
             }
-            None => println!("  {:18}   MISSED", label),
+            None => {
+                if shown.iter().any(|(at, l, _)| covers(&e.label, l) && *at < e.start && e.start - at < 180.0) {
+                    found += 1;
+                    already += 1;
+                    println!("  {:8.1}s {:22}   already on screen", e.end, e.label);
+                } else {
+                    println!("  {:8.1}s {:22}   MISSED", e.end, e.label);
+                }
+            }
         }
     }
-    let exp: HashSet<String> = expected.iter().map(|(l, _)| norm(l)).collect();
-    for k in first.keys() {
-        if !exp.contains(&norm(k)) {
-            println!("  extra (false hit): {}", k);
+    // A detection is wrong when nothing the speaker said nearby (scored or
+    // not: chapter mentions, follow-ups, quotes) explains it.
+    let mut wrong = 0;
+    for (at, l, via) in &shown {
+        if !expected.iter().any(|e| covers_(&e.label, l, false) && (at - e.end).abs() <= 60.0) {
+            wrong += 1;
+            println!("  extra (false hit): {} at {:.1}s via {}", l, at, via);
         }
     }
-    if !lat.is_empty() {
-        lat.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let mean = lat.iter().sum::<f64>() / lat.len() as f64;
-        println!("  found {}/{}  mean {:.2}s  median {:.2}s  worst {:.2}s",
-            lat.len(), expected.len(), mean, lat[lat.len() / 2], lat[lat.len() - 1]);
+    lat.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mean = if lat.is_empty() { 0.0 } else { lat.iter().sum::<f64>() / lat.len() as f64 };
+    let med = if lat.is_empty() { 0.0 } else { lat[lat.len() / 2] };
+    let worst = lat.last().copied().unwrap_or(0.0);
+    println!(
+        "  found {}/{}  ({} already on screen)  wrong {}  mean {:.2}s  median {:.2}s  worst {:.2}s",
+        found, scored, already, wrong, mean, med, worst
+    );
+}
+
+fn covers(expected: &str, shown: &str) -> bool {
+    covers_(expected, shown, true)
+}
+
+struct Expected {
+    label: String,
+    start: f64,
+    end: f64,
+    scored: bool,
+}
+
+/// "1 John 1:9-10" -> ("1 john", 1, Some(9), Some(10)).
+fn parse_label(l: &str) -> Option<(String, usize, Option<usize>, Option<usize>)> {
+    let l = norm(l);
+    let sp = l.rfind(' ')?;
+    let (book, cv) = (l[..sp].to_string(), &l[sp + 1..]);
+    let mut it = cv.splitn(2, ':');
+    let c = it.next()?.parse().ok()?;
+    let (v, e) = match it.next() {
+        Some(vs) => {
+            let mut r = vs.splitn(2, '-');
+            let v: usize = r.next()?.parse().ok()?;
+            (Some(v), r.next().and_then(|x| x.parse().ok()))
+        }
+        None => (None, None),
+    };
+    Some((book, c, v, e))
+}
+
+/// Does showing `shown` satisfy the citation `expected`? Same book and
+/// chapter, and the shown verse falls inside the cited verse or range.
+fn covers_(expected: &str, shown: &str, strict: bool) -> bool {
+    let (Some(x), Some(y)) = (parse_label(expected), parse_label(shown)) else {
+        return norm(expected) == norm(shown);
+    };
+    if x.0 != y.0 || x.1 != y.1 {
+        return false;
+    }
+    match (x.2, y.2) {
+        (None, None) => true,
+        (Some(v), Some(sv)) => sv >= v && sv <= x.3.unwrap_or(v),
+        // chapter-only on one side: not a find, but close enough to not be "wrong"
+        _ => !strict,
     }
 }

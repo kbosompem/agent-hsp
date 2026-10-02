@@ -2,6 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { Embedder } from "./lib/embed";
+import {
+  addNote as addSermonNote,
+  buildSummary as buildSermonSummary,
+  cleanText,
+  extractSermonStructure as extractStructure,
+  logVerse,
+  newSermonState,
+  noteFromLine,
+  sermonTitle as titleFor,
+  SummaryData,
+  trimWords,
+} from "./lib/sermon";
 
 type VerseHit = {
   label: string;
@@ -36,7 +48,6 @@ type Card = {
 
 type TrLine = { text: string; labels: string[] };
 
-type SummaryData = { points: { text: string; verses: string[] }[] };
 
 type OutputTheme = {
   bgKind: "gradient" | "image";
@@ -68,13 +79,6 @@ const DEFAULT_THEME: OutputTheme = {
 };
 
 const QUOTE_THRESHOLD = 0.55;
-
-type SermonPoint = { num: number; text: string };
-
-const WORD_NUM: Record<string, number> = {
-  one: 1, two: 2, three: 3, four: 4, five: 5,
-  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-};
 
 const FIRE_DELAY = 600;
 const VERSE_HOLD_MS = 60000;
@@ -109,19 +113,6 @@ function settleTail(text: string): string {
     words.splice(-2, 2);
   }
   return words.join(" ");
-}
-
-function cleanText(text: string): string {
-  return text
-    .replace(/\[[^\]]*\]/g, " ")
-    .replace(/\([^)]*\)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function trimWords(text: string, n: number): string {
-  const w = text.trim().split(/\s+/);
-  return w.slice(0, n).join(" ") + (w.length > n ? "…" : "");
 }
 
 export default function App() {
@@ -164,14 +155,10 @@ export default function App() {
   const transcriptRef = useRef<TrLine[]>([]);
   const rawRef = useRef<string[]>([]);
   const cardsRef = useRef<Card[]>([]);
-  const notesRef = useRef<string[]>([]);
-  const verseLogRef = useRef<{ label: string; line: string; pointNum: number | null }[]>([]);
+  // Title, points, verse log and notes for the summary slide (see lib/sermon.ts).
+  const stRef = useRef(newSermonState());
   const quoteIndexRef = useRef<{ vecs: Float32Array; refs: number[][] } | null>(null);
   const quoteBusy = useRef(false);
-  const sermonRef = useRef<{ title: string | null; points: SermonPoint[] }>({
-    title: null,
-    points: [],
-  });
   const slideRef = useRef<Slide | null>(null);
   const lastVerse = useRef<VerseHit | null>(null);
   const verseShownAt = useRef(0);
@@ -263,12 +250,7 @@ export default function App() {
   }
 
   function addNote(bullet: string) {
-    const b = bullet.trim();
-    if (!b) return;
-    const last = notesRef.current[notesRef.current.length - 1];
-    if (last === b) return;
-    notesRef.current.push(b);
-    if (notesRef.current.length > 30) notesRef.current.shift();
+    addSermonNote(stRef.current, bullet);
   }
 
   async function showVerse(h: VerseHit, trigger?: string) {
@@ -298,17 +280,7 @@ export default function App() {
       historyRef.current.push({ label: h.label, hit: h });
       if (historyRef.current.length > 12) historyRef.current.shift();
     }
-    if (trigger !== undefined) {
-      verseLogRef.current.push({
-        label: h.label,
-        line: trigger,
-        pointNum: sermonRef.current.points.length
-          ? sermonRef.current.points[sermonRef.current.points.length - 1].num
-          : null,
-      });
-      if (verseLogRef.current.length > 24) verseLogRef.current.shift();
-    }
-    addNote(h.label + " — " + trimWords(h.text, 12));
+    logVerse(stRef.current, h.label, h.text, trigger);
   }
 
   async function showSeqSlide(idx: number) {
@@ -369,80 +341,19 @@ export default function App() {
   }
 
   function extractSermonStructure(text: string) {
-    const tm = text.match(
-      /title\s+(?:of\s+(?:my|the|his|her)\s+(?:message|sermon|teaching)\s+)?(?:is|:)\s+(.+)/i
-    );
-    if (tm) {
-      const t = cleanText(tm[1]).replace(/[.!]+$/, "");
-      if (t.length >= 3) {
-        sermonRef.current.title = t.split(/\s+/).slice(0, 12).join(" ");
-        setMicStatus("Sermon title set: " + sermonRef.current.title);
-        sync();
-      }
-    }
-    const markerRe =
-      /point\s+(?:number\s+|no\.?\s*|#\s*)?(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi;
-    const marks: { num: number; start: number; end: number }[] = [];
-    let m: RegExpExecArray | null;
-    while ((m = markerRe.exec(text)) !== null) {
-      const raw = m[1].toLowerCase();
-      const num = /^\d+$/.test(raw) ? parseInt(raw, 10) : WORD_NUM[raw];
-      if (num && num >= 1 && num <= 12) {
-        marks.push({ num: num, start: m.index, end: m.index + m[0].length });
-      }
-    }
-    for (let i = 0; i < marks.length; i++) {
-      const segEnd = i + 1 < marks.length ? marks[i + 1].start : undefined;
-      let seg = text.slice(marks[i].end, segEnd);
-      seg = seg.split(/[.?!]/)[0];
-      seg = seg.replace(/^[\s,:-]+|[\s,]+$/g, "").trim();
-      if (!seg || seg.split(/\s+/).length < 1) continue;
-      const pt = { num: marks[i].num, text: trimWords(seg, 12).replace(/…$/, "") };
-      const existing = sermonRef.current.points.findIndex((p) => p.num === pt.num);
-      if (existing >= 0) sermonRef.current.points[existing] = pt;
-      else sermonRef.current.points.push(pt);
-      sermonRef.current.points.sort((a, b) => a.num - b.num);
-      setMicStatus("Point " + pt.num + " registered: " + pt.text);
+    const msgs = extractStructure(stRef.current, text);
+    if (msgs.length) {
+      setMicStatus(msgs[msgs.length - 1]);
       sync();
     }
   }
 
   function buildSummary(): SummaryData {
-    const srm = sermonRef.current;
-    if (srm.points.length > 0) {
-      return {
-        points: srm.points.slice(0, 4).map((p) => ({
-          text: p.text,
-          verses: verseLogRef.current
-            .filter((v) => v.pointNum === p.num)
-            .map((v) => v.label)
-            .slice(0, 4),
-        })),
-      };
-    }
-    const log = verseLogRef.current.slice(-14);
-    const points: { text: string; verses: string[] }[] = [];
-    for (const e of log) {
-      const prefix = e.label.replace(/:\d+(-\d+)?$/, "");
-      const last = points[points.length - 1];
-      if (last && last.verses.some((v) => v.startsWith(prefix + " "))) {
-        if (last.verses.length < 4) last.verses.push(e.label);
-      } else {
-        points.push({ text: e.line ? trimWords(e.line, 10) : e.label, verses: [e.label] });
-      }
-      if (points.length >= 4) break;
-    }
-    return { points: points.slice(-4) };
+    return buildSermonSummary(stRef.current);
   }
 
   function sermonTitle(): string {
-    if (sermonRef.current.title) return sermonRef.current.title;
-    const lines = transcriptRef.current.slice(-80);
-    for (const l of lines) {
-      const m = l.text.match(/(?:this morning|today|the message|the theme|the title|we are (?:looking|talking)|preaching)[^.]{0,90}/i);
-      if (m) return trimWords(m[0], 10);
-    }
-    return "Sermon summary";
+    return titleFor(stRef.current, transcriptRef.current.map((l) => l.text));
   }
 
   async function emitSummary() {
@@ -518,6 +429,7 @@ export default function App() {
       return;
     }
     try {
+      await invoke("reset_live");
       const r = await invoke<string>("start_listening", { device: micId || null, model: model });
       listeningRef.current = true;
       setListening(true);
@@ -534,7 +446,7 @@ export default function App() {
   }
 
   function copyNotes() {
-    const srm = sermonRef.current;
+    const srm = stRef.current;
     let out = "";
     if (srm.title) out += "Title: " + srm.title + "\n\n";
     if (srm.points.length) {
@@ -542,13 +454,13 @@ export default function App() {
         "Outline\n" +
         srm.points
           .map((p) => {
-            const vs = verseLogRef.current.filter((v) => v.pointNum === p.num).map((v) => v.label);
+            const vs = stRef.current.verseLog.filter((v) => v.pointNum === p.num).map((v) => v.label);
             return p.num + ". " + p.text + (vs.length ? "\n   " + vs.join(" · ") : "");
           })
           .join("\n") +
         "\n\n";
     }
-    out += notesRef.current.map((n, i) => (i + 1) + ". " + n).join("\n");
+    out += stRef.current.notes.map((n, i) => (i + 1) + ". " + n).join("\n");
     navigator.clipboard
       .writeText(out)
       .then(() => setMicStatus("Notes and outline copied to clipboard."))
@@ -689,7 +601,7 @@ export default function App() {
   async function detect(text: string, line: TrLine) {
     let found: VerseHit[] = [];
     try {
-      found = await invoke<VerseHit[]>("lookup", { input: text, translation: trIdRef.current });
+      found = await invoke<VerseHit[]>("lookup_live", { input: text, translation: trIdRef.current, commit: true });
     } catch (e) {
       console.error(e);
       return;
@@ -726,10 +638,7 @@ export default function App() {
     const line: TrLine = { text: cleaned, labels: carried.slice() };
     transcriptRef.current.push(line);
     if (transcriptRef.current.length > 200) transcriptRef.current.shift();
-    const words = cleaned.split(/\s+/);
-    if (words.length >= 14 && /god|jesus|lord|christ|love|faith|grace|cross|spirit|pray|mercy/i.test(cleaned)) {
-      addNote(trimWords(cleaned, 14));
-    }
+    noteFromLine(stRef.current, cleaned);
     sync();
     void detect(cleaned, line);
     void loadQuoteIndex().then(() => quoteCheck(cleaned));
@@ -882,7 +791,7 @@ export default function App() {
     const settled = settleTail(cleaned);
     let found: VerseHit[] = [];
     try {
-      found = await invoke<VerseHit[]>("lookup", { input: settled, translation: trIdRef.current });
+      found = await invoke<VerseHit[]>("lookup_live", { input: settled, translation: trIdRef.current, commit: false });
     } catch (e) {
       console.error(e);
       return;
@@ -1328,10 +1237,10 @@ export default function App() {
               ))}
           </div>
           <div className="tiny">Sermon outline</div>
-          {(sermonRef.current.title || sermonRef.current.points.length > 0) && (
+          {(stRef.current.title || stRef.current.points.length > 0) && (
             <div className="notes">
-              {sermonRef.current.title && <div className="noteline outlinetitle">{sermonRef.current.title}</div>}
-              {sermonRef.current.points.map((p) => (
+              {stRef.current.title && <div className="noteline outlinetitle">{stRef.current.title}</div>}
+              {stRef.current.points.map((p) => (
                 <div key={p.num} className="noteline">
                   {p.num}. {p.text}
                 </div>
@@ -1340,8 +1249,8 @@ export default function App() {
           )}
           <div className="tiny">Sermon notes (auto)</div>
           <div className="notes">
-            {notesRef.current.length === 0 && <div className="sub dim">Key lines and verses collect here.</div>}
-            {notesRef.current.slice(-8).map((n, i) => (
+            {stRef.current.notes.length === 0 && <div className="sub dim">Key lines and verses collect here.</div>}
+            {stRef.current.notes.slice(-8).map((n, i) => (
               <div key={i} className="noteline">
                 {n}
               </div>
