@@ -248,10 +248,17 @@ fn spawn_capture(
         let pcm = shared.pcm.clone();
         let level = shared.level.clone();
         let total = shared.total.clone();
+        // macOS hands an app without microphone permission pure digital
+        // silence, with no error. Track whether any non-zero sample arrives.
+        let heard = Arc::new(AtomicBool::new(false));
+        let heard_cb = heard.clone();
         let err_fn = move |e| {
             let _ = e;
         };
         let push = move |data: &[f32]| {
+            if !heard_cb.load(Ordering::Relaxed) && data.iter().any(|x| *x != 0.0) {
+                heard_cb.store(true, Ordering::Relaxed);
+            }
             let chunk = resample_to_16k(data, sr);
             let rms = rms_of(&chunk);
             *level.lock().unwrap() = rms;
@@ -294,11 +301,23 @@ fn spawn_capture(
                     return;
                 }
                 let _ = app.emit("listen-status", format!("Capturing from {}", name));
+                let started = std::time::Instant::now();
+                let mut warned = false;
                 loop {
                     if !shared.running.load(Ordering::SeqCst)
                         || shared.generation.load(Ordering::SeqCst) != gen
                     {
                         break;
+                    }
+                    if !warned && started.elapsed().as_secs() >= 3 && !heard.load(Ordering::Relaxed) {
+                        warned = true;
+                        let _ = app.emit(
+                            "listen-status",
+                            format!(
+                                "No sound from {}. Allow AMC Preso in System Settings > Privacy & Security > Microphone, then press Listen again.",
+                                name
+                            ),
+                        );
                     }
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
