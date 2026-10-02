@@ -14,6 +14,7 @@ import {
   SummaryData,
   trimWords,
 } from "./lib/sermon";
+import { contentWords, findLoaded, readPast, translationRequest } from "./lib/voice";
 
 type VerseHit = {
   label: string;
@@ -165,6 +166,7 @@ export default function App() {
   const seq = useRef(1);
   const shownRef = useRef<Record<string, number>>({});
   const lastCmdAt = useRef(0);
+  const lastTrAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
   // Streaming partials: live text of the segment still being spoken, the
@@ -178,6 +180,14 @@ export default function App() {
   const indexLoadedRef = useRef(false);
   const dirtyRef = useRef(false);
   const seqRef = useRef<{ slides: VerseHit[]; idx: number } | null>(null);
+  // Words heard since the current slide of a range went up, for following the
+  // reading. Words of the live segment already counted at that moment are skipped.
+  const followRef = useRef<{ words: string[]; skipSeg: number; skipCount: number }>({
+    words: [],
+    skipSeg: -1,
+    skipCount: 0,
+  });
+  const advancingRef = useRef(false);
 
   function sync() {
     if (dirtyRef.current) return;
@@ -288,6 +298,11 @@ export default function App() {
     if (!seqr) return;
     seqr.idx = Math.max(0, Math.min(idx, seqr.slides.length - 1));
     const h = seqr.slides[seqr.idx];
+    followRef.current = {
+      words: [],
+      skipSeg: partialRef.current.seg,
+      skipCount: contentWords(partialRef.current.text).length,
+    };
     const s = await invoke<Slide>("show_verse", { hit: h });
     setSlide(s);
     slideRef.current = s;
@@ -469,7 +484,9 @@ export default function App() {
 
   useEffect(() => {
     const subs = [
-      listen<{ text: string; ms: number }>("transcript", (e) => onTranscript(e.payload.text, e.payload.ms)),
+      listen<{ text: string; ms: number; seg: number }>("transcript", (e) =>
+        onTranscript(e.payload.text, e.payload.ms, e.payload.seg)
+      ),
       listen<{ text: string; ms: number; seg: number }>("transcript-partial", (e) =>
         onPartial(e.payload.text, e.payload.ms, e.payload.seg)
       ),
@@ -673,36 +690,19 @@ export default function App() {
       });
       return true;
     }
-    const trMatch = norm.match(/(?:show|read|display) (?:it|that|this) in ([a-z ]{2,20})/);
-    if (trMatch) {
-      const wanted = trMatch[1].trim();
-      const tr = translationsRef.current.find(
-        (t) => t.id === wanted || t.name.toLowerCase().includes(wanted) || wanted.includes(t.id)
-      );
+    // A translation request switches the screen but does not consume the
+    // sentence: "the Amplified version of John 3:16" still shows John 3:16.
+    const want = translationRequest(text);
+    if (want && now - lastTrAt.current >= 1500) {
+      lastTrAt.current = now;
+      const tr = findLoaded(want.code, translationsRef.current);
       if (tr) {
-        if (now - lastCmdAt.current < 1500) return true;
-        lastCmdAt.current = now;
-        setTrId(tr.id);
-        trIdRef.current = tr.id;
-        const ref = lastVerse.current?.reference;
-        if (ref) {
-          invoke<VerseHit | null>("verse_at", {
-            book: ref.book,
-            chapter: ref.chapter,
-            verse: ref.verse || 1,
-            translation: tr.id,
-          }).then((hit) => {
-            if (hit) {
-              seqRef.current = null;
-              void showVerse(hit);
-            }
-          });
-        }
-        setMicStatus("Translation: " + tr.name);
+        if (tr.id !== trIdRef.current) void switchTranslation(tr.id, tr.name);
       } else {
-        setMicStatus("Translation \"" + wanted + "\" is not loaded. Import it in Quick verse.");
+        setMicStatus(
+          want.name + " is not loaded. Import it in Quick verse; copyrighted translations cannot ship with the app."
+        );
       }
-      return true;
     }
     const nextPhrases = ["next verse", "next slide", "next one", "keep going"];
     if (nextPhrases.some((p) => norm.includes(p))) {
@@ -785,6 +785,7 @@ export default function App() {
     }
     const cleaned = cleanText(text);
     partialRef.current.text = cleaned;
+    followReading(cleaned, seg);
     diagRef.current = "partial " + ms + " ms · " + trimWords(cleaned, 8);
     sync();
     if (!cleaned || isJunk(cleaned)) return;
@@ -807,7 +808,80 @@ export default function App() {
     for (const lb of line.labels) if (!cur.fired.includes(lb)) cur.fired.push(lb);
   }
 
-  function onTranscript(text: string, ms: number) {
+  // While a verse range is on screen, move to the next verse as soon as the
+  // preacher has read past the current one, and stop at the end of the range.
+  function followReading(partialText: string, seg: number) {
+    const seqr = seqRef.current;
+    if (!seqr || advancingRef.current || seqr.idx >= seqr.slides.length - 1) return;
+    const f = followRef.current;
+    let live = contentWords(partialText);
+    if (seg === f.skipSeg) live = live.slice(f.skipCount);
+    const spoken = f.words.concat(live);
+    const cur = seqr.slides[seqr.idx];
+    const next = seqr.slides[seqr.idx + 1];
+    if (!readPast(spoken, cur.text, next ? next.text : null)) return;
+    advancingRef.current = true;
+    // A "next verse" said in the same breath must not move a second time.
+    lastCmdAt.current = Date.now();
+    const n = seqr.idx + 1;
+    showSeqSlide(n)
+      .then(() =>
+        setMicStatus("Following the reading: " + seqr.slides[n].label + " (" + (n + 1) + " of " + seqr.slides.length + ")")
+      )
+      .catch((e) => console.error(e))
+      .finally(() => {
+        advancingRef.current = false;
+      });
+  }
+
+  async function switchTranslation(id: string, name: string) {
+    changeTr(id);
+    setMicStatus("Translation: " + name);
+    const seqr = seqRef.current;
+    const shownBefore = lastVerse.current;
+    // If a new verse went up while we fetched, it already uses the new
+    // translation; do not put the old one back over it.
+    const superseded = () => seqRef.current !== seqr || lastVerse.current !== shownBefore;
+    const first = seqr?.slides[0].reference;
+    const last = seqr?.slides[seqr.slides.length - 1].reference;
+    if (seqr && first && last && first.verse && last.verse) {
+      const slides = await invoke<VerseHit[]>("verse_range", {
+        book: first.book,
+        chapter: first.chapter,
+        from: first.verse,
+        to: last.verse,
+        translation: id,
+      });
+      if (slides.length && !superseded()) {
+        seqRef.current = { slides, idx: Math.min(seqr.idx, slides.length - 1) };
+        await showSeqSlide(seqRef.current.idx);
+      }
+      return;
+    }
+    const ref = lastVerse.current?.reference;
+    if (ref) {
+      const hit = await invoke<VerseHit | null>("verse_at", {
+        book: ref.book,
+        chapter: ref.chapter,
+        verse: ref.verse || 1,
+        translation: id,
+      });
+      if (hit && !superseded()) {
+        seqRef.current = null;
+        await showVerse(hit);
+      }
+    }
+  }
+
+  function onTranscript(text: string, ms: number, seg: number = -1) {
+    const f = followRef.current;
+    let finalWords = contentWords(text);
+    if (seg === f.skipSeg) {
+      finalWords = finalWords.slice(f.skipCount);
+      f.skipSeg = -1;
+    }
+    f.words.push(...finalWords);
+    followReading("", -2);
     const firedFromPartials = partialRef.current.fired;
     partialRef.current = { seg: -1, text: "", labels: new Set(), fired: [] };
     if (!text.trim()) {

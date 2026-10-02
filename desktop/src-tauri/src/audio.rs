@@ -166,6 +166,10 @@ pub fn run_whisper_opts(
     if partial {
         params.set_single_segment(true);
         params.set_no_timestamps(true);
+        // Speech runs at about 4 tokens a second. A cap well above that stops
+        // a repetition loop from stalling partials for seconds at a time.
+        let secs = samples.len() as f32 / TARGET_SR as f32;
+        params.set_max_tokens((secs * 8.0) as i32 + 16);
         if audio_ctx {
             // 1500 encoder frames cover 30 s; size the window to the audio plus margin.
             let secs = samples.len() as f32 / TARGET_SR as f32;

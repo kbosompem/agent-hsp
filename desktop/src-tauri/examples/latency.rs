@@ -128,6 +128,7 @@ fn main() {
     // last 180 s is not shown again.
     let mut shown: Vec<(f64, String, &'static str)> = Vec::new();
     let mut finals_log: Vec<serde_json::Value> = Vec::new();
+    let mut partials_log: Vec<serde_json::Value> = Vec::new();
     let mut shown_log: Vec<serde_json::Value> = Vec::new();
     let mut prev: HashSet<String> = HashSet::new();
     let mut prev_seg = u64::MAX;
@@ -161,8 +162,9 @@ fn main() {
             .filter(|h| !partial || h.reference.as_ref().map_or(false, |r| r.verse.is_some()))
             .collect();
         let labels: HashSet<String> = hits.iter().map(|h| h.label.clone()).collect();
-        if !partial && !text.is_empty() {
-            finals_log.push(serde_json::json!({ "t": now, "text": text }));
+        if !text.is_empty() {
+            let row = serde_json::json!({ "t": now, "text": text, "seg": s });
+            if partial { partials_log.push(row) } else { finals_log.push(row) }
         }
         // Same rule as the console: a partial hit must repeat in the next
         // partial of the same segment; a final hit counts at once.
@@ -192,7 +194,7 @@ fn main() {
     }
 
     if let Some(path) = &dump {
-        let out = serde_json::json!({ "clip": [clip_start, clip_end], "finals": finals_log, "shown": shown_log });
+        let out = serde_json::json!({ "clip": [clip_start, clip_end], "finals": finals_log, "partials": partials_log, "shown": shown_log });
         std::fs::write(path, serde_json::to_string_pretty(&out).unwrap()).unwrap();
     }
     println!("mode={} audio_ctx={} partials={} finals={} whisper_total={}ms", mode, actx, n_partial, n_final, whisper_ms);
