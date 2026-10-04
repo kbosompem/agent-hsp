@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "console",
-        "title": "Agent HSP · Console",
+        "title": "Agent HSP \u00b7 Console",
         "width": 1280,
         "height": 820,
         "minWidth": 900,
@@ -21,7 +21,7 @@
       },
       {
         "label": "output",
-        "title": "Agent HSP · Output",
+        "title": "Agent HSP \u00b7 Output",
         "url": "output.html",
         "width": 1280,
         "height": 720,
@@ -39,7 +39,9 @@
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
-      "icons/128x128@2x.png"
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ]
   }
 }
