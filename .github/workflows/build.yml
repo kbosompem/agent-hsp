@@ -34,6 +34,6 @@ jobs:
         with:
           name: preso-${{ matrix.os }}
           path: |
-            desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/target/release/bundle/dmg/*.dmg
+            desktop/target/release/bundle/nsis/*.exe
           if-no-files-found: warn
