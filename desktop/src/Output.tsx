@@ -16,9 +16,14 @@ type OutputTheme = {
   textColor: string;
   accent: string;
   font: "serif" | "sans";
+  textScale?: number;
 };
 
 function slideBg(t: OutputTheme | null): any {
+  return { ...slideBgOnly(t), "--ts": t?.textScale ?? 1 };
+}
+
+function slideBgOnly(t: OutputTheme | null): any {
   if (!t) return undefined;
   if (t.bgKind === "image" && t.image) {
     return {

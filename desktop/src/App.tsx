@@ -58,6 +58,7 @@ type OutputTheme = {
   textColor: string;
   accent: string;
   font: "serif" | "sans";
+  textScale?: number;
 };
 
 const GRADIENTS: { name: string; css: string }[] = [
@@ -77,6 +78,7 @@ const DEFAULT_THEME: OutputTheme = {
   textColor: "#f3ecdc",
   accent: "#e9c465",
   font: "serif",
+  textScale: 1,
 };
 
 // VerseCast's value from real sermon audio; tune on our sermons (issue 15).
@@ -952,15 +954,8 @@ export default function App() {
     }
   }
 
-  function slideBg(t: OutputTheme): any {
-    if (t.bgKind === "image" && t.image) {
-      return {
-        backgroundImage: "url(" + t.image + ")",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return { background: t.gradient };
+  function bumpText(d: number) {
+    setOutTheme((t) => ({ ...t, textScale: Math.min(2.2, Math.max(0.6, Math.round(((t.textScale ?? 1) + d) * 10) / 10)) }));
   }
 
   function overlayEl(t: OutputTheme) {
@@ -1173,6 +1168,19 @@ export default function App() {
               <span className="sub">{Math.round(outTheme.overlay * 100)}%</span>
             </div>
             <div className="row">
+              <span className="grouplabel">Text size</span>
+              <input
+                type="range"
+                min="60"
+                max="220"
+                step="5"
+                value={Math.round((outTheme.textScale ?? 1) * 100)}
+                onChange={(e) => setOutTheme({ ...outTheme, textScale: parseInt(e.target.value, 10) / 100 })}
+                style={{ width: 220 }}
+              />
+              <span className="sub">{Math.round((outTheme.textScale ?? 1) * 100)}%</span>
+            </div>
+            <div className="row">
               <span className="grouplabel">Text</span>
               <button
                 className="btn"
@@ -1257,7 +1265,14 @@ export default function App() {
           <div className="dimline">{diagRef.current || "\u00A0"}</div>
         </div>
         <div className="pane col-center">
-          <div className="tiny">Output preview</div>
+          <div className="rowsp">
+            <div className="tiny">Output preview</div>
+            <span className="tabs">
+              <button className="tab" title="Smaller text" onClick={() => bumpText(-0.1)}>A−</button>
+              <span className="tiny">{Math.round((outTheme.textScale ?? 1) * 100)}%</span>
+              <button className="tab" title="Bigger text" onClick={() => bumpText(0.1)}>A+</button>
+            </span>
+          </div>
           <div className="preview">{preview}</div>
           <div className="tiny">Verses · instant show · 60 s hold · then summary</div>
           <div className="cards">
@@ -1444,6 +1459,10 @@ function renderSummary(slide: Slide, theme: OutputTheme) {
 }
 
 function slideBg(theme: OutputTheme): any {
+  return { ...slideBgOnly(theme), "--ts": theme?.textScale ?? 1 };
+}
+
+function slideBgOnly(theme: OutputTheme): any {
   if (theme.bgKind === "image" && theme.image) {
     return {
       backgroundImage: "url(" + theme.image + ")",
