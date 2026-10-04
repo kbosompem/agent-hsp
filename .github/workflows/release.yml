@@ -1,0 +1,88 @@
+name: release
+
+# Push a tag like v0.2.0 to build the installers and attach them to a
+# draft GitHub Release. A maintainer reviews the draft and publishes it.
+# See docs/RELEASING.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # The quote-matching index (about 47 MB) is not in git. Build it once,
+  # cache it, and hand it to both installer builds.
+  verse-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: desktop/public/verse-index.bin
+          key: verse-index-${{ hashFiles('desktop/crates/preso-core/kjv.json', 'scripts/verse-index/build.js', 'scripts/verse-index/package-lock.json') }}
+      - name: Build verse index
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: scripts/verse-index
+        run: |
+          npm ci
+          node build.js
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verse-index
+          path: desktop/public/verse-index.bin
+          if-no-files-found: error
+
+  build:
+    needs: verse-index
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --bundles dmg
+          - os: windows-latest
+            args: --bundles nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: desktop
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verse-index
+          path: desktop/public
+      - name: Install frontend deps
+        working-directory: desktop
+        run: npm install
+      - name: Build installer and attach to draft release
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: Agent HSP ${{ github.ref_name }}
+          releaseBody: |
+            See CHANGELOG.md for what changed.
+
+            These installers are not signed yet.
+            Windows: SmartScreen will warn you. Click "More info", then "Run anyway".
+            macOS: open System Settings > Privacy & Security and click "Open Anyway".
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
