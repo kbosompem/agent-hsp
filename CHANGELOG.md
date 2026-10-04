@@ -35,6 +35,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Fixed
 
+- Stereo and multi-channel inputs, such as a USB mixer feed, are now mixed down to one channel correctly. Silent channels are left out so a voice on one side of the feed is not buried. 16-bit unsigned inputs are also accepted.
 - Glued numbers such as "Philippians 413" now read as 4:13 when only one reading is valid.
 - Book ordinals ("1st", "2nd", "3rd"), "Micah 6a" as 6:8, and common misspellings such as "Ecclesiast".
 - "point number one" no longer matches the book of Numbers. "number" after chapter or verse is skipped.

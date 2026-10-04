@@ -216,6 +216,32 @@ fn is_prompt_echo(text: &str) -> bool {
     words.len() >= 3 && words.iter().all(|w| prompt.contains(w))
 }
 
+/// Interleaved multi-channel audio to mono. Mixer feeds often carry the
+/// pastor's mic on one channel and near-silence on the rest, so only
+/// channels within 20 dB of the loudest are averaged; a plain average
+/// would bury the voice.
+pub fn downmix(data: &[f32], channels: usize) -> Vec<f32> {
+    if channels <= 1 {
+        return data.to_vec();
+    }
+    let frames = data.len() / channels;
+    let mut energy = vec![0f32; channels];
+    for f in 0..frames {
+        for c in 0..channels {
+            let x = data[f * channels + c];
+            energy[c] += x * x;
+        }
+    }
+    let loudest = energy.iter().cloned().fold(0f32, f32::max);
+    let active: Vec<usize> = (0..channels)
+        .filter(|&c| loudest == 0.0 || energy[c] >= loudest * 0.01)
+        .collect();
+    let n = active.len() as f32;
+    (0..frames)
+        .map(|f| active.iter().map(|&c| data[f * channels + c]).sum::<f32>() / n)
+        .collect()
+}
+
 fn spawn_capture(
     app: AppHandle,
     device_name: Option<String>,
@@ -249,6 +275,7 @@ fn spawn_capture(
             }
         };
         let sr = cfg.sample_rate().0 as usize;
+        let channels = cfg.channels() as usize;
         let pcm = shared.pcm.clone();
         let level = shared.level.clone();
         let total = shared.total.clone();
@@ -263,7 +290,8 @@ fn spawn_capture(
             if !heard_cb.load(Ordering::Relaxed) && data.iter().any(|x| *x != 0.0) {
                 heard_cb.store(true, Ordering::Relaxed);
             }
-            let chunk = resample_to_16k(data, sr);
+            let mono = downmix(data, channels);
+            let chunk = resample_to_16k(&mono, sr);
             let rms = rms_of(&chunk);
             *level.lock().unwrap() = rms;
             {
@@ -288,6 +316,15 @@ fn spawn_capture(
                 &cfg.clone().into(),
                 move |d: &[i16], _| {
                     let f: Vec<f32> = d.iter().map(|x| *x as f32 / 32768.0).collect();
+                    push(&f);
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::U16 => device.build_input_stream(
+                &cfg.clone().into(),
+                move |d: &[u16], _| {
+                    let f: Vec<f32> = d.iter().map(|x| (*x as f32 - 32768.0) / 32768.0).collect();
                     push(&f);
                 },
                 err_fn,
@@ -428,7 +465,21 @@ pub fn slice_abs(buf: &[f32], total: u64, start: u64, end: u64) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_prompt_echo;
+    use super::{downmix, is_prompt_echo};
+
+    #[test]
+    fn downmix_keeps_a_one_sided_mixer_feed() {
+        // Left channel carries the voice, right is silent.
+        let data = [0.5, 0.0, -0.5, 0.0, 0.25, 0.0];
+        assert_eq!(downmix(&data, 2), vec![0.5, -0.5, 0.25]);
+    }
+
+    #[test]
+    fn downmix_averages_balanced_stereo() {
+        let data = [0.4, 0.2, -0.4, -0.2];
+        let m = downmix(&data, 2);
+        assert!((m[0] - 0.3).abs() < 1e-6 && (m[1] + 0.3).abs() < 1e-6);
+    }
 
     #[test]
     fn prompt_echo_is_dropped() {

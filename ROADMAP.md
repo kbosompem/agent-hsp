@@ -8,7 +8,7 @@ Each item below is sized to be one pull request. Items marked **good first issue
 
 | # | Item | Why |
 |---|---|---|
-| 0.0 | Fix stereo and multi-channel audio input (USB mixers) | Capture assumes one channel, so a mixer feed comes through garbled. Most churches will use a mixer feed. |
+| 0.0 | ~~Fix stereo and multi-channel audio input (USB mixers)~~ Done | Capture assumes one channel, so a mixer feed comes through garbled. Most churches will use a mixer feed. |
 | 0.1 | Local database (SQLite, a single file on the machine) for sessions, agendas, songs and media | Today everything lives in browser storage and is lost or capped. Every feature below needs a real store. |
 | 0.2 | Media library folder: copy imported pictures, video and audio into the app data folder and index them | Agendas need to point at files that do not move. |
 | 0.3 | Slide model: one shared "slide" type (verse, song lyric, text, picture, video, audio, countdown, blank) rendered by the output window | Today the output only knows "verse" and "summary". |
