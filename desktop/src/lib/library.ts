@@ -10,6 +10,8 @@ export type Song = {
   sections: SongSection[];
   /** Section tags in singing order, e.g. ["V1", "C", "V2", "C"]. Empty means as written. */
   order: string[];
+  /** Each section is already one slide (VideoPsalm imports); never split it. */
+  keepSlides?: boolean;
 };
 
 export type AgendaKind = "song" | "scripture" | "text" | "logo" | "blank" | "sermon";
@@ -242,7 +244,7 @@ export function songSlides(song: Song, maxLines = 4): ItemSlide[] {
   const out: ItemSlide[] = [];
   for (const tag of order) {
     const sec = byTag.get(tag)!;
-    const parts = chunkLines(sec.text, maxLines);
+    const parts = song.keepSlides ? [sec.text] : chunkLines(sec.text, maxLines);
     parts.forEach((body, i) =>
       out.push({
         kind: "text",

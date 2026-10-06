@@ -19,6 +19,7 @@ import {
   songToText,
   textSlides,
 } from "./lib/library";
+import { parseVideoPsalmAgenda, parseVideoPsalmJson } from "./lib/videopsalm";
 
 export type ServiceNav = { next: () => void; prev: () => void };
 
@@ -192,13 +193,20 @@ export default function Service(p: Props) {
     const got: Song[] = [];
     for (const f of Array.from(files)) {
       try {
-        got.push(...parseSongFile(f.name, await f.text()));
+        if (/\.(vpagd|zip)$/i.test(f.name)) {
+          got.push(...(await parseVideoPsalmAgenda(await f.arrayBuffer())));
+          continue;
+        }
+        const text = await f.text();
+        // VideoPsalm songbooks and songs: loose JSON with Verses / Songs keys.
+        if (/^\s*[\[{]/.test(text) && /\b(Verses|Songs)\s*:/.test(text)) got.push(...parseVideoPsalmJson(text));
+        else got.push(...parseSongFile(f.name, text));
       } catch (e) {
         console.error(e);
       }
     }
     if (!got.length) {
-      p.setStatus("No songs found in those files. Supported: plain text, OpenLyrics XML, OpenSong XML.");
+      p.setStatus("No songs found in those files. Supported: VideoPsalm (.vpagd, songbook .json), plain text, OpenLyrics XML, OpenSong XML.");
       return;
     }
     const have = new Set(lib.songs.map((s) => s.title.toLowerCase()));
@@ -355,7 +363,7 @@ export default function Service(p: Props) {
               ref={fileRef}
               type="file"
               multiple
-              accept=".txt,.xml,.sng,text/plain,application/xml"
+              accept=".txt,.xml,.sng,.json,.vpagd,.zip,text/plain,application/xml,application/json"
               style={{ display: "none" }}
               onChange={(e) => {
                 void importFiles(e.target.files);
@@ -384,7 +392,7 @@ export default function Service(p: Props) {
                   <button className="tab" onClick={() => setEditSong({ id: s.id, text: songToText(s) })}>Edit</button>
                 </div>
               ))}
-              {lib.songs.length === 0 && <div className="sub dim">Import songs (plain text, OpenLyrics or OpenSong files) or create one.</div>}
+              {lib.songs.length === 0 && <div className="sub dim">Import songs (VideoPsalm, plain text, OpenLyrics or OpenSong files) or create one.</div>}
             </div>
           </>
         )}

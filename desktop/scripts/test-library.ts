@@ -20,3 +20,11 @@ eq(songSlides(ord).map((x) => x.label), ["Verse 1", "Chorus", "Verse 2", "Chorus
 eq(parseSongFile("a.txt", "One\n[Verse 1]\nx\n---\nTwo\n[Verse 1]\ny\n").map((x) => x.title), ["One", "Two"], "multi-song file");
 eq(textSlides({ id: "1", kind: "text", title: "Announcements", body: "Youth meeting Friday\n\nBaby dedication next week" }).length, 2, "text slides");
 console.log(fail ? fail + " failed" : "all passed");
+
+// VideoPsalm loose JSON: bare keys, raw line breaks in strings, inline markup.
+import { parseVideoPsalmJson } from "../src/lib/videopsalm";
+const vp = parseVideoPsalmJson('{Guid:"x",Verses:[{\nText:"<s1384>OFFERING TIME\n</s>Text to give"},{ID:2,\nText:"Line two"}],\nText:"Offering Time"}');
+eq(vp.map((s) => [s.title, s.sections.map((x) => x.text)]), [["Offering Time", ["OFFERING TIME\nText to give", "Line two"]]], "videopsalm song");
+eq(songSlides(vp[0]).length, 2, "videopsalm verses stay one slide each");
+eq(parseVideoPsalmJson('{Text:"Book",Songs:[{Verses:[{Text:"a"}],Text:"S1"},{Verses:[{Text:"b"}],Text:"S2"}]}').map((s) => s.title), ["S1", "S2"], "videopsalm songbook");
+console.log(fail ? fail + " failed" : "videopsalm passed");
