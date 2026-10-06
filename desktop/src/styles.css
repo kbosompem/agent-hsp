@@ -749,3 +749,51 @@ input:focus, select:focus {
   color: #5c6b8a;
   text-transform: uppercase;
 }
+
+/* Service page: agenda | item slides | preview + song library. */
+.service {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 320px 1fr 340px;
+  gap: 12px;
+  min-height: 0;
+}
+.service.empty { grid-template-columns: minmax(300px, 520px); justify-content: center; }
+.service .pane { overflow: auto; }
+.svc-name { font-size: 15px; font-weight: 600; flex: 1; }
+.rowbtns.wrap { flex-wrap: wrap; }
+.svc-items, .svc-songs { display: flex; flex-direction: column; gap: 4px; }
+.svc-item, .svc-song {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.svc-item.sel { border-color: var(--accent-border); }
+.svc-item.live { background: var(--live-bg); border-color: var(--green-border); }
+.svc-num { color: var(--dim); font-size: 11px; width: 18px; text-align: right; }
+.svc-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-ops { display: flex; gap: 2px; }
+.svc-slides {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.svc-slide {
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  min-height: 84px;
+}
+.svc-slide:hover { border-color: var(--accent-border); }
+.svc-slide.live { background: var(--live-bg); border-color: var(--green-border); }
+.svc-slide-body { white-space: pre-line; font-size: 12px; line-height: 1.35; max-height: 7.2em; overflow: hidden; }
+.svc-songedit textarea, .svc-detail textarea { width: 100%; font-family: inherit; }
+.evcard { cursor: pointer; }
+.evcard.held { border-style: dashed; }

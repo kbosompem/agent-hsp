@@ -76,6 +76,7 @@ npx tsc --noEmit
 
 # Voice helper tests (following a reading, translation requests)
 npx esbuild scripts/test-voice.ts --bundle --platform=node --outfile=/tmp/tv.js && node /tmp/tv.js
+npx esbuild scripts/test-library.ts --bundle --platform=node --outfile=/tmp/tl.js && node /tmp/tl.js
 
 # Browser alpha parser tests (only if you touched alpha/)
 cd .. && node alpha/test.js

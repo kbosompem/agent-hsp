@@ -98,6 +98,38 @@ fn import_translation(
     Ok(TranslationInfo { id, name })
 }
 
+/// Songs and service agendas, kept as one JSON document in the app data
+/// folder. The console owns the shape; Rust only stores it.
+fn library_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("library.json"))
+}
+
+#[tauri::command]
+fn load_library(app: tauri::AppHandle) -> Result<String, String> {
+    let p = library_path(&app)?;
+    match std::fs::read_to_string(&p) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Write to a temporary file and rename, so a crash mid-save never leaves a
+/// half-written library. The previous version is kept as library.bak.json.
+#[tauri::command]
+fn save_library(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    serde_json::from_str::<serde_json::Value>(&json).map_err(|e| format!("not JSON: {}", e))?;
+    let p = library_path(&app)?;
+    let tmp = p.with_extension("tmp");
+    std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
+    if p.exists() {
+        let _ = std::fs::copy(&p, p.with_file_name("library.bak.json"));
+    }
+    std::fs::rename(&tmp, &p).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn open_url(url: String) {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -195,6 +227,8 @@ pub fn run() {
             open_url,
             show_verse,
             show_slide,
+            load_library,
+            save_library,
             audio::list_audio_inputs,
             audio::ensure_model,
             audio::start_listening,

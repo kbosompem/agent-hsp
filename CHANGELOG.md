@@ -10,6 +10,9 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Service page: build an order of service (songs, scripture, text/announcements, logo, blackout, sermon), save it, duplicate last week's, and run it live with the arrow keys, Page Down/Up or a presentation clicker. Every item except the sermon keeps the AI off the screen; going live on the sermon starts listening.
+- Song library with search by title or lyrics, a plain-text editor, and import from plain text, OpenLyrics XML and OpenSong XML. Long sections split into slides of at most four lines.
+- Songs and services are saved to `library.json` in the app data folder (written atomically, previous copy kept as `library.bak.json`).
 - Live keys: B blackout, L logo, Esc clear to logo, H hold, Right/Left next/previous verse, Enter shows the oldest waiting card. Pressing B or L again brings back the slide that was up. Blackout and Logo turn on Hold, where the AI never changes the screen and detected verses wait as clickable cards.
 - Projector slide kinds for blackout, logo and plain text (lyrics, announcements). Church name setting on the Theme page replaces the hard-coded "AMC CHURCH".
 - Transcription health on the console: Listening, Behind by N s, or Not transcribing with the reason. Whisper failures are logged instead of silently returning empty text (issue 2).

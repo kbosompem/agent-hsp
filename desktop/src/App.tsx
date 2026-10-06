@@ -14,6 +14,8 @@ import {
   SummaryData,
   trimWords,
 } from "./lib/sermon";
+import Service, { ServiceNav } from "./Service";
+import { AgendaItem, ItemSlide, Library, emptyLibrary, parseLibrary } from "./lib/library";
 import { contentWords, findLoaded, hasReferenceWords, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
 type VerseHit = {
@@ -167,7 +169,13 @@ export default function App() {
     () => (localStorage.getItem("preso-theme") as "dark" | "light") || "dark"
   );
   const [transcriptView, setTranscriptView] = useState<"processed" | "raw">("processed");
-  const [view, setView] = useState<"console" | "theme" | "downloads">("console");
+  const [view, setView] = useState<"console" | "service" | "theme" | "downloads">("console");
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  // Songs and agendas (lib/library.ts), saved to library.json in the app data folder.
+  const [library, setLibraryState] = useState<Library>(emptyLibrary());
+  const libLoaded = useRef(false);
+  const navRef = useRef<ServiceNav | null>(null);
   const [trId, setTrId] = useState("kjv");
   const [outTheme, setOutTheme] = useState<OutputTheme>(() => {
     try {
@@ -626,6 +634,77 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    invoke<string>("load_library")
+      .then((j) => {
+        setLibraryState(parseLibrary(j));
+        libLoaded.current = true;
+      })
+      .catch((e) => {
+        // Never overwrite a library we could not read.
+        setMicStatus("Could not load the song library: " + String(e));
+      });
+  }, []);
+  useEffect(() => {
+    if (!libLoaded.current) return;
+    const t = setTimeout(() => {
+      invoke("save_library", { json: JSON.stringify(library) }).catch((e) =>
+        setMicStatus("Could not save the song library: " + String(e))
+      );
+    }, 400);
+    return () => clearTimeout(t);
+  }, [library]);
+
+  async function showItemSlide(it: ItemSlide) {
+    beforeCover.current = null;
+    seqRef.current = null;
+    let s: Slide;
+    if (it.hit) {
+      const h = it.hit as VerseHit;
+      s = await invoke<Slide>("show_verse", { hit: h });
+      lastVerse.current = h;
+      verseShownAt.current = Date.now();
+    } else {
+      s = await invoke<Slide>("show_slide", { kind: it.kind, title: it.title, body: it.body, sub: it.sub });
+    }
+    setSlide(s);
+    slideRef.current = s;
+  }
+
+  async function scriptureSlides(reference: string): Promise<ItemSlide[]> {
+    const found = await invoke<VerseHit[]>("lookup", { input: reference, translation: trIdRef.current });
+    const h = found.find((x) => x.reference);
+    const r = h?.reference;
+    if (!h || !r) return [];
+    let hits: VerseHit[] = [];
+    if (r.verse != null && r.end_verse != null) {
+      hits = await invoke<VerseHit[]>("verse_range", {
+        book: r.book, chapter: r.chapter, from: r.verse, to: r.end_verse, translation: trIdRef.current,
+      });
+    } else if (r.verse != null) {
+      hits = [h];
+    } else {
+      // A whole chapter: one slide per verse.
+      for (let v = 1; v <= 200; v++) {
+        const x = await invoke<VerseHit | null>("verse_at", { book: r.book, chapter: r.chapter, verse: v, translation: trIdRef.current });
+        if (!x) break;
+        hits.push(x);
+      }
+    }
+    return hits.map((x) => ({ kind: "verse", title: x.label, body: x.text, sub: x.translation, label: x.label, hit: x }));
+  }
+
+  // Going live on an agenda item. Only a sermon lets the AI change the screen.
+  function enterItem(it: AgendaItem) {
+    if (it.kind === "sermon") {
+      setHold(false);
+      if (!listeningRef.current) void toggleListen();
+      setMicStatus("Sermon: listening, verses go on screen as they are named.");
+    } else {
+      setHold(true);
+    }
+  }
+
   // Live keys. Ignored while typing in a field.
   //   B blackout · L logo · H hold · Esc clear to logo · Right/Left next/previous verse
   //   Enter shows the oldest waiting card
@@ -642,8 +721,13 @@ export default function App() {
     } else if (k === "h" || k === "H") {
       setHold(!holdRef.current);
       setMicStatus(holdRef.current ? "Hold is on: detected verses wait for you." : "Hold off: verses show as they are heard.");
-    } else if (k === "ArrowRight") void nextVerse();
-    else if (k === "ArrowLeft") void prevVerse();
+    } else if (k === "ArrowRight" || k === "PageDown") {
+      if (viewRef.current === "service" && navRef.current) navRef.current.next();
+      else void nextVerse();
+    } else if (k === "ArrowLeft" || k === "PageUp") {
+      if (viewRef.current === "service" && navRef.current) navRef.current.prev();
+      else void prevVerse();
+    }
     else if (k === "Enter") {
       const c = cardsRef.current.find((x) => x.status === "pending");
       if (c) void showCard(c);
@@ -1154,6 +1238,9 @@ export default function App() {
           <button className={"btn" + (view === "console" ? " on" : "")} onClick={() => setView("console")}>
             Console
           </button>
+          <button className={"btn" + (view === "service" ? " on" : "")} onClick={() => setView("service")}>
+            Service
+          </button>
           <button className={"btn" + (view === "theme" ? " on" : "")} onClick={() => setView("theme")}>
             Theme
           </button>
@@ -1214,7 +1301,23 @@ export default function App() {
           </>
         )}
       </header>
-      {view === "downloads" ? (
+      {view === "service" ? (
+        <>
+        <div className="statline">{micStatus || "Build the order of service, then run it: → or Page Down moves through every slide."}</div>
+        <Service
+          library={library}
+          setLibrary={setLibraryState}
+          preview={preview}
+          showSlide={showItemSlide}
+          scriptureSlides={scriptureSlides}
+          onEnterItem={enterItem}
+          registerNav={(n) => {
+            navRef.current = n;
+          }}
+          setStatus={setMicStatus}
+        />
+        </>
+      ) : view === "downloads" ? (
         <div className="downloads">          <div className="dl-section">
             <div className="tiny">Bible translations (XML files)</div>
             <p className="sub">

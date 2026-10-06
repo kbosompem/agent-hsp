@@ -144,6 +144,8 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
 | `open_url` | Open an http(s) link in the system browser. |
 | `show_verse` | Turn a verse into a slide and broadcast it. |
 | `show_slide` | Broadcast any slide (used for the summary). |
+| `load_library` | Read `library.json` (songs and agendas). |
+| `save_library` | Write it atomically, keeping a `.bak` copy. |
 | `list_audio_inputs` | Names of input devices. |
 | `ensure_model` | Download a whisper model if it is not on disk. |
 | `start_listening` | Load the model and start the capture and segmenter threads. |
@@ -173,7 +175,7 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
   - On first start, data from the old `com.amcpreso.desktop` folder is moved here.
 - **Browser localStorage in the console window.** Only two keys: `preso-theme` (light/dark console) and `preso-output-theme` (the projector theme, including any background image as a data URL; a large image may not fit and then only lasts for the session).
 - **Console memory only.** Transcript, verse history, pending cards, sermon outline and notes. These are lost when the app closes.
-- There are no saved sessions, service plans or song library yet. `plan.html` describes a SQLite data model for later.
+- **`library.json`** in the app data folder: songs and service agendas (`src/lib/library.ts` defines the shape; `load_library` / `save_library` only store it). There are no saved sessions yet. `plan.html` describes a SQLite data model for later.
 
 ## Tests and tools
 
