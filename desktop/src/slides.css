@@ -1,0 +1,288 @@
+/* Projector slides: shared by the output window and the console preview
+   (SlideView.tsx). Sizes use container query units so a slide scales with
+   whatever box it is drawn in. */
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 5% 7%;
+  container-type: size;
+}
+
+.slide.verse {
+  background: radial-gradient(120% 95% at 50% 0%, #24314e 0%, #101827 55%, #090d14 100%);
+}
+
+.slide.idle { background: #07090e;
+}
+
+.slide.summary {
+  background: radial-gradient(120% 95% at 50% 0%, #24314e 0%, #101827 55%, #090d14 100%);
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.vlogo {
+  position: absolute;
+  top: 2.2%;
+  right: 2.8%;
+  font-size: calc(1.2cqw * var(--ts, 1));
+  letter-spacing: 0.3em;
+  color: #5c6b8a;
+  text-transform: uppercase;
+}
+
+.vtxt {
+  font-family: Georgia, "Times New Roman", serif;
+  color: #f3ecdc;
+  max-width: 80%;
+  text-shadow: 0 calc(0.2cqw * var(--ts, 1)) calc(2.4cqw * var(--ts, 1)) rgba(0, 0, 0, 0.6);
+  line-height: 1.55;
+}
+
+.vtxt.xl { font-size: calc(3cqw * var(--ts, 1));
+}
+
+.vtxt.lg { font-size: calc(2.4cqw * var(--ts, 1));
+}
+
+.vtxt.md { font-size: calc(1.9cqw * var(--ts, 1));
+}
+
+.vref {
+  font-family: Georgia, serif;
+  font-size: calc(1.3cqw * var(--ts, 1));
+  letter-spacing: 0.32em;
+  color: #e9c465;
+  margin-top: calc(2.4cqw * var(--ts, 1));
+  text-transform: uppercase;
+}
+
+.sumtitle {
+  font-family: Georgia, serif;
+  font-size: calc(2.6cqw * var(--ts, 1));
+  letter-spacing: 0.24em;
+  color: #e9c465;
+  text-transform: uppercase;
+  margin-bottom: calc(3cqw * var(--ts, 1));
+}
+
+.bullets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 70%;
+  text-align: left;
+}
+
+.bullets li {
+  font-family: Georgia, serif;
+  font-size: calc(2.4cqw * var(--ts, 1));
+  color: #f3ecdc;
+  line-height: 1.5;
+  padding-left: calc(2.6cqw * var(--ts, 1));
+  position: relative;
+  margin: calc(1.4cqw * var(--ts, 1)) 0;
+}
+
+.bullets li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: calc(0.9cqw * var(--ts, 1));
+  height: calc(0.9cqw * var(--ts, 1));
+  border-radius: 50%;
+  background: #e9c465;
+}
+
+.sumsub {
+  font-size: calc(1.3cqw * var(--ts, 1));
+  color: #8b93a7;
+  margin-top: calc(2.6cqw * var(--ts, 1));
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 72%;
+  text-align: left;
+  counter-reset: point;
+}
+
+.points > li {
+  margin: calc(1.6cqw * var(--ts, 1)) 0;
+  padding-left: calc(4.4cqw * var(--ts, 1));
+  position: relative;
+  counter-increment: point;
+}
+
+.points > li::before {
+  content: counter(point);
+  position: absolute;
+  left: 0;
+  top: 0.05em;
+  width: calc(3cqw * var(--ts, 1));
+  height: calc(3cqw * var(--ts, 1));
+  border-radius: 50%;
+  background: rgba(233, 196, 101, 0.15);
+  border: 1px solid #e9c465;
+  color: #e9c465;
+  font-family: Georgia, serif;
+  font-size: calc(1.6cqw * var(--ts, 1));
+  display: grid;
+  place-items: center;
+}
+
+.pointtext {
+  font-family: Georgia, serif;
+  font-size: calc(2.3cqw * var(--ts, 1));
+  color: #f3ecdc;
+  line-height: 1.45;
+}
+
+.subbullets {
+  list-style: none;
+  margin: calc(0.8cqw * var(--ts, 1)) 0 0;
+  padding: 0;
+}
+
+.subbullets li {
+  font-family: Georgia, serif;
+  font-size: calc(1.6cqw * var(--ts, 1));
+  color: #e9c465;
+  letter-spacing: 0.08em;
+  margin: calc(0.6cqw * var(--ts, 1)) 0;
+  padding-left: calc(1.8cqw * var(--ts, 1));
+  position: relative;
+}
+
+.subbullets li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: calc(0.6cqw * var(--ts, 1));
+  height: calc(0.6cqw * var(--ts, 1));
+  border-radius: 50%;
+  background: #e9c465;
+  opacity: 0.75;
+}
+
+.spsub {
+  font-size: calc(1.4cqw * var(--ts, 1));
+  color: #8b93a7;
+}
+
+.slide { overflow: hidden;
+}
+
+.summary .sumtitle { max-width: 86%;
+}
+
+.summary.mid .sumtitle { font-size: calc(2.1cqw * var(--ts, 1)); margin-bottom: calc(1.8cqw * var(--ts, 1)); letter-spacing: 0.2em;
+}
+
+.summary.dense .sumtitle { font-size: calc(1.7cqw * var(--ts, 1)); margin-bottom: calc(1.2cqw * var(--ts, 1)); letter-spacing: 0.16em;
+}
+
+.summary.mid .points > li { margin: calc(0.9cqw * var(--ts, 1)) 0;
+}
+
+.summary.dense .points > li { margin: calc(0.5cqw * var(--ts, 1)) 0; padding-left: calc(3.4cqw * var(--ts, 1));
+}
+
+.summary.mid .points > li::before { width: calc(2.6cqw * var(--ts, 1)); height: calc(2.6cqw * var(--ts, 1)); font-size: calc(1.4cqw * var(--ts, 1));
+}
+
+.summary.dense .points > li::before { width: calc(2.2cqw * var(--ts, 1)); height: calc(2.2cqw * var(--ts, 1)); font-size: calc(1.2cqw * var(--ts, 1));
+}
+
+.summary.mid .pointtext { font-size: calc(1.9cqw * var(--ts, 1)); line-height: 1.35;
+}
+
+.summary.dense .pointtext { font-size: calc(1.55cqw * var(--ts, 1)); line-height: 1.3;
+}
+
+.summary.mid .subbullets { margin: calc(0.5cqw * var(--ts, 1)) 0 0;
+}
+
+.summary.dense .subbullets { margin: calc(0.3cqw * var(--ts, 1)) 0 0;
+}
+
+.summary.mid .subbullets li { font-size: calc(1.4cqw * var(--ts, 1)); margin: calc(0.4cqw * var(--ts, 1)) 0;
+}
+
+.summary.dense .subbullets li { font-size: calc(1.25cqw * var(--ts, 1)); margin: calc(0.2cqw * var(--ts, 1)) 0;
+}
+
+.summary.mid .bullets li { font-size: calc(1.9cqw * var(--ts, 1));
+}
+
+.summary.dense .bullets li { font-size: calc(1.55cqw * var(--ts, 1));
+}
+
+.summary.mid .sumsub { margin-top: calc(1.6cqw * var(--ts, 1));
+}
+
+.summary.dense .sumsub { margin-top: calc(1cqw * var(--ts, 1));
+}
+
+.slide.logo,
+.slide.text {
+  background: radial-gradient(120% 95% at 50% 0%, #24314e 0%, #101827 55%, #090d14 100%);
+}
+
+.logoname {
+  font-family: Georgia, serif;
+  font-size: calc(4cqw * var(--ts, 1));
+  letter-spacing: 0.3em;
+  color: #e9c465;
+  text-transform: uppercase;
+}
+
+.texttitle {
+  font-family: Georgia, serif;
+  font-size: calc(1.4cqw * var(--ts, 1));
+  letter-spacing: 0.3em;
+  color: #e9c465;
+  text-transform: uppercase;
+  margin-bottom: calc(2cqw * var(--ts, 1));
+}
+
+.textbody {
+  color: #f3ecdc;
+  max-width: 86%;
+  white-space: pre-line;
+  line-height: 1.4;
+  text-shadow: 0 calc(0.2cqw * var(--ts, 1)) calc(2.4cqw * var(--ts, 1)) rgba(0, 0, 0, 0.6);
+}
+
+.textbody.xl { font-size: calc(3.6cqw * var(--ts, 1));
+}
+
+.textbody.lg { font-size: calc(2.8cqw * var(--ts, 1));
+}
+
+.textbody.md { font-size: calc(2.1cqw * var(--ts, 1));
+}
+
+.textsub {
+  position: absolute;
+  bottom: 3%;
+  font-size: calc(1cqw * var(--ts, 1));
+  letter-spacing: 0.2em;
+  color: #5c6b8a;
+  text-transform: uppercase;
+}
+
+.output { position: relative; height: 100%; background: #07090e; }

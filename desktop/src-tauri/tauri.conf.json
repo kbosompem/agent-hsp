@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "console",
-        "title": "Agent HSP \u00b7 Console",
+        "title": "Agent HSP · Console",
         "width": 1280,
         "height": 820,
         "minWidth": 900,
@@ -21,7 +21,7 @@
       },
       {
         "label": "output",
-        "title": "Agent HSP \u00b7 Output",
+        "title": "Agent HSP · Output",
         "url": "output.html",
         "width": 1280,
         "height": 720,
@@ -30,7 +30,13 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/backgrounds/**"
+        ]
+      }
     }
   },
   "bundle": {

@@ -20,13 +20,32 @@ import {
   textSlides,
 } from "./lib/library";
 import { parseVideoPsalmAgenda, parseVideoPsalmJson } from "./lib/videopsalm";
+import {
+  BookOpen, ChevronDown, ChevronUp, Copy, EyeOff, FileText, GripVertical, Image as ImageIcon, Mic, MoreHorizontal,
+  Music, Pencil, Play, Plus, Search, Trash2, Upload,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import SlideView, { OutputTheme } from "./SlideView";
 
 export type ServiceNav = { next: () => void; prev: () => void };
 
 type Props = {
   library: Library;
   setLibrary: (l: Library) => void;
-  preview: ReactNode;
+  /** The live projector screen and its Blackout / Logo / Hold buttons, from App. */
+  live: ReactNode;
+  liveControls: ReactNode;
+  /** Projector theme, for slide thumbnails. */
+  theme: OutputTheme;
   /** Put one slide on the projector. */
   showSlide: (s: ItemSlide) => Promise<void>;
   /** Verse slides for a scripture item ("John 3:16-18"). */
@@ -35,6 +54,15 @@ type Props = {
   onEnterItem: (item: AgendaItem) => void;
   registerNav: (nav: ServiceNav | null) => void;
   setStatus: (s: string) => void;
+};
+
+const KIND_ICONS: Record<AgendaKind, typeof Music> = {
+  song: Music,
+  scripture: BookOpen,
+  text: FileText,
+  logo: ImageIcon,
+  blank: EyeOff,
+  sermon: Mic,
 };
 
 const KIND_NAMES: Record<AgendaKind, string> = {
@@ -55,6 +83,7 @@ export default function Service(p: Props) {
   const [songQ, setSongQ] = useState("");
   const [editSong, setEditSong] = useState<{ id: string | null; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const songSearchRef = useRef<HTMLInputElement>(null);
 
   const songsById = useMemo(() => new Map(lib.songs.map((s) => [s.id, s])), [lib.songs]);
   const sel = agenda?.items.find((i) => i.id === selId) || null;
@@ -138,6 +167,22 @@ export default function Service(p: Props) {
     void goLive(items[ni].id, dir === 1 ? 0 : Math.max(0, nn - 1));
   }
 
+  /** The slide that → would show next, for the "Next" screen. */
+  function peekNext(): ItemSlide | null {
+    if (!agenda) return null;
+    const items = agenda.items;
+    if (!live) {
+      const first = selId ? Math.max(0, items.findIndex((i) => i.id === selId)) : 0;
+      for (let k = first; k < items.length; k++) if ((slides[items[k].id] || []).length) return slides[items[k].id][0];
+      return null;
+    }
+    const ii = items.findIndex((i) => i.id === live.itemId);
+    const cur = slides[live.itemId] || [];
+    if (live.idx + 1 < cur.length) return cur[live.idx + 1];
+    for (let k = ii + 1; k < items.length; k++) if ((slides[items[k].id] || []).length) return slides[items[k].id][0];
+    return null;
+  }
+
   const stepRef = useRef(step);
   stepRef.current = step;
   useEffect(() => {
@@ -154,6 +199,20 @@ export default function Service(p: Props) {
     const at = sel ? agenda.items.findIndex((i) => i.id === sel.id) + 1 : agenda.items.length;
     updateAgenda((a) => ({ ...a, items: [...a.items.slice(0, at), it, ...a.items.slice(at)] }));
     setSelId(it.id);
+  }
+  // Drag and drop: move the dragged item to the drop target's position.
+  const dragId = useRef<string | null>(null);
+  function moveTo(id: string, targetId: string) {
+    if (id === targetId) return;
+    updateAgenda((a) => {
+      const items = a.items.slice();
+      const from = items.findIndex((x) => x.id === id);
+      const to = items.findIndex((x) => x.id === targetId);
+      if (from < 0 || to < 0) return a;
+      const [it] = items.splice(from, 1);
+      items.splice(to, 0, it);
+      return { ...a, items };
+    });
   }
   function move(id: string, d: -1 | 1) {
     updateAgenda((a) => {
@@ -234,15 +293,26 @@ export default function Service(p: Props) {
 
   // ---------- render ----------
 
+  const thumb = (sl: ItemSlide | null, label?: ReactNode) => (
+    <div className="aspect-video w-full overflow-hidden rounded-md border bg-black">
+      <div className="relative h-full w-full">
+        <SlideView slide={sl} theme={p.theme} idle={label ?? "End of service"} />
+      </div>
+    </div>
+  );
+
   if (!agenda) {
     const last = lib.agendas[0];
     return (
-      <div className="service empty">
-        <div className="pane">
-          <h3>No service open</h3>
-          <div className="rowbtns">
-            <button className="btn gold" onClick={() => createAgenda()}>New service</button>
-            {last && <button className="btn" onClick={() => createAgenda(last)}>Copy "{last.name}"</button>}
+      <div className="grid h-full place-items-center">
+        <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border bg-card p-6">
+          <div>
+            <h2 className="text-lg font-semibold">No service open</h2>
+            <p className="text-sm text-muted-foreground">Start a new order of service, or copy a previous one.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => createAgenda()}><Plus /> New service</Button>
+            {last && <Button variant="secondary" onClick={() => createAgenda(last)}><Copy /> Copy “{last.name}”</Button>}
           </div>
           {lib.agendas.length > 0 && <AgendaPicker lib={lib} update={update} />}
         </div>
@@ -251,151 +321,206 @@ export default function Service(p: Props) {
   }
 
   const selSlides = sel ? slides[sel.id] || [] : [];
+  const nextSlide = peekNext();
 
   return (
-    <div className="service">
-      <div className="pane svc-agenda">
-        <div className="rowsp">
-          <input
-            className="svc-name"
-            value={agenda.name}
-            onChange={(e) => updateAgenda((a) => ({ ...a, name: e.target.value }))}
-          />
+    <div className="grid h-full min-h-0 grid-cols-[300px_minmax(0,1fr)_minmax(300px,380px)] gap-3">
+      {/* Order of service */}
+      <div className="flex min-h-0 flex-col rounded-lg border bg-card">
+        <div className="flex flex-col gap-2 border-b p-3">
+          <Input className="font-semibold" value={agenda.name} onChange={(e) => updateAgenda((a) => ({ ...a, name: e.target.value }))} />
+          <AgendaPicker lib={lib} update={update} onNew={() => createAgenda()} onCopy={() => createAgenda(agenda)} />
         </div>
-        <AgendaPicker lib={lib} update={update} onNew={() => createAgenda()} onCopy={() => createAgenda(agenda)} />
-        <div className="svc-items">
-          {agenda.items.length === 0 && <div className="sub dim">Add items below: songs, scripture, announcements, the sermon.</div>}
-          {agenda.items.map((it, i) => (
-            <div
-              key={it.id}
-              className={"svc-item" + (it.id === selId ? " sel" : "") + (live?.itemId === it.id ? " live" : "")}
-              onClick={() => setSelId(it.id)}
-              onDoubleClick={() => void goLive(it.id, 0)}
-            >
-              <span className="svc-num">{i + 1}</span>
-              <span className="svc-title">
-                {it.title}
-                <span className="sub"> · {KIND_NAMES[it.kind]}</span>
-              </span>
-              <span className="svc-ops" onClick={(e) => e.stopPropagation()}>
-                <button className="tab" title="Move up" onClick={() => move(it.id, -1)}>↑</button>
-                <button className="tab" title="Move down" onClick={() => move(it.id, 1)}>↓</button>
-                <button className="tab" title="Remove" onClick={() => remove(it.id)}>×</button>
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="tiny">Add</div>
-        <div className="rowbtns wrap">
-          <button className="btn" onClick={() => addItem("scripture", { title: "Scripture reading", reference: "" })}>Scripture</button>
-          <button className="btn" onClick={() => addItem("text", { title: "Announcements", body: "" })}>Text</button>
-          <button className="btn" onClick={() => addItem("sermon", { title: "Sermon" })}>Sermon</button>
-          <button className="btn" onClick={() => addItem("logo")}>Logo</button>
-          <button className="btn" onClick={() => addItem("blank")}>Blackout</button>
-        </div>
-        <div className="sub dim">Songs: pick from the library on the right.</div>
-      </div>
-
-      <div className="pane svc-detail">
-        {!sel && <div className="sub dim">Select an item to edit it or see its slides. Double-click an item, or press → / Page Down, to go live.</div>}
-        {sel && (
-          <>
-            <div className="rowsp">
-              <input className="svc-name" value={sel.title} onChange={(e) => updateItem(sel.id, { title: e.target.value })} />
-              <button className="btn gold" onClick={() => void goLive(sel.id, 0)}>Go live</button>
-            </div>
-            {sel.kind === "scripture" && (
-              <input
-                placeholder="e.g. John 3:16-18 or Psalm 23"
-                value={sel.reference || ""}
-                onChange={(e) => updateItem(sel.id, { reference: e.target.value })}
-              />
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col gap-1 p-2">
+            {agenda.items.length === 0 && (
+              <p className="p-2 text-sm text-muted-foreground">Add songs, readings, announcements and the sermon below.</p>
             )}
-            {sel.kind === "text" && (
-              <textarea
-                rows={8}
-                placeholder={"One slide per paragraph. Leave a blank line between slides."}
-                value={sel.body || ""}
-                onChange={(e) => updateItem(sel.id, { body: e.target.value })}
-              />
-            )}
-            {sel.kind === "song" && sel.songId && songsById.get(sel.songId) && (
-              <button className="btn" onClick={() => setEditSong({ id: sel.songId!, text: songToText(songsById.get(sel.songId!)!) })}>
-                Edit song
-              </button>
-            )}
-            {sel.kind === "sermon" && (
-              <div className="sub">
-                Going live here turns Hold off and starts listening, so verses the preacher names go on screen.
-                Every other item keeps the AI off the screen.
-              </div>
-            )}
-            <div className="svc-slides">
-              {selSlides.map((s, i) => (
+            {agenda.items.map((it, i) => {
+              const Icon = KIND_ICONS[it.kind];
+              const isLive = live?.itemId === it.id;
+              return (
                 <div
-                  key={i}
-                  className={"svc-slide" + (live?.itemId === sel.id && live.idx === i ? " live" : "")}
-                  onClick={() => void goLive(sel.id, i)}
+                  key={it.id}
+                  draggable
+                  onDragStart={() => (dragId.current = it.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => dragId.current && moveTo(dragId.current, it.id)}
+                  onClick={() => setSelId(it.id)}
+                  onDoubleClick={() => void goLive(it.id, 0)}
+                  className={cn(
+                    "group flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-2 text-sm hover:bg-muted",
+                    it.id === selId && "border-border bg-muted",
+                    isLive && "border-live/60 bg-live/15"
+                  )}
                 >
-                  <div className="tiny">{s.label}</div>
-                  <div className="svc-slide-body">{s.body || (s.kind === "logo" ? "Logo" : s.kind === "blank" ? "Blackout" : "")}</div>
+                  <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground opacity-0 group-hover:opacity-100" />
+                  <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                  <Icon className={cn("size-4 shrink-0", isLive ? "text-live" : "text-muted-foreground")} />
+                  <span className="min-w-0 flex-1 truncate font-medium">{it.title}</span>
+                  {isLive && <Badge className="bg-live text-live-foreground">LIVE</Badge>}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <Button size="icon" variant="ghost" className="size-7 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">
+                        <MoreHorizontal />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={() => void goLive(it.id, 0)}><Play /> Go live</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => move(it.id, -1)}><ChevronUp /> Move up</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => move(it.id, 1)}><ChevronDown /> Move down</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onClick={() => remove(it.id)}><Trash2 /> Remove</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-              ))}
-              {sel.kind === "scripture" && sel.reference && selSlides.length === 0 && (
-                <div className="sub dim">No verses found for "{sel.reference}".</div>
-              )}
-            </div>
-          </>
-        )}
+              );
+            })}
+          </div>
+        </ScrollArea>
+        <div className="flex flex-col gap-2 border-t p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Add to the service</div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <Button size="sm" variant="outline" onClick={() => addItem("scripture", { title: "Scripture reading", reference: "" })}><BookOpen /> Reading</Button>
+            <Button size="sm" variant="outline" onClick={() => addItem("text", { title: "Announcements", body: "" })}><FileText /> Text</Button>
+            <Button size="sm" variant="outline" onClick={() => addItem("sermon", { title: "Sermon" })}><Mic /> Sermon</Button>
+            <Button size="sm" variant="outline" onClick={() => addItem("logo")}><ImageIcon /> Logo</Button>
+            <Button size="sm" variant="outline" onClick={() => addItem("blank")}><EyeOff /> Blackout</Button>
+            <Button size="sm" variant="outline" onClick={() => songSearchRef.current?.focus()}><Music /> Song</Button>
+          </div>
+        </div>
       </div>
 
-      <div className="pane svc-right">
-        <div className="tiny">Live preview</div>
-        <div className="preview">{p.preview}</div>
-        <div className="tiny">→ / Page Down next slide · ← / Page Up previous · B blackout · L logo</div>
-
-        <div className="rowsp">
-          <span className="tiny">Song library ({lib.songs.length})</span>
-          <span className="rowbtns">
-            <button className="btn" onClick={() => setEditSong({ id: null, text: "Song title\n\n[Verse 1]\n\n[Chorus]\n" })}>New</button>
-            <button className="btn" onClick={() => fileRef.current?.click()}>Import</button>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              accept=".txt,.xml,.sng,.json,.vpagd,.zip,text/plain,application/xml,application/json"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                void importFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />
-          </span>
-        </div>
-        {editSong ? (
-          <div className="svc-songedit">
-            <textarea rows={16} value={editSong.text} onChange={(e) => setEditSong({ ...editSong, text: e.target.value })} />
-            <div className="sub dim">First line is the title. Start sections with [Verse 1], [Chorus], [Bridge].</div>
-            <div className="rowbtns">
-              <button className="btn gold" onClick={saveSong}>Save song</button>
-              <button className="btn" onClick={() => setEditSong(null)}>Cancel</button>
+      {/* Item editor and slides */}
+      <div className="flex min-h-0 flex-col rounded-lg border bg-card">
+        {!sel ? (
+          <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground">
+            <div>
+              Select an item to see its slides.
+              <br />
+              Double-click an item, or press → or Page Down, to go live.
             </div>
           </div>
         ) : (
           <>
-            <input placeholder="Search title or lyrics" value={songQ} onChange={(e) => setSongQ(e.target.value)} />
-            <div className="svc-songs">
-              {songHits.map((s) => (
-                <div key={s.id} className="svc-song">
-                  <span className="svc-title">{s.title}</span>
-                  <button className="tab" onClick={() => addItem("song", { title: s.title, songId: s.id })}>Add</button>
-                  <button className="tab" onClick={() => setEditSong({ id: s.id, text: songToText(s) })}>Edit</button>
+            <div className="flex flex-col gap-2 border-b p-3">
+              <div className="flex items-center gap-2">
+                <Input className="text-base font-semibold" value={sel.title} onChange={(e) => updateItem(sel.id, { title: e.target.value })} />
+                <Button onClick={() => void goLive(sel.id, 0)}><Play /> Go live</Button>
+              </div>
+              {sel.kind === "scripture" && (
+                <Input placeholder="Reference, e.g. John 3:16-18 or Psalm 23" value={sel.reference || ""} onChange={(e) => updateItem(sel.id, { reference: e.target.value })} />
+              )}
+              {sel.kind === "text" && (
+                <Textarea rows={5} placeholder="One slide per paragraph. Leave a blank line between slides." value={sel.body || ""} onChange={(e) => updateItem(sel.id, { body: e.target.value })} />
+              )}
+              {sel.kind === "song" && sel.songId && songsById.get(sel.songId) && (
+                <div>
+                  <Button size="sm" variant="outline" onClick={() => setEditSong({ id: sel.songId!, text: songToText(songsById.get(sel.songId!)!) })}>
+                    <Pencil /> Edit lyrics
+                  </Button>
                 </div>
-              ))}
-              {lib.songs.length === 0 && <div className="sub dim">Import songs (VideoPsalm, plain text, OpenLyrics or OpenSong files) or create one.</div>}
+              )}
+              {sel.kind === "sermon" && (
+                <p className="text-sm text-muted-foreground">
+                  Going live here releases Hold and starts listening, so verses the preacher names go on screen. Every
+                  other item keeps the AI off the screen.
+                </p>
+              )}
             </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 p-3">
+                {selSlides.map((s, i) => {
+                  const isLive = live?.itemId === sel.id && live.idx === i;
+                  return (
+                    <button key={i} className="group flex flex-col gap-1.5 text-left" onClick={() => void goLive(sel.id, i)}>
+                      <div className={cn("rounded-lg p-0.5 ring-2 ring-transparent transition group-hover:ring-primary/60", isLive && "ring-live")}>
+                        {thumb(s)}
+                      </div>
+                      <div className="flex items-center gap-1.5 px-0.5 text-xs">
+                        <span className="tabular-nums text-muted-foreground">{i + 1}</span>
+                        <span className="truncate font-medium">{s.label}</span>
+                        {isLive && <Badge className="ml-auto bg-live text-live-foreground">LIVE</Badge>}
+                      </div>
+                    </button>
+                  );
+                })}
+                {sel.kind === "scripture" && sel.reference && selSlides.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No verses found for “{sel.reference}”.</p>
+                )}
+              </div>
+            </ScrollArea>
           </>
         )}
+      </div>
+
+      {/* Live, next, song library */}
+      <div className="flex min-h-0 flex-col gap-3">
+        {p.live}
+        {p.liveControls}
+        <div className="flex items-center gap-3 rounded-lg border bg-card p-2">
+          <div className="w-32 shrink-0">{thumb(nextSlide)}</div>
+          <div className="min-w-0 text-xs">
+            <div className="font-semibold uppercase tracking-wider text-muted-foreground">Next · → or Page Down</div>
+            <div className="truncate">{nextSlide ? nextSlide.label : "End of service"}</div>
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-card">
+          <div className="flex items-center justify-between gap-2 border-b p-2 pl-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Songs · {lib.songs.length}</span>
+            <div className="flex gap-1">
+              <Button size="sm" variant="ghost" onClick={() => setEditSong({ id: null, text: "Song title\n\n[Verse 1]\n\n[Chorus]\n" })}><Plus /> New</Button>
+              <Button size="sm" variant="ghost" onClick={() => fileRef.current?.click()}><Upload /> Import</Button>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept=".txt,.xml,.sng,.json,.vpagd,.zip,text/plain,application/xml,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  void importFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          </div>
+          {editSong ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
+              <Textarea className="min-h-0 flex-1 font-mono text-xs" value={editSong.text} onChange={(e) => setEditSong({ ...editSong, text: e.target.value })} />
+              <p className="text-xs text-muted-foreground">First line is the title. Start sections with [Verse 1], [Chorus], [Bridge].</p>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={saveSong}>Save song</Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditSong(null)}>Cancel</Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="relative p-2">
+                <Search className="absolute left-4 top-4.5 size-4 text-muted-foreground" />
+                <Input ref={songSearchRef} className="pl-8" placeholder="Search title or lyrics" value={songQ} onChange={(e) => setSongQ(e.target.value)} />
+              </div>
+              <ScrollArea className="min-h-0 flex-1">
+                <div className="flex flex-col p-1 pt-0">
+                  {songHits.map((s) => (
+                    <div key={s.id} className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                      <Music className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                      <Button size="icon" variant="ghost" className="size-7 opacity-0 group-hover:opacity-100" title="Edit lyrics" onClick={() => setEditSong({ id: s.id, text: songToText(s) })}>
+                        <Pencil />
+                      </Button>
+                      <Button size="sm" variant="secondary" className="h-7" onClick={() => addItem("song", { title: s.title, songId: s.id })}>
+                        <Plus /> Add
+                      </Button>
+                    </div>
+                  ))}
+                  {lib.songs.length === 0 && (
+                    <p className="p-2 text-sm text-muted-foreground">Import songs (VideoPsalm, OpenLyrics, OpenSong or plain text) or create one.</p>
+                  )}
+                </div>
+              </ScrollArea>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -404,20 +529,17 @@ export default function Service(p: Props) {
 function AgendaPicker(props: { lib: Library; update: (fn: (l: Library) => Library) => void; onNew?: () => void; onCopy?: () => void }) {
   const { lib, update } = props;
   return (
-    <div className="rowbtns wrap">
-      <select
-        value={lib.currentAgendaId || ""}
-        onChange={(e) => update((l) => ({ ...l, currentAgendaId: e.target.value || null }))}
-      >
-        <option value="">Open a service…</option>
-        {lib.agendas.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
-        ))}
-      </select>
-      {props.onNew && <button className="btn" onClick={props.onNew}>New</button>}
-      {props.onCopy && <button className="btn" title="Start next week from this one" onClick={props.onCopy}>Duplicate</button>}
+    <div className="flex gap-1.5">
+      <Select value={lib.currentAgendaId || undefined} onValueChange={(v) => update((l) => ({ ...l, currentAgendaId: v }))}>
+        <SelectTrigger className="h-8 min-w-0 flex-1 text-xs"><SelectValue placeholder="Open a service…" /></SelectTrigger>
+        <SelectContent>
+          {lib.agendas.map((a) => (
+            <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {props.onNew && <Button size="sm" variant="outline" className="h-8" onClick={props.onNew} title="New service"><Plus /></Button>}
+      {props.onCopy && <Button size="sm" variant="outline" className="h-8" title="Duplicate for next week" onClick={props.onCopy}><Copy /></Button>}
     </div>
   );
 }

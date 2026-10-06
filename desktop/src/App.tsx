@@ -1,4 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
+import {
+  BookOpen, Copy, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
+  MonitorPlay, Palette, Plus, Radio, RotateCcw, Search, Settings2, Square, Upload,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Toaster } from "@/components/ui/sonner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { Mode, PRESETS, UiTheme, applyMode, applyTheme, loadTheme, savedMode, savedTheme } from "@/lib/uitheme";
+import SlideView, { OutputTheme, Slide } from "./SlideView";
+import Backgrounds from "./Backgrounds";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { Embedder } from "./lib/embed";
@@ -32,12 +55,6 @@ type VerseHit = {
 
 type TranslationInfo = { id: string; name: string };
 
-type Slide = {
-  kind: string;
-  title: string;
-  body: string;
-  sub: string;
-};
 
 type Card = {
   id: number;
@@ -52,17 +69,6 @@ type Card = {
 type TrLine = { text: string; labels: string[] };
 
 
-type OutputTheme = {
-  bgKind: "gradient" | "image";
-  gradient: string;
-  image: string;
-  overlay: number;
-  textColor: string;
-  accent: string;
-  font: "serif" | "sans";
-  textScale?: number;
-  churchName?: string;
-};
 
 const GRADIENTS: { name: string; css: string }[] = [
   { name: "Midnight Navy", css: "radial-gradient(120% 95% at 50% 0%, #24314e 0%, #101827 55%, #090d14 100%)" },
@@ -165,9 +171,10 @@ export default function App() {
   // small.en finds the most verses in noisy-room tests; Macs run it on the GPU.
   // Windows runs whisper on the CPU, where base.en is the safer default.
   const [model, setModel] = useState(() => (/Mac/i.test(navigator.userAgent) ? "small.en" : "base.en"));
-  const [theme, setTheme] = useState<"dark" | "light">(
-    () => (localStorage.getItem("preso-theme") as "dark" | "light") || "dark"
-  );
+  const [mode, setMode] = useState<Mode>(savedMode);
+  const [uiTheme, setUiTheme] = useState<UiTheme>(savedTheme);
+  const [themeInput, setThemeInput] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [transcriptView, setTranscriptView] = useState<"processed" | "raw">("processed");
   const [view, setView] = useState<"console" | "service" | "theme" | "downloads">("console");
   const viewRef = useRef(view);
@@ -248,10 +255,8 @@ export default function App() {
     }, 120);
   }
 
-  useEffect(() => {
-    document.body.setAttribute("data-theme", theme);
-    localStorage.setItem("preso-theme", theme);
-  }, [theme]);
+  useEffect(() => applyMode(mode), [mode]);
+  useEffect(() => applyTheme(uiTheme), [uiTheme]);
 
   useEffect(() => {
     try {
@@ -1177,609 +1182,543 @@ export default function App() {
     setOutTheme((t) => ({ ...t, textScale: Math.min(2.2, Math.max(0.6, Math.round(((t.textScale ?? 1) + d) * 10) / 10)) }));
   }
 
-  function overlayEl(t: OutputTheme) {
-    if (t.bgKind === "image" && t.overlay > 0) {
-      return <div style={{ position: "absolute", inset: 0, background: "rgba(5,8,14," + t.overlay + ")" }} />;
-    }
-    return null;
-  }
-
   const now = Date.now();
-  const preview = slide ? (
-    slide.kind === "summary" ? (
-      renderSummary(slide, outTheme)
-    ) : slide.kind === "blank" ? (
-      <div className="slide idle" style={{ background: "#000" }}>
-        <div className="spsub">Blackout</div>
+  const preview = <SlideView slide={slide} theme={outTheme} idle="Nothing on screen" />;
+  const hs = sttHealth(listening, healthRef.current, now);
+  const textPct = Math.round((outTheme.textScale ?? 1) * 100);
+
+  const coverButtons = (
+    <div className="grid grid-cols-3 gap-2">
+      <Button
+        size="lg"
+        variant={slide?.kind === "blank" ? "default" : "secondary"}
+        onClick={() => void cover("blank")}
+        title="B"
+      >
+        <EyeOff /> Blackout <Kbd>B</Kbd>
+      </Button>
+      <Button
+        size="lg"
+        variant={slide?.kind === "logo" ? "default" : "secondary"}
+        onClick={() => void cover("logo")}
+        title="L or Esc"
+      >
+        <ImageIcon /> Logo <Kbd>L</Kbd>
+      </Button>
+      <Button size="lg" variant={held ? "default" : "secondary"} onClick={() => setHold(!holdRef.current)} title="H">
+        <Hand /> {held ? "Holding" : "Hold"} <Kbd>H</Kbd>
+      </Button>
+    </div>
+  );
+
+  const liveScreen = (
+    <div className="relative">
+      <div className="aspect-video w-full overflow-hidden rounded-lg border bg-black shadow-sm">
+        <div className="relative h-full w-full">{preview}</div>
       </div>
-    ) : slide.kind === "logo" ? (
-      <div className="slide logo" style={slideBg(outTheme)}>
-        {overlayEl(outTheme)}
-        <div className="logoname" style={{ color: outTheme.accent, position: "relative", zIndex: 1 }}>
-          {outTheme.churchName?.trim() || "AMC CHURCH"}
-        </div>
+      <Badge className="absolute left-2 top-2 bg-live text-live-foreground">LIVE</Badge>
+      <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/50 p-0.5 text-white">
+        <Button size="icon" variant="ghost" className="size-7 text-white hover:bg-white/15 hover:text-white" title="Smaller text" onClick={() => bumpText(-0.1)}>
+          <Minus />
+        </Button>
+        <span className="w-10 text-center text-xs tabular-nums">{textPct}%</span>
+        <Button size="icon" variant="ghost" className="size-7 text-white hover:bg-white/15 hover:text-white" title="Bigger text" onClick={() => bumpText(0.1)}>
+          <Plus />
+        </Button>
       </div>
-    ) : slide.kind === "text" ? (
-      <div className="slide text" style={slideBg(outTheme)}>
-        {overlayEl(outTheme)}
-        {slide.title && (
-          <div className="texttitle" style={{ color: outTheme.accent, position: "relative", zIndex: 1 }}>
-            {slide.title}
-          </div>
-        )}
-        <div className={"textbody " + sizeClass(slide.body)} style={{ color: outTheme.textColor, position: "relative", zIndex: 1 }}>
-          {slide.body}
-        </div>
-      </div>
-    ) : (
-      <div className="slide verse" style={slideBg(outTheme)}>
-        {overlayEl(outTheme)}
-        <span className="vlogo" style={{ position: "absolute", zIndex: 1 }}>{outTheme.churchName?.trim() || "AMC CHURCH"}</span>
-        <div
-          className={"vtxt " + sizeClass(slide.body)}
-          style={{ color: outTheme.textColor, fontFamily: outTheme.font === "sans" ? "inherit" : undefined, position: "relative", zIndex: 1 }}
-        >
-          {slide.body}
-        </div>
-        <div className="vref" style={{ color: outTheme.accent, position: "relative", zIndex: 1 }}>
-          {slide.title} · {slide.sub}
-        </div>
-      </div>
-    )
-  ) : (
-    <div className="slide idle">
-      <div className="spsub">Nothing on screen yet</div>
     </div>
   );
 
   return (
-    <div className="console">
-      <header className="top">
-        <div className="brandblock">
-          <span className="brand">AGENT HSP</span>
-          <span className="tag">desktop · native</span>
-        </div>
-        <div className="group">
-          <button className={"btn" + (view === "console" ? " on" : "")} onClick={() => setView("console")}>
-            Console
-          </button>
-          <button className={"btn" + (view === "service" ? " on" : "")} onClick={() => setView("service")}>
-            Service
-          </button>
-          <button className={"btn" + (view === "theme" ? " on" : "")} onClick={() => setView("theme")}>
-            Theme
-          </button>
-          <button className={"btn" + (view === "downloads" ? " on" : "")} onClick={() => setView("downloads")}>
-            Downloads
-          </button>
-        </div>
-        {view === "console" && (
-          <>
-            <div className="group">
-              <span className="grouplabel">Model</span>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="tiny.en">Whisper tiny.en (75 MB, fast)</option>
-            <option value="base.en">Whisper base.en (142 MB, better)</option>
-            <option value="small.en">Whisper small.en (466 MB, best)</option>
-          </select>
-          <button className="btn" onClick={loadModel}>
-            Load model
-          </button>
-          <span className="chip">{modelStatus}</span>
-          <span className="chip" title="Quote matching index">
-            quotes: {quoteStatus}
-          </span>
-        </div>
-        <div className="group">
-          <span className="grouplabel">Input</span>
-          <select value={micId} onChange={(e) => setMicId(e.target.value)}>
-            <option value="">Default input</option>
-            {mics.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="group grow" />
-        <div className="group">
-          <button className="btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </button>
-          {(() => {
-            const hs = sttHealth(listening, healthRef.current, now);
-            return (
-              <span className={"chip " + hs.cls} title={hs.detail}>
+    <TooltipProvider delayDuration={300}>
+      <div className="flex h-full flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-4">
+          <div className="flex items-center gap-2 pr-2">
+            <div className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground">
+              <Radio className="size-4" />
+            </div>
+            <div className="leading-tight">
+              <div className="text-sm font-semibold tracking-wide">Agent HSP</div>
+              <div className="text-[11px] text-muted-foreground">High Speed Projection</div>
+            </div>
+          </div>
+          <Tabs value={view} onValueChange={(v) => setView(v as typeof view)}>
+            <TabsList>
+              <TabsTrigger value="console"><MonitorPlay /> Live</TabsTrigger>
+              <TabsTrigger value="service"><ListOrdered /> Service</TabsTrigger>
+              <TabsTrigger value="theme"><Palette /> Look</TabsTrigger>
+              <TabsTrigger value="downloads"><BookOpen /> Bibles</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="flex-1" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "h-7 gap-1.5 px-2.5",
+                  hs.cls === "live" && "border-live/50 text-live",
+                  hs.cls === "warn" && "border-warning/60 text-warning",
+                  hs.cls === "bad" && "border-destructive bg-destructive text-white"
+                )}
+              >
+                <span className={cn("size-2 rounded-full bg-current", hs.cls === "live" && "animate-pulse")} />
                 {hs.label}
-              </span>
-            );
-          })()}
-          <span className="level">
-            <span className="track">
-              <span className="fill" style={{ width: micLevelPct + "%" }} />
-            </span>
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{hs.detail}</TooltipContent>
+          </Tooltip>
+          <div className="flex h-7 w-24 items-center rounded-md border px-1.5" title="Input level">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-live transition-[width] duration-150" style={{ width: micLevelPct + "%" }} />
+            </div>
+          </div>
+          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)} title="Speech model, audio input and console look">
+            <Settings2 />
+          </Button>
+          <Button onClick={toggleListen} className={cn("w-28", listening && "bg-destructive text-white hover:bg-destructive/90")}>
+            {listening ? <><Square /> Stop</> : <><Mic /> Listen</>}
+          </Button>
+        </header>
+
+        <div className="flex h-8 shrink-0 items-center border-b bg-muted/40 px-4 text-xs text-muted-foreground">
+          <span className="truncate">
+            {micStatus ||
+              (view === "service"
+                ? "Build the order of service, then run it: → or Page Down moves through every slide."
+                : "Speak a reference and it shows at once. Say “next verse” to advance. B blackout · L logo · H hold.")}
           </span>
-          <button className="btn gold" onClick={toggleListen}>
-            {listening ? "Stop" : "Listen"}
-          </button>
-            </div>
-          </>
-        )}
-      </header>
-      {view === "service" ? (
-        <>
-        <div className="statline">{micStatus || "Build the order of service, then run it: → or Page Down moves through every slide."}</div>
-        <Service
-          library={library}
-          setLibrary={setLibraryState}
-          preview={preview}
-          showSlide={showItemSlide}
-          scriptureSlides={scriptureSlides}
-          onEnterItem={enterItem}
-          registerNav={(n) => {
-            navRef.current = n;
-          }}
-          setStatus={setMicStatus}
-        />
-        </>
-      ) : view === "downloads" ? (
-        <div className="downloads">          <div className="dl-section">
-            <div className="tiny">Bible translations (XML files)</div>
-            <p className="sub">
-              Download a Bible in Zefania, OpenSong or OSIS XML format, then click Import to
-              load it here. Bundled already: KJV, ASV, WEB, BBE. You are responsible for having
-              the rights to use the files you import; copyrighted translations may not be
-              redistributed with the app.
-            </p>
-            <div className="linkgrid">
-              <div className="linkcard">
-                <b>Zefania XML Bibles</b>
-                <span className="sub">Large collection of translations in Zefania XML on SourceForge.</span>
-                <button className="btn" onClick={() => openLink("https://sourceforge.net/projects/zefania-sharp/files/Bibles/")}>Open</button>
-              </div>
-              <div className="linkcard">
-                <b>OpenSong Bibles</b>
-                <span className="sub">Many translations in OpenSong format from the official site.</span>
-                <button className="btn" onClick={() => openLink("https://opensong.org/downloads/")}>Open</button>
-              </div>
-              <div className="linkcard">
-                <b>FreeShow scripture guide</b>
-                <span className="sub">Explains formats and where to find Bible files.</span>
-                <button className="btn" onClick={() => openLink("https://freeshow.app/docs/scripture")}>Open</button>
-              </div>
-              <div className="linkcard">
-                <b>XML Bible toolkit</b>
-                <span className="sub">Community-packaged XML files: ESV, NLT, AMP, NASB, NKJV, Message, NIV.</span>
-                <button className="btn" onClick={() => openLink("https://www.garrybjr.com/media-tool-kit-xml-bibles")}>Open</button>
-              </div>
-            </div>
-          </div>
-          <div className="dl-section">
-            <div className="tiny">Songs and lyrics</div>
-            <div className="linkgrid">
-              <div className="linkcard">
-                <b>CCLI SongSelect</b>
-                <span className="sub">The official licensed lyrics source for churches (subscription).</span>
-                <button className="btn" onClick={() => openLink("https://songselect.ccli.com")}>Open</button>
-              </div>
-              <div className="linkcard">
-                <b>OpenLyrics</b>
-                <span className="sub">Open song format and community song files.</span>
-                <button className="btn" onClick={() => openLink("https://openlyrics.org/")}>Open</button>
-              </div>
-            </div>
-          </div>
-          <div className="dl-section">
-            <div className="tiny">Import here</div>
-            <div className="rowbtns">
-              <label className="btn gold">
-                Import Bible or translation file (.xml / .json)
-                <input
-                  type="file"
-                  accept=".xml,.json"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const f = e.target.files && e.target.files[0];
-                    if (f) void importFile(f);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-            <div className="sub" id="importStatus">{micStatus}</div>
-          </div>
         </div>
-      ) : view === "theme" ? (
-        <div className="downloads">
-          <div className="dl-section">
-            <div className="tiny">Background presets</div>
-            <div className="swatches">
-              {GRADIENTS.map((g, i) => (
-                <div
-                  key={i}
-                  className={"sw" + (outTheme.bgKind === "gradient" && outTheme.gradient === g.css ? " on" : "")}
-                  style={{ background: g.css }}
-                  title={g.name}
-                  onClick={() => setOutTheme({ ...outTheme, bgKind: "gradient", gradient: g.css })}
-                />
-              ))}
+
+        <main className="min-h-0 flex-1 p-3">
+          {view === "service" ? (
+            <Service
+              library={library}
+              setLibrary={setLibraryState}
+              live={liveScreen}
+              liveControls={coverButtons}
+              theme={outTheme}
+              showSlide={showItemSlide}
+              scriptureSlides={scriptureSlides}
+              onEnterItem={enterItem}
+              registerNav={(n) => {
+                navRef.current = n;
+              }}
+              setStatus={setMicStatus}
+            />
+          ) : view === "downloads" ? (
+            <ScrollArea className="h-full">
+              <div className="mx-auto flex max-w-4xl flex-col gap-4 p-1">
+                <Panel title="Bible translations">
+                  <p className="text-sm text-muted-foreground">
+                    Bundled: KJV, ASV, WEB and BBE, which are public domain. Import any other translation as Zefania,
+                    OpenSong or OSIS XML, or our JSON.
+                  </p>
+                  <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+                    <b>Copyrighted translations need a licence.</b> NLT, NIV, ESV, NASB, NKJV, AMP, The Message and most
+                    modern translations are owned by their publishers. Import one only after your church has a licence
+                    from the owner that covers projection (for example through the publisher or CCLI). Agent HSP does
+                    not ship or download them.
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <LinkCard title="Zefania XML Bibles" sub="Public-domain and open translations in Zefania XML." onOpen={() => openLink("https://sourceforge.net/projects/zefania-sharp/files/Bibles/")} />
+                    <LinkCard title="OpenSong Bibles" sub="Translations in OpenSong format." onOpen={() => openLink("https://opensong.org/downloads/")} />
+                    <LinkCard title="Scripture formats guide" sub="Explains the file formats and where to find them." onOpen={() => openLink("https://freeshow.app/docs/scripture")} />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button asChild>
+                      <label>
+                        <Upload /> Import translation (.xml / .json)
+                        <input
+                          type="file"
+                          accept=".xml,.json"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files && e.target.files[0];
+                            if (f) void importFile(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </Button>
+                    <span className="text-sm text-muted-foreground">Loaded: {translations.map((t) => t.name).join(", ")}</span>
+                  </div>
+                </Panel>
+                <Panel title="Songs and lyrics">
+                  <p className="text-sm text-muted-foreground">
+                    Import songs on the Service page (VideoPsalm, OpenLyrics, OpenSong or plain text). Showing song
+                    lyrics in church usually needs a CCLI licence.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <LinkCard title="CCLI SongSelect" sub="Licensed lyrics for churches (subscription)." onOpen={() => openLink("https://songselect.ccli.com")} />
+                    <LinkCard title="OpenLyrics" sub="Open song format and community files." onOpen={() => openLink("https://openlyrics.org/")} />
+                  </div>
+                </Panel>
+              </div>
+            </ScrollArea>
+          ) : view === "theme" ? (
+            <div className="grid h-full min-h-0 grid-cols-[minmax(320px,420px)_1fr] gap-3">
+              <ScrollArea className="h-full rounded-lg border bg-card">
+                <div className="flex flex-col gap-5 p-4">
+                  <Section label="Background">
+                    <div className="grid grid-cols-6 gap-2">
+                      {GRADIENTS.map((g, i) => (
+                        <button
+                          key={i}
+                          title={g.name}
+                          className={cn(
+                            "aspect-video rounded-md border-2 border-transparent",
+                            outTheme.bgKind === "gradient" && outTheme.gradient === g.css && "border-primary"
+                          )}
+                          style={{ background: g.css }}
+                          onClick={() => setOutTheme({ ...outTheme, bgKind: "gradient", gradient: g.css })}
+                        />
+                      ))}
+                    </div>
+                    <Button variant="secondary" asChild>
+                      <label>
+                        <ImageIcon /> Use my own picture…
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files && e.target.files[0];
+                            if (f) void applyImage(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      The text colour and dimming adjust to the picture so verses stay readable.
+                    </p>
+                  </Section>
+                  <Backgrounds theme={outTheme} setTheme={setOutTheme} setStatus={setMicStatus} />
+                  <Section label={"Dim the background · " + Math.round(outTheme.overlay * 100) + "%"}>
+                    <Slider min={0} max={85} value={[Math.round(outTheme.overlay * 100)]} onValueChange={(v) => setOutTheme({ ...outTheme, overlay: v[0] / 100 })} />
+                  </Section>
+                  <Section label={"Text size · " + textPct + "%"}>
+                    <Slider min={60} max={220} step={5} value={[textPct]} onValueChange={(v) => setOutTheme({ ...outTheme, textScale: v[0] / 100 })} />
+                  </Section>
+                  <Section label="Church name">
+                    <Input value={outTheme.churchName ?? ""} placeholder="AMC CHURCH" onChange={(e) => setOutTheme({ ...outTheme, churchName: e.target.value })} />
+                    <p className="text-xs text-muted-foreground">Shown in the corner of verses and on the logo screen.</p>
+                  </Section>
+                  <Section label="Lettering">
+                    <div className="flex flex-wrap gap-2">
+                      <ToggleGroup type="single" variant="outline" value={outTheme.font} onValueChange={(v) => v && setOutTheme({ ...outTheme, font: v as "serif" | "sans" })}>
+                        <ToggleGroupItem value="serif" className="px-3 font-serif">Serif</ToggleGroupItem>
+                        <ToggleGroupItem value="sans" className="px-3">Sans</ToggleGroupItem>
+                      </ToggleGroup>
+                      <ToggleGroup type="single" variant="outline" value={outTheme.textColor === "#ffffff" ? "white" : "warm"} onValueChange={(v) => v && setOutTheme({ ...outTheme, textColor: v === "white" ? "#ffffff" : "#f3ecdc" })}>
+                        <ToggleGroupItem value="warm" className="px-3">Warm white</ToggleGroupItem>
+                        <ToggleGroupItem value="white" className="px-3">Pure white</ToggleGroupItem>
+                      </ToggleGroup>
+                      <Button variant="ghost" onClick={() => setOutTheme(DEFAULT_THEME)}>
+                        <RotateCcw /> Reset
+                      </Button>
+                    </div>
+                  </Section>
+                </div>
+              </ScrollArea>
+              <div className="flex min-h-0 flex-col gap-3 rounded-lg border bg-card p-4">
+                <SectionLabel>Projector preview</SectionLabel>
+                <div className="aspect-video w-full overflow-hidden rounded-lg border bg-black">
+                  <div className="relative h-full w-full">
+                    <SlideView
+                      slide={slide && slide.kind !== "blank" ? slide : { kind: "verse", title: "John 3:16", body: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", sub: "KJV" }}
+                      theme={outTheme}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { kind: "text", title: "", body: "Way maker, miracle worker\nPromise keeper\nLight in the darkness", sub: "Way Maker" },
+                    { kind: "logo", title: "", body: "", sub: "" },
+                    { kind: "text", title: "Announcements", body: "Youth meeting on Friday at 7 pm", sub: "" },
+                  ].map((sl, i) => (
+                    <div key={i} className="aspect-video overflow-hidden rounded-md border bg-black">
+                      <div className="relative h-full w-full">
+                        <SlideView slide={sl} theme={outTheme} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-            <label className="btn gold">
-              Choose background image…
-              <input
-                type="file"
-                accept="image/*"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files && e.target.files[0];
-                  if (f) void applyImage(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-            <div className="sub">
-              The theme auto-generates from your image: overlay strength adapts to its brightness, text stays readable, and the accent color picks up the image's dominant tone.
-            </div>
-          </div>
-          <div className="dl-section">
-            <div className="tiny">Style</div>
-            <div className="row">
-              <span className="grouplabel">Overlay</span>
-              <input
-                type="range"
-                min="0"
-                max="85"
-                value={Math.round(outTheme.overlay * 100)}
-                onChange={(e) => setOutTheme({ ...outTheme, overlay: parseInt(e.target.value, 10) / 100 })}
-                style={{ width: 220 }}
-              />
-              <span className="sub">{Math.round(outTheme.overlay * 100)}%</span>
-            </div>
-            <div className="row">
-              <span className="grouplabel">Text size</span>
-              <input
-                type="range"
-                min="60"
-                max="220"
-                step="5"
-                value={Math.round((outTheme.textScale ?? 1) * 100)}
-                onChange={(e) => setOutTheme({ ...outTheme, textScale: parseInt(e.target.value, 10) / 100 })}
-                style={{ width: 220 }}
-              />
-              <span className="sub">{Math.round((outTheme.textScale ?? 1) * 100)}%</span>
-            </div>
-            <div className="row">
-              <span className="grouplabel">Church name</span>
-              <input
-                value={outTheme.churchName ?? ""}
-                placeholder="AMC CHURCH"
-                onChange={(e) => setOutTheme({ ...outTheme, churchName: e.target.value })}
-                style={{ width: 220 }}
-              />
-              <span className="sub">shown on verses and the logo screen</span>
-            </div>
-            <div className="row">
-              <span className="grouplabel">Text</span>
-              <button
-                className="btn"
-                onClick={() =>
-                  setOutTheme({ ...outTheme, textColor: outTheme.textColor === "#f3ecdc" ? "#ffffff" : "#f3ecdc" })
-                }
-              >
-                {outTheme.textColor === "#f3ecdc" ? "Warm white" : "Pure white"}
-              </button>
-              <span className="grouplabel">Font</span>
-              <button
-                className="btn"
-                onClick={() => setOutTheme({ ...outTheme, font: outTheme.font === "serif" ? "sans" : "serif" })}
-              >
-                {outTheme.font === "serif" ? "Serif" : "Sans"}
-              </button>
-              <button className="btn" onClick={() => setOutTheme(DEFAULT_THEME)}>
-                Reset
-              </button>
-            </div>
-          </div>
-          <div className="dl-section">
-            <div className="tiny">Live preview · exactly what the output window shows</div>
-            <div className="preview">{preview}</div>
-          </div>
-        </div>
-      ) : (
-        <>
-      <div className="statline">{micStatus || "Speak a reference. It shows instantly and stays up until the next verse. Say \u201Cnext verse\u201D to advance, \u201Cshow the verse again\u201D to bring it back."}</div>
-      <div className="cols">
-        <div className="pane col-left">
-          <div className="rowsp">
-            <div className="tiny">Transcript</div>
-            <div className="tabs">
-              <button
-                className={"tab" + (transcriptView === "processed" ? " on" : "")}
-                onClick={() => setTranscriptView("processed")}
-              >
-                Processed
-              </button>
-              <button
-                className={"tab" + (transcriptView === "raw" ? " on" : "")}
-                onClick={() => setTranscriptView("raw")}
-              >
-                Raw
-              </button>
-            </div>
-          </div>
-          <div className="transcript">
-            {transcriptView === "processed" ? (
-              <>
-                {transcriptRef.current.slice(-30).map((l, i) => (
-                  <div key={i} className={"tr" + (l.labels.length ? " on" : "")}>
-                    {l.text}
-                    {l.labels.map((lb, j) => (
-                      <span key={j} className="chipRef">
-                        {lb}
-                      </span>
+          ) : (
+            <div className="grid h-full min-h-0 grid-cols-[minmax(260px,1fr)_minmax(420px,2fr)_minmax(260px,1fr)] gap-3">
+              {/* Transcript */}
+              <div className="flex min-h-0 flex-col rounded-lg border bg-card">
+                <div className="flex items-center justify-between border-b px-3 py-2">
+                  <SectionLabel>Transcript</SectionLabel>
+                  <ToggleGroup type="single" size="sm" variant="outline" value={transcriptView} onValueChange={(v) => v && setTranscriptView(v as "processed" | "raw")}>
+                    <ToggleGroupItem value="processed" className="px-2 text-xs">Processed</ToggleGroupItem>
+                    <ToggleGroupItem value="raw" className="px-2 text-xs">Raw</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+                <ScrollArea className="min-h-0 flex-1">
+                  <div className="flex flex-col gap-1.5 p-3 text-sm leading-relaxed">
+                    {transcriptView === "processed" ? (
+                      <>
+                        {transcriptRef.current.slice(-40).map((l, i) => (
+                          <p key={i} className={cn("rounded-md px-2 py-1", l.labels.length ? "bg-accent text-accent-foreground" : "text-foreground/85")}>
+                            {l.text}
+                            {l.labels.map((lb, j) => (
+                              <Badge key={j} variant="outline" className="ml-1.5 border-primary/50 text-primary">{lb}</Badge>
+                            ))}
+                          </p>
+                        ))}
+                        {partialRef.current.text && <p className="px-2 italic text-muted-foreground">{partialRef.current.text}…</p>}
+                        {transcriptRef.current.length === 0 && !partialRef.current.text && (
+                          <Empty>Speech appears here as it is heard.</Empty>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {rawRef.current.slice(-60).map((t, i) => (
+                          <p key={i} className={cn("px-2 font-mono text-xs", isJunk(t) && "opacity-40")}>{t}</p>
+                        ))}
+                        {rawRef.current.length === 0 && <Empty>The unfiltered speech model output appears here.</Empty>}
+                      </>
+                    )}
+                  </div>
+                </ScrollArea>
+                <div className="truncate border-t px-3 py-1.5 font-mono text-[11px] text-muted-foreground">{diagRef.current || " "}</div>
+              </div>
+
+              {/* Live */}
+              <div className="flex min-h-0 flex-col gap-3">
+                {liveScreen}
+                {coverButtons}
+                <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-card">
+                  <div className="flex items-center justify-between border-b px-3 py-2">
+                    <SectionLabel>{held ? "Waiting for you · click or press Enter to show" : "Detected verses"}</SectionLabel>
+                    {held && <Badge className="bg-warning text-black">HOLD</Badge>}
+                  </div>
+                  <ScrollArea className="min-h-0 flex-1">
+                    <div className="flex flex-col gap-2 p-3">
+                      {cardsRef.current.length === 0 && (
+                        <Empty>{held ? "Verses the preacher names will wait here." : "Verses go straight to the screen. Quote matches wait here for a moment first."}</Empty>
+                      )}
+                      {cardsRef.current.map((c) => {
+                        const pct = c.kind === "quote" ? Math.max(0, Math.min(100, (100 * (now - (c.fireAt - FIRE_DELAY))) / FIRE_DELAY)) : 100;
+                        return (
+                          <button
+                            key={c.id}
+                            className={cn("rounded-md border bg-background p-2.5 text-left transition hover:border-primary", held && "border-dashed")}
+                            title="Show now"
+                            onClick={() => void showCard(c)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{c.label}</span>
+                              <Badge variant="secondary">{c.kind === "quote" ? "quote" : "reference"}</Badge>
+                            </div>
+                            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+                              <div className="h-full bg-primary" style={{ width: pct + "%" }} />
+                            </div>
+                            <div className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">{c.hit.text}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+
+              {/* Tools */}
+              <ScrollArea className="h-full rounded-lg border bg-card">
+                <div className="flex flex-col gap-5 p-3">
+                  <Section label="Find a verse">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+                      <Input
+                        ref={inputRef}
+                        className="pl-8"
+                        value={q}
+                        placeholder="john 3 16 · psalm 91 1-2"
+                        onChange={(e) => void onQuery(e.target.value, setQ, setHits)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && hits.length > 0) show(hits[0]);
+                        }}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {hits.map((h, i) => (
+                        <button key={h.label + i} className={cn("rounded-md border p-2 text-left text-sm hover:border-primary", i === 0 && "border-primary/60")} onClick={() => show(h)}>
+                          <div className="font-semibold">{h.label}</div>
+                          <div className="line-clamp-2 text-xs text-muted-foreground">{h.text}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </Section>
+                  <Section label="Translation">
+                    <div className="flex gap-2">
+                      <Select value={trId} onValueChange={changeTr}>
+                        <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {translations.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button variant="outline" size="icon" title="Import a translation" onClick={() => setView("downloads")}>
+                        <Upload />
+                      </Button>
+                    </div>
+                  </Section>
+                  <Section label="Shown recently">
+                    {historyRef.current.length === 0 && <Empty>Verses shown appear here. Click to show again.</Empty>}
+                    <div className="flex flex-wrap gap-1.5">
+                      {historyRef.current.slice(-12).reverse().map((h, i) => (
+                        <Button key={h.label + i} variant="outline" size="sm" onClick={() => void showVerse(h.hit)}>
+                          {h.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </Section>
+                  <Section label="Sermon notes">
+                    {stRef.current.title && <div className="text-sm font-semibold">{stRef.current.title}</div>}
+                    {stRef.current.points.map((p) => (
+                      <div key={p.num} className="text-sm">{p.num}. {p.text}</div>
                     ))}
-                  </div>
-                ))}
-                {partialRef.current.text && (
-                  <div className="tr dim">{partialRef.current.text}…</div>
-                )}
-                {transcriptRef.current.length === 0 && !partialRef.current.text && (
-                  <div className="sub dim">Speech appears here as it is heard.</div>
-                )}
-              </>
-            ) : (
-              <>
-                {rawRef.current.slice(-50).map((t, i) => (
-                  <div key={i} className={"tr" + (isJunk(t) ? " dim" : "")}>
-                    {t}
-                  </div>
-                ))}
-                {rawRef.current.length === 0 && (
-                  <div className="sub dim">The unfiltered model output appears here.</div>
-                )}
-              </>
-            )}
-          </div>
-          <div className="dimline">{diagRef.current || "\u00A0"}</div>
-        </div>
-        <div className="pane col-center">
-          <div className="rowsp">
-            <div className="tiny">Output preview</div>
-            <span className="tabs">
-              <button className="tab" title="Smaller text" onClick={() => bumpText(-0.1)}>A−</button>
-              <span className="tiny">{Math.round((outTheme.textScale ?? 1) * 100)}%</span>
-              <button className="tab" title="Bigger text" onClick={() => bumpText(0.1)}>A+</button>
-            </span>
-          </div>
-          <div className="preview">{preview}</div>
-          <div className="rowbtns">
-            <button className={"btn" + (slide?.kind === "blank" ? " gold" : "")} title="B" onClick={() => void cover("blank")}>
-              Blackout (B)
-            </button>
-            <button className={"btn" + (slide?.kind === "logo" ? " gold" : "")} title="L or Esc" onClick={() => void cover("logo")}>
-              Logo (L)
-            </button>
-            <button className={"btn" + (held ? " gold" : "")} title="H" onClick={() => setHold(!holdRef.current)}>
-              {held ? "Hold on (H)" : "Hold (H)"}
-            </button>
-          </div>
-          <div className="tiny">
-            {held
-              ? "HOLD · the AI will not change the screen · click a card or press Enter to show it"
-              : "Verses · instant show · stays up until the next one · B blackout · L logo · H hold"}
-          </div>
-          <div className="cards">
-            {cardsRef.current.length === 0 && (
-              <div className="sub dim">Detected verses appear here for a moment before they show.</div>
-            )}
-            {cardsRef.current.map((c) => {
-              const pct = Math.max(
-                0,
-                Math.min(100, (100 * (now - (c.fireAt - FIRE_DELAY))) / FIRE_DELAY)
-              );
-              return (
-                <div
-                  key={c.id}
-                  className={"evcard" + (held ? " held" : "")}
-                  title="Click to show now"
-                  onClick={() => void showCard(c)}
-                >
-                  <b>{c.label}</b>
-                  <span className="chip gold" style={{ marginLeft: 8 }}>
-                    {c.kind === "quote" ? "quote" : "reference"}
-                  </span>
-                  <div className="bar">
-                    <i style={{ width: pct + "%" }} />
-                  </div>
-                  <span className="sub">{trimWords(c.hit.text, 14)}</span>
+                    {stRef.current.notes.length === 0 && <Empty>Key lines and verses collect here.</Empty>}
+                    <div className="flex flex-col gap-1">
+                      {stRef.current.notes.slice(-8).map((n, i) => (
+                        <div key={i} className="border-l-2 border-primary/40 pl-2 text-xs text-muted-foreground">{n}</div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={copyNotes}><Copy /> Copy notes</Button>
+                      <Button variant="outline" size="sm" onClick={() => void emitSummary()} title="Puts the summary slide on the projector"><FileText /> Summary now</Button>
+                    </div>
+                  </Section>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-        <div className="pane col-right">
-          <div className="tiny">Translation</div>
-          <select value={trId} onChange={(e) => changeTr(e.target.value)}>
-            {translations.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <div className="rowbtns">
-            <label className="btn">
-              Import…
-              <input
-                type="file"
-                accept=".json"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files && e.target.files[0];
-                  if (f) void importFile(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-          </div>
-          <div className="tiny">Quick verse</div>
-          <input
-            ref={inputRef}
-            value={q}
-            placeholder="john 3 16 · psalm 91 1-2"
-            onChange={(e) => void onQuery(e.target.value, setQ, setHits)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && hits.length > 0) show(hits[0]);
-            }}
-          />
-          <div className="hits">
-            {hits.length === 0 && <div className="sub dim">No reference detected yet.</div>}
-            {hits.map((h, i) => (
-              <div key={h.label + i} className={"hit" + (i === 0 ? " first" : "")} onClick={() => show(h)}>
-                <b>{h.label}</b>
-                <span className="sub">{trimWords(h.text, 14)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="tiny">History · click to show again</div>
-          <div className="history">
-            {historyRef.current.length === 0 && (
-              <div className="sub dim">Shown verses collect here.</div>
-            )}
-            {historyRef.current
-              .slice(-8)
-              .reverse()
-              .map((h, i) => (
-                <div key={h.label + i} className="hit" onClick={() => void showVerse(h.hit)}>
-                  <b>{h.label}</b>
-                  <span className="sub">{h.hit.translation}</span>
-                </div>
-              ))}
-          </div>
-          <div className="tiny">Sermon outline</div>
-          {(stRef.current.title || stRef.current.points.length > 0) && (
-            <div className="notes">
-              {stRef.current.title && <div className="noteline outlinetitle">{stRef.current.title}</div>}
-              {stRef.current.points.map((p) => (
-                <div key={p.num} className="noteline">
-                  {p.num}. {p.text}
-                </div>
-              ))}
+              </ScrollArea>
             </div>
           )}
-          <div className="tiny">Sermon notes (auto)</div>
-          <div className="notes">
-            {stRef.current.notes.length === 0 && <div className="sub dim">Key lines and verses collect here.</div>}
-            {stRef.current.notes.slice(-8).map((n, i) => (
-              <div key={i} className="noteline">
-                {n}
-              </div>
-            ))}
-          </div>
-          <div className="rowbtns">
-            <button className="btn" onClick={copyNotes}>
-              Copy notes
-            </button>
-            <button className="btn" onClick={() => void emitSummary()}>
-              Summary now
-            </button>
-          </div>
-        </div>
-      </div>
-        </>
-      )}
-    </div>
-  );
-}
+        </main>
 
-function summaryDensity(slide: Slide): string {
-  let data: SummaryData | null = null;
-  try {
-    data = JSON.parse(slide.body);
-  } catch (e) {
-    data = null;
-  }
-  if (!data) return "";
-  let chars = 0;
-  let count = 0;
-  data.points.forEach((p) => {
-    count += 1;
-    chars += p.text.length + p.verses.length * 9;
-  });
-  if (count <= 2 && chars < 200) return "compact";
-  if (count <= 3 && chars < 420) return "mid";
-  return "dense";
-}
-
-function renderSummary(slide: Slide, theme: OutputTheme) {
-  let data: SummaryData | null = null;
-  try {
-    data = JSON.parse(slide.body);
-  } catch (e) {
-    data = null;
-  }
-  const density = summaryDensity(slide);
-  const txtColor = { color: theme.textColor, fontFamily: theme.font === "sans" ? "inherit" : undefined };
-  if (data && data.points) {
-    return (
-      <div className={"slide summary " + density} style={slideBg(theme)}>
-        {overlayEl(theme)}
-        <div className="sumtitle" style={{ color: theme.accent, position: "relative", zIndex: 1 }}>{slide.title}</div>
-        <ol className="points" style={{ position: "relative", zIndex: 1 }}>
-          {data.points.map((p, i) => (
-            <li key={i}>
-              <div className="pointtext" style={txtColor}>{p.text}</div>
-              {p.verses.length > 0 && (
-                <ul className="subbullets">
-                  {p.verses.map((v, j) => (
-                    <li key={j} style={{ color: theme.accent }}>{v}</li>
+        <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Settings</DialogTitle>
+              <DialogDescription>Speech model, audio input and how the console looks.</DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-5">
+              <Section label="Speech model">
+                <div className="flex gap-2">
+                  <Select value={model} onValueChange={setModel}>
+                    <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tiny.en">Whisper tiny.en · 75 MB · fastest</SelectItem>
+                      <SelectItem value="base.en">Whisper base.en · 142 MB · balanced</SelectItem>
+                      <SelectItem value="small.en">Whisper small.en · 466 MB · most accurate</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="secondary" onClick={loadModel}><Download /> Load</Button>
+                </div>
+                <p className="text-xs text-muted-foreground">{modelStatus} · quote matching: {quoteStatus}</p>
+              </Section>
+              <Section label="Audio input">
+                <Select value={micId || "__default"} onValueChange={(v) => setMicId(v === "__default" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default">System default input</SelectItem>
+                    {mics.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Use the sound desk feed if you have one. Changes apply the next time you press Listen.</p>
+              </Section>
+              <Section label="Console look">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="mode">Dark mode</Label>
+                  <Switch id="mode" checked={mode === "dark"} onCheckedChange={(c) => setMode(c ? "dark" : "light")} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[...PRESETS, ...(uiTheme && !PRESETS.some((p) => p.name === uiTheme.name) ? [uiTheme] : [])].map((p) => (
+                    <Button key={p.name} size="sm" variant={uiTheme?.name === p.name ? "default" : "outline"} onClick={() => setUiTheme(p)}>
+                      {p.name}
+                    </Button>
                   ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ol>
-        <div className="sumsub" style={{ position: "relative", zIndex: 1 }}>{slide.sub}</div>
+                </div>
+                <Textarea
+                  rows={3}
+                  value={themeInput}
+                  onChange={(e) => setThemeInput(e.target.value)}
+                  placeholder="Paste a tweakcn.com theme link, or the CSS from its Code panel"
+                  className="font-mono text-xs"
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!themeInput.trim()}
+                    onClick={() =>
+                      void loadTheme(themeInput)
+                        .then((t) => {
+                          setUiTheme(t);
+                          setThemeInput("");
+                          toast.success("Theme applied: " + t.name);
+                        })
+                        .catch((e) => toast.error(String(e.message || e)))
+                    }
+                  >
+                    <Palette /> Apply theme
+                  </Button>
+                  <Button size="sm" variant="link" onClick={() => openLink("https://tweakcn.com/editor/theme")}>Open tweakcn</Button>
+                </div>
+              </Section>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Toaster position="bottom-right" />
       </div>
-    );
-  }
+    </TooltipProvider>
+  );
+}
+
+function Kbd({ children }: { children: ReactNode }) {
+  return <kbd className="ml-1 rounded border border-current/30 px-1 font-mono text-[10px] opacity-70">{children}</kbd>;
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{children}</div>;
+}
+
+function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className={"slide summary " + density} style={slideBg(theme)}>
-      {overlayEl(theme)}
-      <div className="sumtitle" style={{ color: theme.accent, position: "relative", zIndex: 1 }}>{slide.title}</div>
-      <ul className="bullets" style={{ position: "relative", zIndex: 1 }}>
-        {slide.body.split("\n").filter((b) => b.trim()).map((b, i) => (
-          <li key={i} style={txtColor}>{b}</li>
-        ))}
-      </ul>
-      <div className="sumsub" style={{ position: "relative", zIndex: 1 }}>{slide.sub}</div>
+    <section className="flex flex-col gap-2">
+      <SectionLabel>{label}</SectionLabel>
+      {children}
+    </section>
+  );
+}
+
+function Panel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+      <h2 className="text-base font-semibold">{title}</h2>
+      {children}
     </div>
   );
 }
 
-function slideBg(theme: OutputTheme): any {
-  return { ...slideBgOnly(theme), "--ts": theme?.textScale ?? 1 };
+function Empty({ children }: { children: ReactNode }) {
+  return <p className="px-2 py-1 text-sm text-muted-foreground">{children}</p>;
 }
 
-function slideBgOnly(theme: OutputTheme): any {
-  if (theme.bgKind === "image" && theme.image) {
-    return {
-      backgroundImage: "url(" + theme.image + ")",
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-    };
-  }
-  return { background: theme.gradient };
+function LinkCard({ title, sub, onOpen }: { title: string; sub: string; onOpen: () => void }) {
+  return (
+    <button className="flex flex-col gap-1 rounded-md border p-3 text-left hover:border-primary" onClick={onOpen}>
+      <span className="flex items-center gap-1 text-sm font-semibold">
+        {title} <ExternalLink className="size-3.5 opacity-60" />
+      </span>
+      <span className="text-xs text-muted-foreground">{sub}</span>
+    </button>
+  );
 }
 
-function overlayEl(theme: OutputTheme) {
-  if (theme.bgKind === "image" && theme.overlay > 0) {
-    return <div style={{ position: "absolute", inset: 0, background: "rgba(5,8,14," + theme.overlay + ")" }} />;
-  }
-  return null;
-}
-
-function sizeClass(text: string): string {
-  if (text.length < 90) return "xl";
-  if (text.length < 200) return "lg";
-  return "md";
-}

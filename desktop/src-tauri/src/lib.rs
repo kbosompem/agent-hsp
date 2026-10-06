@@ -1,3 +1,4 @@
+use std::io::Read;
 pub mod audio;
 pub mod segmenter;
 pub mod session;
@@ -131,6 +132,37 @@ fn save_library(app: tauri::AppHandle, json: String) -> Result<(), String> {
     std::fs::rename(&tmp, &p).map_err(|e| e.to_string())
 }
 
+/// Download a stock background (from the curated list in
+/// public/backgrounds/manifest.json) into the app data folder once, and return
+/// its local path for the asset protocol. Only Pexels hosts are allowed.
+#[tauri::command]
+async fn fetch_background(app: tauri::AppHandle, id: String, url: String, video: bool) -> Result<String, String> {
+    let host_ok = url.starts_with("https://images.pexels.com/") || url.starts_with("https://videos.pexels.com/");
+    if !host_ok {
+        return Err("not an allowed background source".into());
+    }
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("bad background id".into());
+    }
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("backgrounds");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{}.{}", id, if video { "mp4" } else { "jpg" }));
+    if path.exists() {
+        return Ok(path.to_string_lossy().to_string());
+    }
+    let tmp = path.with_extension("part");
+    let p2 = path.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let resp = ureq::get(&url).call().map_err(|e| e.to_string())?;
+        let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        std::io::copy(&mut resp.into_reader().take(60 * 1024 * 1024), &mut f).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &p2).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 fn open_url(url: String) {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -232,6 +264,7 @@ pub fn run() {
             show_slide,
             load_library,
             save_library,
+            fetch_background,
             audio::list_audio_inputs,
             audio::ensure_model,
             audio::start_listening,

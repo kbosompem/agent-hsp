@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Free stock backgrounds: 12 photos and 6 motion loops from Pexels, chosen in the Look page, downloaded on first use (not bundled) and credited to their creators. Motion (video) backgrounds play behind verses and lyrics.
 - Every listening session is recorded to `sessions/<date_time UTC>/` in the app data folder: `audio.wav` (16 kHz mono, header refreshed every 5 s so a crash loses little), `transcript.jsonl` and `slides.jsonl`, for replay and scoring after a service (issue 12, first part).
 - Service page: build an order of service (songs, scripture, text/announcements, logo, blackout, sermon), save it, duplicate last week's, and run it live with the arrow keys, Page Down/Up or a presentation clicker. Every item except the sermon keeps the AI off the screen; going live on the sermon starts listening.
 - Song library with search by title or lyrics, a plain-text editor, and import from VideoPsalm (agenda `.vpagd` files and songbook `.json`), plain text, OpenLyrics XML and OpenSong XML. VideoPsalm verses keep their slide breaks. Long sections split into slides of at most four lines.
@@ -30,6 +31,10 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 - Windows `.ico` and macOS `.icns` icons.
 
 ### Changed
+
+- New console interface built on shadcn/ui and Tailwind CSS: a top bar with Listen, transcription status, input level and settings; a Live page with a large live screen and big Blackout, Logo and Hold buttons; a Service page with real slide thumbnails and Live and Next screens; a Look page for the projector. Dark and light modes, built-in looks, and any tweakcn.com theme (paste its link or CSS in Settings).
+- The projector window and every console preview draw slides with one shared component (`SlideView.tsx`), so the preview always matches the room.
+- The Bibles page warns that NLT, NIV, ESV, NASB, NKJV, AMP, The Message and other copyrighted translations need a licence from their owners before import. The link to a third-party collection of copyrighted translation files was removed.
 
 - The summary slide no longer replaces a verse after 60 seconds. A verse stays up until the next one; the summary shows only when the operator presses Summary now.
 - Spoken references show the moment two partials agree, without the 600 ms card wait. Quote matches still wait.

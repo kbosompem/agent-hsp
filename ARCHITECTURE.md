@@ -10,8 +10,8 @@ Agent HSP is a Tauri 2 app. Tauri is a framework for desktop apps: a Rust proces
 
 The app has two windows:
 
-- **Console** (`desktop/src/App.tsx`): what the operator sees. It holds most of the live decision logic.
-- **Output** (`desktop/src/Output.tsx`): what the room sees on the projector. It only draws the slide it is sent.
+- **Console** (`desktop/src/App.tsx`): what the operator sees. It holds most of the live decision logic. Built with shadcn/ui components (`src/components/ui/`, Radix underneath) and Tailwind CSS v4 (`src/index.css`). Its colours are shadcn theme variables, so a tweakcn.com theme can replace them at run time (`src/lib/uitheme.ts`).
+- **Output** (`desktop/src/Output.tsx`): what the room sees on the projector. It only draws the slide it is sent, with `SlideView.tsx`, the same component the console uses for every preview and thumbnail. Slide styles are in `src/slides.css`, separate from the console's Tailwind styles.
 
 The Rust side has two parts:
 
@@ -145,6 +145,7 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
 | `show_verse` | Turn a verse into a slide and broadcast it. |
 | `show_slide` | Broadcast any slide (used for the summary). |
 | `load_library` | Read `library.json` (songs and agendas). |
+| `fetch_background` | Download a stock background from Pexels once into `backgrounds/` and return its path (shown via the asset protocol). |
 | `save_library` | Write it atomically, keeping a `.bak` copy. |
 | `list_audio_inputs` | Names of input devices. |
 | `ensure_model` | Download a whisper model if it is not on disk. |
@@ -172,9 +173,10 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
 - **App data folder** (`com.agenthsp.desktop` in the OS app data location):
   - `models/` whisper model files
   - `translations/` imported translations as JSON
+  - `backgrounds/` stock photos and motion loops, downloaded on first use from the list in `desktop/public/backgrounds/manifest.json` (Pexels, credited in the Look page). Nothing is bundled.
   - `sessions/<YYYY-MM-DD_HH-MM-SS>/` one folder per listening session (UTC time): `audio.wav`, `transcript.jsonl`, `slides.jsonl`. Written by a single thread in `session.rs`; the audio callback only sends it chunks.
   - On first start, data from the old `com.amcpreso.desktop` folder is moved here.
-- **Browser localStorage in the console window.** Only two keys: `preso-theme` (light/dark console) and `preso-output-theme` (the projector theme, including any background image as a data URL; a large image may not fit and then only lasts for the session).
+- **Browser localStorage in the console window.** `hsp-ui-mode` (light/dark console), `hsp-ui-theme` (the console's shadcn/tweakcn theme variables) and `preso-output-theme` (the projector theme, including any picture of your own as a data URL; a large image may not fit and then only lasts for the session).
 - **Console memory only.** Transcript, verse history, pending cards, sermon outline and notes. These are lost when the app closes.
 - **`library.json`** in the app data folder: songs and service agendas (`src/lib/library.ts` defines the shape; `load_library` / `save_library` only store it). There are no saved sessions yet. `plan.html` describes a SQLite data model for later.
 

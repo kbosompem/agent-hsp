@@ -1,0 +1,111 @@
+/* Console UI: Tailwind v4 + shadcn/ui. Theme tokens follow the shadcn /
+   tweakcn variable names, so a tweakcn theme (its :root and .dark blocks)
+   can replace them at run time (see lib/uitheme.ts). The projector slides
+   are styled separately in slides.css. */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(0.985 0.002 90);
+  --foreground: oklch(0.21 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 260);
+  --primary: oklch(0.72 0.13 85);
+  --primary-foreground: oklch(0.2 0.02 85);
+  --secondary: oklch(0.95 0.005 260);
+  --secondary-foreground: oklch(0.25 0.01 260);
+  --muted: oklch(0.95 0.005 260);
+  --muted-foreground: oklch(0.5 0.015 260);
+  --accent: oklch(0.94 0.02 85);
+  --accent-foreground: oklch(0.25 0.02 85);
+  --destructive: oklch(0.58 0.22 27);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.9 0.005 260);
+  --input: oklch(0.9 0.005 260);
+  --ring: oklch(0.72 0.13 85);
+  --live: oklch(0.62 0.17 150);
+  --live-foreground: oklch(0.98 0.01 150);
+  --warning: oklch(0.75 0.15 70);
+  --radius: 0.6rem;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sidebar: var(--card);
+  --chart-1: var(--primary);
+}
+
+.dark {
+  --background: oklch(0.16 0.012 260);
+  --foreground: oklch(0.93 0.008 260);
+  --card: oklch(0.2 0.014 260);
+  --card-foreground: oklch(0.93 0.008 260);
+  --popover: oklch(0.22 0.014 260);
+  --popover-foreground: oklch(0.93 0.008 260);
+  --primary: oklch(0.82 0.12 85);
+  --primary-foreground: oklch(0.2 0.03 85);
+  --secondary: oklch(0.26 0.015 260);
+  --secondary-foreground: oklch(0.9 0.008 260);
+  --muted: oklch(0.25 0.014 260);
+  --muted-foreground: oklch(0.68 0.015 260);
+  --accent: oklch(0.3 0.03 85);
+  --accent-foreground: oklch(0.92 0.05 85);
+  --destructive: oklch(0.62 0.2 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.3 0.015 260);
+  --input: oklch(0.32 0.015 260);
+  --ring: oklch(0.82 0.12 85);
+  --live: oklch(0.68 0.16 150);
+  --live-foreground: oklch(0.15 0.03 150);
+  --warning: oklch(0.8 0.14 75);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-live: var(--live);
+  --color-live-foreground: var(--live-foreground);
+  --color-warning: var(--warning);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    overflow: hidden;
+  }
+}
