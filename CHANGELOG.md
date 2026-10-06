@@ -53,6 +53,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Fixed
 
+- "Number thirteen verse twenty six" (the s dropped by the speech engine) shows Numbers 13:26. "Point number one" still shows nothing.
 - Chapters read digit by digit: "Psalm one one nine verse five" is Psalm 119:5 and "Psalm one o seven" is 107 (was Psalm 1:1).
 - A numbered book split across two transcripts ("... First" / "John four four") shows 1 John 4:4, not John 4:4. Only the words first, second and third join; a trailing "verse 1" does not.
 - Stereo and multi-channel inputs, such as a USB mixer feed, are now mixed down to one channel correctly. Silent channels are left out so a voice on one side of the feed is not buried. 16-bit unsigned inputs are also accepted.

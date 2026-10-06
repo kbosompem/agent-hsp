@@ -1125,6 +1125,20 @@ fn rewrite_tokens(norm: &str) -> Vec<String> {
             }
         }
     }
+    // Speech engines drop the s: "Number thirteen verse twenty six" is
+    // Numbers 13:26. Only with an explicit chapter-then-verse after it, so
+    // "point number one" and "number two, verse ten" stay plain words.
+    for i in 0..out.len() {
+        if out[i] != "number" || i > 0 && matches!(out[i - 1].as_str(), "point" | "the" | "a" | "verse" | "chapter") {
+            continue;
+        }
+        let toks: Vec<&str> = out.iter().map(|x| x.as_str()).collect();
+        if let Some((_, l)) = parse_num_seq(&toks, i + 1) {
+            if VERSE_WORDS.contains(&toks.get(i + 1 + l).copied().unwrap_or("")) && parse_num_seq(&toks, i + 2 + l).is_some() {
+                out[i] = "numbers".into();
+            }
+        }
+    }
     out
 }
 
@@ -1387,6 +1401,14 @@ mod tests {
     #[test]
     fn chapter_only() {
         assert_eq!(refs("Turn to Psalms twenty three"), vec!["Psalm 23"]);
+    }
+
+    #[test]
+    fn number_without_s_is_the_book_with_chapter_and_verse() {
+        assert_eq!(refs("Number thirteen verse twenty six"), vec!["Numbers 13:26"]);
+        assert_eq!(refs("turn to number 6 verse 24"), vec!["Numbers 6:24"]);
+        assert!(refs("What is point number one? Then now").is_empty());
+        assert!(refs("point number two verse ten tells us").is_empty());
     }
 
     #[test]
