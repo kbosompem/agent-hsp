@@ -87,6 +87,14 @@ The theme travels separately. The console sends an `output-theme` event straight
 - One whisper state is created per listening session and reused.
 - A "generation" counter lets Stop cancel results that were still being transcribed.
 
+### 3b. Nemotron streaming engine (optional, `nemotron.rs`)
+
+- Built only with the `nemotron` Cargo feature (`npm run build:nemotron`, `npm run dev:nemotron`). It needs the native sherpa-onnx libraries from `scripts/sherpa/build.sh`, which builds a pinned commit of sherpa-onnx main into `desktop/vendor/` (not in git); `desktop/.cargo/config.toml` points the Rust crate at them.
+- Selected in Settings as "Nemotron" (`nemotron-160`, 160 ms chunks) or "Nemotron light" (`nemotron-560`). Load downloads the model archive from the sherpa-onnx releases and unpacks it into `models/`.
+- It replaces the segmenter and whisper with a streaming transducer: audio from the same ring buffer goes in every 100 ms and words come out as they are recognised, typically about a second after the end of a spoken reference. Bible book names are boosted with hotwords (`scripts/stt-eval/bible-hotwords.txt`).
+- `nemotron::Engine` holds the loop (our own sentence ends: 1 s without a new word, or a cut at the widest pause after 15 s; a fresh stream primed with the last second of audio after each sentence, because sherpa's reset drops the next first word). The app thread and `examples/latency.rs` (`nemotron` mode) run the same code.
+- It emits the same events as whisper (`transcript-partial`, `transcript`, `stt-health`, `stt-alive`) and records sessions the same way, so the console does not change.
+
 ### 4. Verse engine (`preso-core`)
 
 - **Bible text.** KJV, ASV, WEB, BBE, BSB, LSV and FBV are compiled into the binary with `include_str!` (KJV first, so it is the default). KJV is `kjv.json`; the others are in `assets/`. BSB, LSV and FBV are built from eBible.org USFM with `scripts/bibles/usfm2json.py`; licences and attribution are in `assets/BIBLES.md`. Verse N is always at index N-1, so verses a translation omits are stored as empty text.

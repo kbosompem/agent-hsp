@@ -1,0 +1,4 @@
+# Native sherpa-onnx libraries for the optional `nemotron` feature, built by
+# scripts/sherpa/build.sh. Unused when the feature is off.
+[env]
+SHERPA_ONNX_LIB_DIR = { value = "vendor/sherpa-onnx/lib", relative = true }

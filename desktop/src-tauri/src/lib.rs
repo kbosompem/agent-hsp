@@ -2,6 +2,8 @@ use std::io::Read;
 pub mod audio;
 pub mod segmenter;
 pub mod session;
+#[cfg(feature = "nemotron")]
+pub mod nemotron;
 
 use audio::ListenState;
 use preso_core::{engine, Engine, LiveLookup, VerseHit};

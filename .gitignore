@@ -8,3 +8,6 @@ desktop/public/verse-index.bin
 scripts/node_modules/
 __pycache__/
 .playwright-mcp/
+
+# Native sherpa-onnx build for the nemotron feature (scripts/sherpa/build.sh)
+desktop/vendor/

@@ -49,6 +49,21 @@ pub fn model_file(app: &AppHandle, model: &str) -> std::path::PathBuf {
 }
 
 pub fn download_model(app: AppHandle, model: String) {
+    #[cfg(feature = "nemotron")]
+    if crate::nemotron::is_nemotron(&model) {
+        std::thread::spawn(move || {
+            let models = model_file(&app, &model).parent().map(|p| p.to_path_buf()).unwrap_or_default();
+            match crate::nemotron::download(&app, &model, &models) {
+                Ok(_) => {
+                    let _ = app.emit("model-ready", &model);
+                }
+                Err(e) => {
+                    let _ = app.emit("model-progress", json!({ "status": format!("download failed: {}", e) }));
+                }
+            }
+        });
+        return;
+    }
     std::thread::spawn(move || {
         let path = model_file(&app, &model);
         if path.exists() {
@@ -570,6 +585,14 @@ pub fn start_listening(
     if state.running.load(Ordering::SeqCst) {
         return Ok("already".to_string());
     }
+    #[cfg(feature = "nemotron")]
+    if crate::nemotron::is_nemotron(&model) {
+        return start_nemotron(app, state, device, model);
+    }
+    #[cfg(not(feature = "nemotron"))]
+    if model.starts_with("nemotron") {
+        return Err("This build does not include the Nemotron engine. Choose a Whisper model.".to_string());
+    }
     let mpath = model_file(&app, &model);
     if !mpath.exists() {
         return Err("Model not downloaded yet. Click Load model first.".to_string());
@@ -613,6 +636,57 @@ pub fn start_listening(
     spawn_segmenter(app, shared, gen, SegConfig::streaming());
     Ok("started".to_string())
 }
+
+/// Listen with the Nemotron streaming model instead of whisper. The recognizer
+/// is cached across Listen presses (loading takes a second or two).
+#[cfg(feature = "nemotron")]
+fn start_nemotron(
+    app: AppHandle,
+    state: tauri::State<'_, ListenState>,
+    device: Option<String>,
+    model: String,
+) -> Result<String, String> {
+    let models = model_file(&app, &model).parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let dir = models.join(crate::nemotron::model_dir_name(&model).unwrap_or_default());
+    if !crate::nemotron::model_ready(&dir) {
+        return Err("Model not downloaded yet. Click Load model first.".to_string());
+    }
+    let rec = {
+        let mut cache = NEMOTRON.lock().unwrap();
+        match cache.as_ref() {
+            Some((m, r)) if *m == model => r.clone(),
+            _ => {
+                let r = std::sync::Arc::new(crate::nemotron::create_recognizer(&dir)?);
+                *cache = Some((model.clone(), r.clone()));
+                r
+            }
+        }
+    };
+    state.pcm.lock().unwrap().clear();
+    state.running.store(true, Ordering::SeqCst);
+    let gen = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let shared = Arc::new(ListenState {
+        running: state.running.clone(),
+        generation: state.generation.clone(),
+        pcm: state.pcm.clone(),
+        total: state.total.clone(),
+        level: state.level.clone(),
+        floor: state.floor.clone(),
+        ctx: state.ctx.clone(),
+        ctx_model: state.ctx_model.clone(),
+    });
+    if let Ok(root) = app.path().app_data_dir().map(|d| d.join("sessions")) {
+        if let Err(e) = crate::session::start(root, state.total.load(Ordering::SeqCst)) {
+            let _ = app.emit("listen-status", format!("Listening, but could not record the session: {}", e));
+        }
+    }
+    spawn_capture(app.clone(), device, shared.clone(), gen);
+    crate::nemotron::spawn(app, shared, gen, rec);
+    Ok("started".to_string())
+}
+
+#[cfg(feature = "nemotron")]
+static NEMOTRON: Mutex<Option<(String, std::sync::Arc<sherpa_onnx::OnlineRecognizer>)>> = Mutex::new(None);
 
 #[tauri::command]
 pub fn stop_listening(state: tauri::State<'_, ListenState>) {

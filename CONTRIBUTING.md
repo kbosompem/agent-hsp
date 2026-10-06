@@ -160,3 +160,15 @@ Do not attach full sermon recordings to public issues without the speaker's perm
 ## License
 
 License: to be decided. See LICENSE once added.
+
+## Building with the Nemotron engine (optional)
+
+The Nemotron streaming speech engine needs native sherpa-onnx libraries:
+
+```
+scripts/sherpa/build.sh          # once; needs cmake and a C++ compiler (~10 min)
+cd desktop && npm run dev:nemotron      # or npm run build:nemotron
+```
+
+Without the `nemotron` feature the app builds and runs as before with whisper only.
+

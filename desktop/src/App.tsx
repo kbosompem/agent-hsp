@@ -172,7 +172,22 @@ export default function App() {
   const [micId, setMicId] = useState("");
   // small.en finds the most verses in noisy-room tests; Macs run it on the GPU.
   // Windows runs whisper on the CPU, where base.en is the safer default.
-  const [model, setModel] = useState(() => (/Mac/i.test(navigator.userAgent) ? "small.en" : "base.en"));
+  const [model, setModel] = useState(() => {
+    try {
+      const saved = localStorage.getItem("hsp-model");
+      if (saved) return saved;
+    } catch {
+      /* ignore */
+    }
+    return /Mac/i.test(navigator.userAgent) ? "small.en" : "base.en";
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("hsp-model", model);
+    } catch {
+      /* ignore */
+    }
+  }, [model]);
   const [mode, setMode] = useState<Mode>(savedMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(savedTheme);
   const [themeInput, setThemeInput] = useState("");
@@ -1651,6 +1666,8 @@ export default function App() {
                       <SelectItem value="tiny.en">Whisper tiny.en · 75 MB · fastest</SelectItem>
                       <SelectItem value="base.en">Whisper base.en · 142 MB · balanced</SelectItem>
                       <SelectItem value="small.en">Whisper small.en · 466 MB · most accurate</SelectItem>
+                      <SelectItem value="nemotron-160">Nemotron · 475 MB download · fastest verses</SelectItem>
+                      <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button variant="secondary" onClick={loadModel}><Download /> Load</Button>

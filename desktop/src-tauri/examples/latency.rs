@@ -118,8 +118,20 @@ fn main() {
 
     preso_core::init_engine(None);
     let mut live = preso_core::LiveLookup::new();
-    let ctx = WhisperContext::new_with_params(model, WhisperContextParameters::default()).unwrap();
-    let mut state = ctx.create_state().unwrap();
+    // `nemotron` mode: the model argument is a Nemotron model folder and the
+    // app's own streaming engine (nemotron::Engine) runs instead of whisper.
+    let nemotron = mode == "nemotron";
+    #[cfg(feature = "nemotron")]
+    let mut nem = if nemotron {
+        let rec = std::sync::Arc::new(agent_hsp_lib::nemotron::create_recognizer(std::path::Path::new(model)).unwrap());
+        Some(agent_hsp_lib::nemotron::Engine::new(rec, 0))
+    } else {
+        None
+    };
+    #[cfg(not(feature = "nemotron"))]
+    assert!(!nemotron, "build with --features nemotron for nemotron mode");
+    let ctx = if nemotron { None } else { Some(WhisperContext::new_with_params(model, WhisperContextParameters::default()).unwrap()) };
+    let mut state = ctx.as_ref().map(|c| c.create_state().unwrap());
 
     let sr = TARGET_SR as u64;
     let mut seg = Segmenter::new(cfg, 0.002);
@@ -142,20 +154,40 @@ fn main() {
     while (t as usize) < audio.len() {
         t += sr / 10;
         let end = (t as usize).min(audio.len());
-        let tail = rms_of(&audio[end - TARGET_SR / 2..end]);
-        let job = match seg.step(tail, t) {
-            Some(j) => j,
-            None => continue,
-        };
-        let (start, stop, s, partial) = match job {
-            Job::Partial { start, end, seg } => (start, end, seg, true),
-            Job::Final { start, end, seg } => (start, end, seg, false),
-        };
-        let samples = &audio[start as usize..(stop as usize).min(audio.len())];
-        let (text, ms) = run_whisper_opts(&mut state, samples, partial, actx);
-        whisper_ms += ms;
+        // (text, compute ms, segment, is partial) produced by this step.
+        let mut evs: Vec<(String, usize, u64, bool)> = Vec::new();
+        #[cfg(feature = "nemotron")]
+        if let Some(e) = nem.as_mut() {
+            let t0 = std::time::Instant::now();
+            let (outs, _) = e.step(end as u64, 0, |a, b| audio[a as usize..(b as usize).min(audio.len())].to_vec());
+            let ms = t0.elapsed().as_millis() as usize;
+            for o in outs {
+                match o {
+                    agent_hsp_lib::nemotron::Out::Partial { text, seg } => evs.push((text, ms, seg, true)),
+                    agent_hsp_lib::nemotron::Out::Final { text, seg, .. } => evs.push((text, ms, seg, false)),
+                }
+            }
+            whisper_ms += ms;
+            t += (ms as u64) * sr / 1000;
+        }
+        if !nemotron {
+            let tail = rms_of(&audio[end - TARGET_SR / 2..end]);
+            let job = match seg.step(tail, t) {
+                Some(j) => j,
+                None => continue,
+            };
+            let (start, stop, s, partial) = match job {
+                Job::Partial { start, end, seg } => (start, end, seg, true),
+                Job::Final { start, end, seg } => (start, end, seg, false),
+            };
+            let samples = &audio[start as usize..(stop as usize).min(audio.len())];
+            let (text, ms) = run_whisper_opts(state.as_mut().unwrap(), samples, partial, actx);
+            whisper_ms += ms;
+            t += (ms as u64) * sr / 1000;
+            evs.push((text, ms, s, partial));
+        }
+        for (text, ms, s, partial) in evs {
         if partial { n_partial += 1 } else { n_final += 1 }
-        t += (ms as u64) * sr / 1000;
         let now = clip_start + t as f64 / sr as f64;
         // Partials only act on chapter:verse hits; "John chapter 3" mid-sentence
         // is usually the front half of "John chapter 3 verse 16".
@@ -194,6 +226,7 @@ fn main() {
         }
         if std::env::var("VERBOSE").is_ok() {
             println!("{:7.2}s {} {:4}ms {:?} {:?}", now, if partial { "P" } else { "F" }, ms, text, labels);
+        }
         }
     }
 

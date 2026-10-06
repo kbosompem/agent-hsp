@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:nemotron": "tauri build --features nemotron --bundles app,dmg",
+    "dev:nemotron": "tauri dev --features nemotron"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
