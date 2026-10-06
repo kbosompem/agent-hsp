@@ -56,6 +56,8 @@ type Props = {
   setStatus: (s: string) => void;
 };
 
+const LIVE_KEY = "hsp-live-position";
+
 const KIND_ICONS: Record<AgendaKind, typeof Music> = {
   song: Music,
   scripture: BookOpen,
@@ -78,7 +80,24 @@ export default function Service(p: Props) {
   const lib = p.library;
   const agenda = lib.agendas.find((a) => a.id === lib.currentAgendaId) || null;
   const [selId, setSelId] = useState<string | null>(null);
-  const [live, setLive] = useState<{ itemId: string; idx: number } | null>(null);
+  // Where the service is, kept across a restart (issue 14).
+  const [live, setLiveState] = useState<{ itemId: string; idx: number } | null>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(LIVE_KEY) || "null");
+      if (v && v.agendaId === lib.currentAgendaId && Date.now() - v.at < 3 * 3600 * 1000) return { itemId: v.itemId, idx: v.idx };
+    } catch {
+      /* nothing saved */
+    }
+    return null;
+  });
+  function setLive(v: { itemId: string; idx: number } | null) {
+    setLiveState(v);
+    try {
+      localStorage.setItem(LIVE_KEY, JSON.stringify(v ? { ...v, agendaId: lib.currentAgendaId, at: Date.now() } : null));
+    } catch {
+      /* ignore */
+    }
+  }
   const [slides, setSlides] = useState<Record<string, ItemSlide[]>>({});
   const [songQ, setSongQ] = useState("");
   const [editSong, setEditSong] = useState<{ id: string | null; text: string } | null>(null);

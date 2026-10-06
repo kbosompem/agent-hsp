@@ -79,6 +79,8 @@ const GRADIENTS: { name: string; css: string }[] = [
   { name: "Crimson Night", css: "linear-gradient(200deg, #3a1420 0%, #0c0a10 100%)" },
 ];
 
+const LAST_SLIDE_KEY = "hsp-last-slide";
+
 const DEFAULT_THEME: OutputTheme = {
   bgKind: "gradient",
   gradient: GRADIENTS[0].css,
@@ -193,6 +195,8 @@ export default function App() {
     }
     return DEFAULT_THEME;
   });
+  const outThemeRef = useRef(outTheme);
+  outThemeRef.current = outTheme;
   const [quoteStatus, setQuoteStatus] = useState("not loaded");
   const [translations, setTranslations] = useState<TranslationInfo[]>([]);
   const [, setForce] = useState(0);
@@ -634,6 +638,12 @@ export default function App() {
       }),
       listen<string>("model-ready", (e) => setModelStatus("ready · " + e.payload + " (native)")),
       listen<string>("listen-status", (e) => setMicStatus(e.payload)),
+      // A reopened projector window asks for what it should be showing.
+      listen("output-ready", () => {
+        void emit("output-theme", outThemeRef.current);
+        const cur = slideRef.current;
+        if (cur) void invoke("show_slide", { kind: cur.kind, title: cur.title, body: cur.body, sub: cur.sub });
+      }),
     ];
     refreshMics();
     refreshTranslations();
@@ -642,6 +652,31 @@ export default function App() {
       subs.forEach((u) => u.then((f) => f()));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Crash recovery (issue 14): remember the slide on screen, and put it back
+  // if the console restarts within three hours.
+  useEffect(() => {
+    try {
+      if (slide) localStorage.setItem(LAST_SLIDE_KEY, JSON.stringify({ slide, at: Date.now() }));
+    } catch {
+      /* storage blocked; recovery just will not happen */
+    }
+  }, [slide]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAST_SLIDE_KEY);
+      if (!raw) return;
+      const { slide: last, at } = JSON.parse(raw) as { slide: Slide; at: number };
+      if (!last || Date.now() - at > 3 * 3600 * 1000) return;
+      void invoke<Slide>("show_slide", { kind: last.kind, title: last.title, body: last.body, sub: last.sub }).then((s) => {
+        setSlide(s);
+        slideRef.current = s;
+        setMicStatus("Restored the slide that was on screen before the restart.");
+      });
+    } catch {
+      /* nothing to restore */
+    }
   }, []);
 
   useEffect(() => {
