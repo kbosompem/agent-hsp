@@ -94,6 +94,7 @@ ARCHITECTURE.md      how audio becomes a verse on screen
 CONTRIBUTING.md      set up, test, and send a pull request
 CHANGELOG.md         what changed in each version
 ROADMAP.md           planned work
+docs/OPERATOR.md     checklist for running a service
 docs/RELEASING.md    how to cut a release
 website/             project website (static)
 alpha/               browser proof (open alpha/index.html in Chrome)
