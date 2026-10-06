@@ -214,6 +214,8 @@ export default function App() {
   const holdRef = useRef(false);
   // The slide that was up before a blackout or logo, to bring back.
   const beforeCover = useRef<Slide | null>(null);
+  // Hold as it was before the blackout or logo, restored when it is lifted.
+  const holdBeforeCover = useRef(false);
   const lastTrAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
@@ -386,16 +388,19 @@ export default function App() {
     if (cur && cur.kind === kind) {
       const back = beforeCover.current;
       beforeCover.current = null;
-      setHold(false);
+      setHold(holdBeforeCover.current);
       if (back) {
         const s = await invoke<Slide>("show_slide", { kind: back.kind, title: back.title, body: back.body, sub: back.sub });
         setSlide(s);
         slideRef.current = s;
       }
-      setMicStatus("Back on screen. AI can change the screen again.");
+      setMicStatus(holdBeforeCover.current ? "Back on screen. Hold is still on." : "Back on screen. AI can change the screen again.");
       return;
     }
-    if (cur && cur.kind !== "blank" && cur.kind !== "logo") beforeCover.current = cur;
+    if (!cur || (cur.kind !== "blank" && cur.kind !== "logo")) {
+      beforeCover.current = cur;
+      holdBeforeCover.current = holdRef.current;
+    }
     setHold(true);
     const s = await invoke<Slide>("show_slide", { kind, title: "", body: "", sub: "" });
     setSlide(s);
