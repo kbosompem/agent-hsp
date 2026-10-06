@@ -52,6 +52,8 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Fixed
 
+- Chapters read digit by digit: "Psalm one one nine verse five" is Psalm 119:5 and "Psalm one o seven" is 107 (was Psalm 1:1).
+- A numbered book split across two transcripts ("... First" / "John four four") shows 1 John 4:4, not John 4:4. Only the words first, second and third join; a trailing "verse 1" does not.
 - Stereo and multi-channel inputs, such as a USB mixer feed, are now mixed down to one channel correctly. Silent channels are left out so a voice on one side of the feed is not buried. 16-bit unsigned inputs are also accepted.
 - Glued numbers such as "Philippians 413" now read as 4:13 when only one reading is valid.
 - Book ordinals ("1st", "2nd", "3rd"), "Micah 6a" as 6:8, and common misspellings such as "Ecclesiast".

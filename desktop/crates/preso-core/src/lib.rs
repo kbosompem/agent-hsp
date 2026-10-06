@@ -886,7 +886,40 @@ fn match_book(tokens: &[&str], i: usize, aliases: &[AliasEntry]) -> Option<(usiz
     None
 }
 
-fn parse_ref_after_book(tokens: &[&str], j: usize) -> Option<ParsedRef> {
+/// One spoken digit: "one".."nine" or "1".."9"; "o", "oh", "zero" or "0"
+/// only inside a run ("one o seven").
+fn single_digit(w: &str, first: bool) -> Option<usize> {
+    match w {
+        "o" | "oh" | "zero" | "0" if !first => Some(0),
+        _ if w.len() == 1 && w.as_bytes()[0].is_ascii_digit() && w != "0" => w.parse().ok(),
+        "one" => Some(1), "two" => Some(2), "three" => Some(3), "four" => Some(4), "five" => Some(5),
+        "six" => Some(6), "seven" => Some(7), "eight" => Some(8), "nine" => Some(9),
+        _ => None,
+    }
+}
+
+/// Chapters read digit by digit: "Psalm one one nine" is Psalm 119 and
+/// "Psalm one o seven" is 107. Three digits always join; two join only when
+/// "verse" follows ("Psalm one one verse 5" is 11:5, "John three one" stays
+/// 3:1). Returns (chapter, tokens used) when the chapter exists (`max_ch`).
+fn digit_run_chapter(tokens: &[&str], k: usize, max_ch: usize) -> Option<(usize, usize)> {
+    let mut digits = Vec::new();
+    while digits.len() < 3 {
+        match tokens.get(k + digits.len()).and_then(|w| single_digit(w, digits.is_empty())) {
+            Some(d) => digits.push(d),
+            None => break,
+        }
+    }
+    let joins = digits.len() == 3
+        || (digits.len() == 2 && VERSE_WORDS.contains(&tokens.get(k + 2).copied().unwrap_or("")));
+    if !joins {
+        return None;
+    }
+    let n = digits.iter().fold(0, |a, d| a * 10 + d);
+    (n >= 1 && n <= max_ch).then_some((n, digits.len()))
+}
+
+fn parse_ref_after_book(tokens: &[&str], j: usize, max_ch: usize) -> Option<ParsedRef> {
     let mut k = j;
     if CHAPTER_WORDS.contains(&tokens.get(k).copied().unwrap_or("")) {
         k += 1;
@@ -895,7 +928,10 @@ fn parse_ref_after_book(tokens: &[&str], j: usize) -> Option<ParsedRef> {
             k += 1;
         }
     }
-    let (chapter, chlen) = parse_num_seq(tokens, k)?;
+    let (chapter, chlen) = match digit_run_chapter(tokens, k, max_ch) {
+        Some(x) => x,
+        None => parse_num_seq(tokens, k)?,
+    };
     k += chlen;
     if tokens.get(k) == Some(&"and")
         && VERSE_WORDS.contains(&tokens.get(k + 1).copied().unwrap_or(""))
@@ -974,7 +1010,7 @@ fn parse_refs_impl(
     let mut i = 0usize;
     while i < tokens.len() {
         if let Some((book, mlen)) = match_book(&tokens, i, aliases) {
-            if let Some(p) = parse_ref_after_book(&tokens, i + mlen) {
+            if let Some(p) = parse_ref_after_book(&tokens, i + mlen, books[book].chapters.len()) {
                 let r = valid_ref_books(books, book, p.chapter, p.verse, p.end_verse).or_else(|| {
                     if p.verse.is_none() {
                         split_glued(books, book, p.chapter)
@@ -1011,7 +1047,7 @@ fn parse_refs_impl(
         }
         if tokens[i] == "book" && tokens.get(i + 1) == Some(&"of") {
             if let Some((book, mlen)) = match_book(&tokens, i + 2, aliases) {
-                if let Some(p) = parse_ref_after_book(&tokens, i + 2 + mlen) {
+                if let Some(p) = parse_ref_after_book(&tokens, i + 2 + mlen, books[book].chapters.len()) {
                     push!(
                         valid_ref_books(books, book, p.chapter, p.verse, p.end_verse),
                         i
@@ -1191,6 +1227,34 @@ impl LiveLookup {
     pub fn lookup(&mut self, text: &str, tr_id: Option<&str>, now_s: f64, commit: bool) -> Vec<VerseHit> {
         let eng = engine();
         let mut hits = self.resolve(text, tr_id, now_s, eng.lookup(text, tr_id));
+        // "... First" / "John four four": the speech engine split a numbered
+        // book across two transcripts. When the previous one ended on an
+        // ordinal and this one opens with a reference, the joined reading
+        // (1 John 4:4) wins over the bare one (John 4:4).
+        let tail_ordinal = self.tail.last().map_or(false, |w| {
+            // Words only: "...verse 1" / "John 3 16" must not become 1 John.
+            matches!(w.as_str(), "first" | "second" | "third")
+        });
+        if tail_ordinal
+            && now_s - self.tail_at <= TAIL_TTL_S
+            && hits.first().and_then(|h| h.reference.as_ref()).map_or(false, |r| r.pos == 0)
+        {
+            let joined = format!("{} {}", self.tail.join(" "), text);
+            let n = self.tail.len();
+            let numbered: Vec<VerseHit> = eng
+                .lookup(&joined, tr_id)
+                .into_iter()
+                .filter(|h| h.reference.as_ref().map_or(false, |r| r.pos == n - 1))
+                .collect();
+            if let Some(first) = numbered.first() {
+                if Some(&first.label) != hits.first().map(|h| &h.label) {
+                    let rest: Vec<VerseHit> = hits.into_iter().skip(1).collect();
+                    let mut joined_hits = self.resolve(&joined, tr_id, now_s, vec![first.clone()]);
+                    joined_hits.extend(rest);
+                    hits = joined_hits;
+                }
+            }
+        }
         if hits.is_empty() && !self.tail.is_empty() && now_s - self.tail_at <= TAIL_TTL_S {
             // Retry with the end of the previous sentence in front; keep only
             // references that start in that carried-over tail and were not
@@ -1323,6 +1387,43 @@ mod tests {
     #[test]
     fn chapter_only() {
         assert_eq!(refs("Turn to Psalms twenty three"), vec!["Psalm 23"]);
+    }
+
+    #[test]
+    fn chapter_read_digit_by_digit() {
+        assert_eq!(refs("Psalm one one nine verse five"), vec!["Psalm 119:5"]);
+        assert_eq!(refs("turn to Psalm 1 1 9 verse 105"), vec!["Psalm 119:105"]);
+        assert_eq!(refs("Psalm one o seven verse twenty"), vec!["Psalm 107:20"]);
+        assert_eq!(refs("Psalm one oh seven twenty"), vec!["Psalm 107:20"]);
+        assert_eq!(refs("Psalm one one verse five"), vec!["Psalm 11:5"]);
+        // Two digits without "verse" stay chapter and verse.
+        assert_eq!(refs("John three one"), vec!["John 3:1"]);
+        assert_eq!(refs("Psalm one one"), vec!["Psalm 1:1"]);
+        // A run that is not a real chapter falls back to the normal reading
+        // (here the existing range rule: John 1:1-9).
+        assert_eq!(refs("John one one nine"), vec!["John 1:1-9"]);
+    }
+
+    #[test]
+    fn numbered_book_split_across_transcripts() {
+        let mut live = LiveLookup::new();
+        live.lookup("and the Bible says in First", None, 10.0, true);
+        let h = live.lookup("John four four, greater is he", None, 12.0, true);
+        assert_eq!(h.iter().map(|x| x.label.clone()).collect::<Vec<_>>(), vec!["1 John 4:4"]);
+        let mut live = LiveLookup::new();
+        live.lookup("we read in Second", None, 10.0, true);
+        let h = live.lookup("Kings chapter nine verse thirty", None, 12.0, true);
+        assert_eq!(h.iter().map(|x| x.label.clone()).collect::<Vec<_>>(), vec!["2 Kings 9:30"]);
+        // A plain number at the end of the last sentence does not count.
+        let mut live = LiveLookup::new();
+        live.lookup("Romans 8 verse 1", None, 10.0, true);
+        let h = live.lookup("John 3 16 says", None, 12.0, true);
+        assert_eq!(h.iter().map(|x| x.label.clone()).collect::<Vec<_>>(), vec!["John 3:16"]);
+        // Too long ago: no join.
+        let mut live = LiveLookup::new();
+        live.lookup("this is the first", None, 10.0, true);
+        let h = live.lookup("John four four", None, 100.0, true);
+        assert_eq!(h.iter().map(|x| x.label.clone()).collect::<Vec<_>>(), vec!["John 4:4"]);
     }
 
     #[test]
