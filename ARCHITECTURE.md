@@ -105,6 +105,7 @@ Much of the "when should the screen change" logic lives in the console, in TypeS
 - **Translation by voice** (`lib/voice.ts`). "show NLT" or "read it in the NIV" switches translation if it is loaded.
 - **Chapter-only mentions.** "Turn to Mark 2" opens the chapter for follow-ups but shows nothing. Many were misheard or never read.
 - **Transcription health.** The Rust side sends `stt-health` after every whisper call (lag behind live audio, or the error) and `stt-alive` every second between calls. The status chip shows Listening, Behind by N s, or Not transcribing. `AGENTHSP_STT_FAULT=fail` or `slow:<ms>` forces the failure states for testing.
+- **Live keys and Hold.** B blackout, L logo, Esc clear to logo, H hold, arrows for next/previous verse, Enter to show the oldest waiting card. Under Hold the ticker does not fire cards, and following the reading, voice commands and corrections are off. Releasing Hold drops the waiting cards so a backlog never floods the screen.
 - **Repeat rules.** A spoken reference is not re-shown within 30 seconds unless it is off screen. Quote matches wait 3 minutes.
 - **Hold and summary** (`lib/sermon.ts`). A verse stays up until the next one. The operator can show a summary slide built from the sermon outline with "Summary now"; it never replaces a verse on its own. The outline comes from phrases such as "the title of my message is" and "point number one".
 - `lib/stt.ts`, `lib/stt-worker.ts` and `lib/audio.ts` are left over from browser speech recognition. They are not used by the desktop app.
@@ -123,7 +124,7 @@ Quote matching finds a verse the preacher quotes without naming it.
 ### 7. Output window (`Output.tsx`)
 
 - Listens for `slide` and `output-theme` events and draws them. It has no logic of its own.
-- Slide kinds today: `verse` and `summary`.
+- Slide kinds today: `verse`, `summary`, `blank` (blackout), `logo` (church name on the theme background) and `text` (title, body, sub; for lyrics and announcements).
 - Text size follows the screen size and the theme's `textScale` (set by the Theme slider or the A- / A+ buttons on the console preview).
 - Double-click to go full screen.
 

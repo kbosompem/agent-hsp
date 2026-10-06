@@ -10,6 +10,8 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Live keys: B blackout, L logo, Esc clear to logo, H hold, Right/Left next/previous verse, Enter shows the oldest waiting card. Pressing B or L again brings back the slide that was up. Blackout and Logo turn on Hold, where the AI never changes the screen and detected verses wait as clickable cards.
+- Projector slide kinds for blackout, logo and plain text (lyrics, announcements). Church name setting on the Theme page replaces the hard-coded "AMC CHURCH".
 - Transcription health on the console: Listening, Behind by N s, or Not transcribing with the reason. Whisper failures are logged instead of silently returning empty text (issue 2).
 - Streaming partial transcripts. The app transcribes the current sentence every half second while the preacher is still talking. Typical time from a spoken reference to a verse on screen dropped from about 9 seconds to about 1.4 seconds on the synthetic fixtures. A verse fires from partials only when the same chapter and verse appear in two partials in a row.
 - Following a reading. While a range such as Matthew 5:1-12 is on screen, the console moves to the next verse when the preacher reads past the current one, and stops at the last verse. It tolerates reading from a different translation.

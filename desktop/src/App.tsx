@@ -59,6 +59,7 @@ type OutputTheme = {
   accent: string;
   font: "serif" | "sans";
   textScale?: number;
+  churchName?: string;
 };
 
 const GRADIENTS: { name: string; css: string }[] = [
@@ -199,6 +200,12 @@ export default function App() {
   const seq = useRef(1);
   const shownRef = useRef<Record<string, number>>({});
   const lastCmdAt = useRef(0);
+  // Hold: the AI never changes the projector. Detected verses wait as cards
+  // the operator can click. Blackout and Logo turn it on.
+  const [held, setHeld] = useState(false);
+  const holdRef = useRef(false);
+  // The slide that was up before a blackout or logo, to bring back.
+  const beforeCover = useRef<Slide | null>(null);
   const lastTrAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
@@ -354,6 +361,46 @@ export default function App() {
     lastVerse.current = h;
     verseShownAt.current = Date.now();
     addNote(h.label + " — " + trimWords(h.text, 12));
+  }
+
+  function setHold(on: boolean) {
+    holdRef.current = on;
+    setHeld(on);
+    // Verses heard during Hold are stale; never flush them onto the screen.
+    if (!on) cardsRef.current = cardsRef.current.filter((c) => c.status !== "pending");
+    sync();
+  }
+
+  // Blackout ("blank") or logo. Pressing the same key again brings back the
+  // slide that was up before, and releases Hold.
+  async function cover(kind: "blank" | "logo") {
+    const cur = slideRef.current;
+    if (cur && cur.kind === kind) {
+      const back = beforeCover.current;
+      beforeCover.current = null;
+      setHold(false);
+      if (back) {
+        const s = await invoke<Slide>("show_slide", { kind: back.kind, title: back.title, body: back.body, sub: back.sub });
+        setSlide(s);
+        slideRef.current = s;
+      }
+      setMicStatus("Back on screen. AI can change the screen again.");
+      return;
+    }
+    if (cur && cur.kind !== "blank" && cur.kind !== "logo") beforeCover.current = cur;
+    setHold(true);
+    const s = await invoke<Slide>("show_slide", { kind, title: "", body: "", sub: "" });
+    setSlide(s);
+    slideRef.current = s;
+    setMicStatus((kind === "blank" ? "Blackout" : "Logo") + " · Hold is on: detected verses wait for you.");
+  }
+
+  async function showCard(c: Card) {
+    c.status = "done";
+    cardsRef.current = cardsRef.current.filter((x) => x.id !== c.id);
+    beforeCover.current = null;
+    await showVerse(c.hit, c.trigger);
+    sync();
   }
 
   async function nextVerse() {
@@ -579,6 +626,36 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Live keys. Ignored while typing in a field.
+  //   B blackout · L logo · H hold · Esc clear to logo · Right/Left next/previous verse
+  //   Enter shows the oldest waiting card
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyRef.current = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k === "b" || k === "B") void cover("blank");
+    else if (k === "l" || k === "L") void cover("logo");
+    else if (k === "Escape") {
+      if (slideRef.current?.kind !== "logo") void cover("logo");
+    } else if (k === "h" || k === "H") {
+      setHold(!holdRef.current);
+      setMicStatus(holdRef.current ? "Hold is on: detected verses wait for you." : "Hold off: verses show as they are heard.");
+    } else if (k === "ArrowRight") void nextVerse();
+    else if (k === "ArrowLeft") void prevVerse();
+    else if (k === "Enter") {
+      const c = cardsRef.current.find((x) => x.status === "pending");
+      if (c) void showCard(c);
+    } else return;
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyRef.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
   // Keep the transcription status chip current even when nothing else changes.
   useEffect(() => {
     if (!listening) return;
@@ -589,7 +666,9 @@ export default function App() {
   useEffect(() => {
     const t = setInterval(() => {
       const now = Date.now();
-      const due = cardsRef.current.filter((c) => c.status === "pending" && now >= c.fireAt);
+      const due = holdRef.current
+        ? []
+        : cardsRef.current.filter((c) => c.status === "pending" && now >= c.fireAt);
       if (due.length) {
         due.forEach((c) => {
           c.status = "done";
@@ -714,6 +793,8 @@ export default function App() {
       if (cardsRef.current.some((c) => c.label === h.label && c.status === "pending")) continue;
       shownRef.current[h.label] = now;
       line.labels.push(h.label);
+      // Under Hold cards pile up; keep the newest few.
+      if (cardsRef.current.length >= 8) cardsRef.current.shift();
       cardsRef.current.push({
         id: seq.current++,
         label: h.label,
@@ -894,6 +975,7 @@ export default function App() {
   // preacher has read past the current one, and stop at the end of the range.
   function followReading(partialText: string, seg: number) {
     const seqr = seqRef.current;
+    if (holdRef.current) return;
     if (!seqr || advancingRef.current || seqr.idx >= seqr.slides.length - 1) return;
     const f = followRef.current;
     let live = contentWords(partialText);
@@ -977,11 +1059,11 @@ export default function App() {
       sync();
       return;
     }
-    if (matchCommand(text)) {
+    if (!holdRef.current && matchCommand(text)) {
       sync();
       return;
     }
-    if (tryCorrection(text)) {
+    if (!holdRef.current && tryCorrection(text)) {
       sync();
       return;
     }
@@ -1017,10 +1099,33 @@ export default function App() {
   const preview = slide ? (
     slide.kind === "summary" ? (
       renderSummary(slide, outTheme)
+    ) : slide.kind === "blank" ? (
+      <div className="slide idle" style={{ background: "#000" }}>
+        <div className="spsub">Blackout</div>
+      </div>
+    ) : slide.kind === "logo" ? (
+      <div className="slide logo" style={slideBg(outTheme)}>
+        {overlayEl(outTheme)}
+        <div className="logoname" style={{ color: outTheme.accent, position: "relative", zIndex: 1 }}>
+          {outTheme.churchName?.trim() || "AMC CHURCH"}
+        </div>
+      </div>
+    ) : slide.kind === "text" ? (
+      <div className="slide text" style={slideBg(outTheme)}>
+        {overlayEl(outTheme)}
+        {slide.title && (
+          <div className="texttitle" style={{ color: outTheme.accent, position: "relative", zIndex: 1 }}>
+            {slide.title}
+          </div>
+        )}
+        <div className={"textbody " + sizeClass(slide.body)} style={{ color: outTheme.textColor, position: "relative", zIndex: 1 }}>
+          {slide.body}
+        </div>
+      </div>
     ) : (
       <div className="slide verse" style={slideBg(outTheme)}>
         {overlayEl(outTheme)}
-        <span className="vlogo" style={{ position: "absolute", zIndex: 1 }}>AMC CHURCH</span>
+        <span className="vlogo" style={{ position: "absolute", zIndex: 1 }}>{outTheme.churchName?.trim() || "AMC CHURCH"}</span>
         <div
           className={"vtxt " + sizeClass(slide.body)}
           style={{ color: outTheme.textColor, fontFamily: outTheme.font === "sans" ? "inherit" : undefined, position: "relative", zIndex: 1 }}
@@ -1236,6 +1341,16 @@ export default function App() {
               <span className="sub">{Math.round((outTheme.textScale ?? 1) * 100)}%</span>
             </div>
             <div className="row">
+              <span className="grouplabel">Church name</span>
+              <input
+                value={outTheme.churchName ?? ""}
+                placeholder="AMC CHURCH"
+                onChange={(e) => setOutTheme({ ...outTheme, churchName: e.target.value })}
+                style={{ width: 220 }}
+              />
+              <span className="sub">shown on verses and the logo screen</span>
+            </div>
+            <div className="row">
               <span className="grouplabel">Text</span>
               <button
                 className="btn"
@@ -1329,7 +1444,22 @@ export default function App() {
             </span>
           </div>
           <div className="preview">{preview}</div>
-          <div className="tiny">Verses · instant show · stays up until the next one</div>
+          <div className="rowbtns">
+            <button className={"btn" + (slide?.kind === "blank" ? " gold" : "")} title="B" onClick={() => void cover("blank")}>
+              Blackout (B)
+            </button>
+            <button className={"btn" + (slide?.kind === "logo" ? " gold" : "")} title="L or Esc" onClick={() => void cover("logo")}>
+              Logo (L)
+            </button>
+            <button className={"btn" + (held ? " gold" : "")} title="H" onClick={() => setHold(!holdRef.current)}>
+              {held ? "Hold on (H)" : "Hold (H)"}
+            </button>
+          </div>
+          <div className="tiny">
+            {held
+              ? "HOLD · the AI will not change the screen · click a card or press Enter to show it"
+              : "Verses · instant show · stays up until the next one · B blackout · L logo · H hold"}
+          </div>
           <div className="cards">
             {cardsRef.current.length === 0 && (
               <div className="sub dim">Detected verses appear here for a moment before they show.</div>
@@ -1340,7 +1470,12 @@ export default function App() {
                 Math.min(100, (100 * (now - (c.fireAt - FIRE_DELAY))) / FIRE_DELAY)
               );
               return (
-                <div key={c.id} className="evcard">
+                <div
+                  key={c.id}
+                  className={"evcard" + (held ? " held" : "")}
+                  title="Click to show now"
+                  onClick={() => void showCard(c)}
+                >
                   <b>{c.label}</b>
                   <span className="chip gold" style={{ marginLeft: 8 }}>
                     {c.kind === "quote" ? "quote" : "reference"}
