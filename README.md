@@ -28,7 +28,7 @@ On first use, click **Load model** to download the speech model (466 MB `small.e
 
 ## What works today (desktop)
 
-- Full KJV embedded in Rust; ASV, WEB and BBE bundled; import any translation (Zefania, OpenSong, OSIS XML or JSON)
+- Full KJV embedded in Rust; ASV, WEB, BBE, Berean Standard Bible (BSB), Literal Standard Version (LSV) and Free Bible Version (FBV) bundled; import any translation (Zefania, OpenSong, OSIS XML or JSON)
 - Spoken references in all their forms: "john 3 16", "Romans five verse eight", "the third chapter of John", "psalm 91 1-2", homophone ranges ("verse 1 two 5"), glued numbers ("Philippians 413")
 - Streaming partial transcripts: verses show about 1.4 seconds after the reference is spoken on our test fixtures
 - Follow-up verses: "verse 6 says..." shows verse 6 of the chapter that is open
@@ -115,4 +115,4 @@ Church volunteers are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 ## License
 
-Code: to be decided. See LICENSE once added. Bible text: KJV, ASV, WEB, BBE are public domain and bundled. Copyrighted translations (NIV, NLT, NASB, NKJV, NIRV, AMP, The Message) are never bundled or redistributed; users import files they have rights to use.
+Code: to be decided. See LICENSE once added. Bible text: KJV, ASV, WEB, BBE and BSB are public domain and bundled. LSV and FBV are bundled under Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0). Licences, copyright holders, sources and the changes we made are listed in [desktop/crates/preso-core/assets/BIBLES.md](desktop/crates/preso-core/assets/BIBLES.md). Copyrighted translations (NIV, NLT, NASB, NKJV, NIRV, AMP, The Message) are never bundled or redistributed; users import files they have rights to use.

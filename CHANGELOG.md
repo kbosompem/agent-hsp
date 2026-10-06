@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Three more bundled translations: Berean Standard Bible (BSB, public domain), Literal Standard Version (LSV, CC BY-SA 4.0) and Free Bible Version (FBV, CC BY-SA 4.0). KJV stays the default. Licences and credits are in `desktop/crates/preso-core/assets/BIBLES.md`. `scripts/bibles/usfm2json.py` rebuilds them from eBible.org USFM. The app binary grows by about 12 MB.
 - Free stock backgrounds: 12 photos and 6 motion loops from Pexels, chosen in the Look page, downloaded on first use (not bundled) and credited to their creators. Motion (video) backgrounds play behind verses and lyrics.
 - Every listening session is recorded to `sessions/<date_time UTC>/` in the app data folder: `audio.wav` (16 kHz mono, header refreshed every 5 s so a crash loses little), `transcript.jsonl` and `slides.jsonl`, for replay and scoring after a service (issue 12, first part).
 - Service page: build an order of service (songs, scripture, text/announcements, logo, blackout, sermon), save it, duplicate last week's, and run it live with the arrow keys, Page Down/Up or a presentation clicker. Every item except the sermon keeps the AI off the screen; going live on the sermon starts listening.

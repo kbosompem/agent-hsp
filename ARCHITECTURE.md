@@ -89,7 +89,7 @@ The theme travels separately. The console sends an `output-theme` event straight
 
 ### 4. Verse engine (`preso-core`)
 
-- **Bible text.** KJV, ASV, WEB and BBE are compiled into the binary with `include_str!`. KJV is `kjv.json`; the others are in `assets/`.
+- **Bible text.** KJV, ASV, WEB, BBE, BSB, LSV and FBV are compiled into the binary with `include_str!` (KJV first, so it is the default). KJV is `kjv.json`; the others are in `assets/`. BSB, LSV and FBV are built from eBible.org USFM with `scripts/bibles/usfm2json.py`; licences and attribution are in `assets/BIBLES.md`. Verse N is always at index N-1, so verses a translation omits are stored as empty text.
 - **Imports.** `import_translation` accepts our JSON, Zefania XML, OpenSong XML or OSIS XML. The parsed result is saved as JSON in the app data folder under `translations/` and loaded on every start.
 - **Parser** (`Engine::parse_refs`, `Engine::lookup`). Handles number words, "chapter"/"verse" words, ordinals ("first Corinthians"), ranges with homophones ("verse 1 two 5"), glued numbers ("Philippians 413" becomes 4:13 when only one reading is valid), and common misspellings of book names (edit-distance matching). It rejects false hits such as "John the Baptist" and "point number one".
 - **LiveLookup** (`lookup_live`). Remembers the open chapter for 10 minutes, so "verse 6 says" shows verse 6 of that chapter. It also joins a book named at the end of one sentence with a chapter at the start of the next. Final transcripts move this context (`commit: true`). Partials only read it.

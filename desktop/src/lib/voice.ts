@@ -100,6 +100,9 @@ export const TRANSLATIONS: { code: string; name: string; say: string[] }[] = [
   { code: "gnt", name: "Good News Translation", say: ["good news translation", "good news bible", "gnt"] },
   { code: "web", name: "World English Bible", say: ["world english", "web bible"] },
   { code: "bbe", name: "Bible in Basic English", say: ["basic english", "bbe"] },
+  { code: "bsb", name: "Berean Standard Bible", say: ["berean", "bsb"] },
+  { code: "lsv", name: "Literal Standard Version", say: ["literal standard", "lsv"] },
+  { code: "fbv", name: "Free Bible Version", say: ["free bible", "fbv"] },
   { code: "rsv", name: "Revised Standard Version", say: ["revised standard", "rsv"] },
 ];
 

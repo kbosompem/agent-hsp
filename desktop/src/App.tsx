@@ -1346,8 +1346,9 @@ export default function App() {
               <div className="mx-auto flex max-w-4xl flex-col gap-4 p-1">
                 <Panel title="Bible translations">
                   <p className="text-sm text-muted-foreground">
-                    Bundled: KJV, ASV, WEB and BBE, which are public domain. Import any other translation as Zefania,
-                    OpenSong or OSIS XML, or our JSON.
+                    Bundled, free to use: KJV, ASV, WEB, BBE and the Berean Standard Bible (public domain), plus the
+                    Literal Standard Version and Free Bible Version (CC BY-SA 4.0). Import any other translation as
+                    Zefania, OpenSong or OSIS XML, or our JSON.
                   </p>
                   <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
                     <b>Copyrighted translations need a licence.</b> NLT, NIV, ESV, NASB, NKJV, AMP, The Message and most

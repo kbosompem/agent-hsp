@@ -146,6 +146,11 @@ const KJV_JSON: &str = include_str!("../kjv.json");
 const ASV_JSON: &str = include_str!("../assets/asv.json");
 const WEB_JSON: &str = include_str!("../assets/web.json");
 const BBE_JSON: &str = include_str!("../assets/bbe.json");
+// Built from eBible.org USFM with scripts/bibles/usfm2json.py. Licences and
+// attribution: assets/BIBLES.md.
+const BSB_JSON: &str = include_str!("../assets/bsb.json");
+const LSV_JSON: &str = include_str!("../assets/lsv.json");
+const FBV_JSON: &str = include_str!("../assets/fbv.json");
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
 
@@ -192,6 +197,15 @@ impl Engine {
             out.push(t);
         }
         if let Some(t) = Self::parse_translation(BBE_JSON, "bbe", "Bible in Basic English") {
+            out.push(t);
+        }
+        if let Some(t) = Self::parse_translation(BSB_JSON, "bsb", "Berean Standard Bible (BSB)") {
+            out.push(t);
+        }
+        if let Some(t) = Self::parse_translation(LSV_JSON, "lsv", "Literal Standard Version (LSV)") {
+            out.push(t);
+        }
+        if let Some(t) = Self::parse_translation(FBV_JSON, "fbv", "Free Bible Version (FBV)") {
             out.push(t);
         }
         out
@@ -1274,7 +1288,8 @@ mod tests {
 
     #[test]
     fn kjv_loads() {
-        assert_eq!(engine().list_translations().len(), 4);
+        assert_eq!(engine().list_translations().len(), 7);
+        assert_eq!(engine().list_translations()[0].0, "kjv");
         assert_eq!(
             engine().get_verse(0, &BibleRef { book: 18, chapter: 23, verse: Some(1), end_verse: None, pos: 0 }),
             "The LORD is my shepherd; I shall not want."
@@ -1455,6 +1470,92 @@ mod tests {
     fn other_translation() {
         let hits = engine().lookup("John 3:16", Some("web"));
         assert_eq!(hits[0].translation, "World English Bible");
+    }
+
+    fn tr_ref(book: usize, chapter: usize, verse: usize) -> BibleRef {
+        BibleRef { book, chapter, verse: Some(verse), end_verse: None, pos: 0 }
+    }
+
+    #[test]
+    fn bundled_modern_translations_listed() {
+        let ids: Vec<String> = engine().list_translations().into_iter().map(|(id, _)| id).collect();
+        assert_eq!(ids, vec!["kjv", "asv", "web", "bbe", "bsb", "lsv", "fbv"]);
+        let names: Vec<String> = engine().list_translations().into_iter().map(|(_, n)| n).collect();
+        assert!(names.contains(&"Berean Standard Bible (BSB)".to_string()));
+        assert!(names.contains(&"Literal Standard Version (LSV)".to_string()));
+        assert!(names.contains(&"Free Bible Version (FBV)".to_string()));
+        // KJV stays the default when no translation is asked for.
+        assert_eq!(engine().tr_index(None), 0);
+        assert_eq!(engine().lookup("John 3:16", None)[0].translation, "King James Version");
+    }
+
+    #[test]
+    fn modern_translations_spot_check() {
+        let e = engine();
+        let cases: [(&str, [&str; 4]); 3] = [
+            ("bsb", ["For God so loved the world", "The LORD is my shepherd", "God works all things together for the good", "In the beginning God created the heavens and the earth"]),
+            ("lsv", ["for God so loved the world", "YHWH [is] my shepherd", "all things work together for good", "In [the] beginning God created the heavens and the earth"]),
+            ("fbv", ["For God loved the world", "the Lord is my shepherd", "God works for the good", "In the beginning God created the heavens and the earth"]),
+        ];
+        for (id, want) in cases {
+            let tr = e.tr_index(Some(id));
+            assert_ne!(tr, 0, "{id} not loaded");
+            let refs = [tr_ref(42, 3, 16), tr_ref(18, 23, 1), tr_ref(44, 8, 28), tr_ref(0, 1, 1)];
+            for (r, w) in refs.iter().zip(want) {
+                let text = e.get_verse(tr, r);
+                assert!(text.contains(w), "{id} {:?}: {text}", (r.book, r.chapter, r.verse));
+                assert!(!text.contains('\\') && !text.contains('|') && !text.contains("strong="), "{id}: markup left in {text}");
+                assert_eq!(text, text.split_whitespace().collect::<Vec<_>>().join(" "));
+            }
+            // Psalm superscriptions are kept out of verse 1.
+            let ps3 = e.get_verse(tr, &tr_ref(18, 3, 1));
+            assert!(!ps3.to_lowercase().contains("absalom"), "{id}: {ps3}");
+        }
+    }
+
+    #[test]
+    fn modern_translations_versification_matches_kjv() {
+        let e = engine();
+        let trs = e.translations.read().unwrap();
+        let kjv = &trs[0];
+        for id in ["bsb", "lsv", "fbv"] {
+            let t = trs.iter().find(|t| t.id == id).unwrap();
+            assert_eq!(t.books.len(), 66);
+            let mut total = 0usize;
+            let mut empty = 0usize;
+            for (b, (kb, tb)) in kjv.books.iter().zip(&t.books).enumerate() {
+                assert_eq!(kb.name, tb.name, "{id} book {b}");
+                assert_eq!(kb.chapters.len(), tb.chapters.len(), "{id} {} chapters", tb.name);
+                let kv: usize = kb.chapters.iter().map(|c| c.len()).sum();
+                let tv: usize = tb.chapters.iter().map(|c| c.len()).sum();
+                // Versification differs in a handful of places (3 John 14-15, Revelation 12:18).
+                assert!(kv.abs_diff(tv) <= 2, "{id} {}: {tv} verses vs KJV {kv}", tb.name);
+                total += tv;
+                empty += tb.chapters.iter().flatten().filter(|v| v.is_empty()).count();
+            }
+            assert!(total.abs_diff(31102) <= 5, "{id}: {total} verses");
+            // Only verses the translation leaves out (e.g. Matthew 17:21) may be empty.
+            assert!(empty <= 20, "{id}: {empty} empty verses");
+        }
+    }
+
+    #[test]
+    fn modern_translations_lookup_by_id() {
+        let e = engine();
+        for (id, name) in [
+            ("bsb", "Berean Standard Bible (BSB)"),
+            ("lsv", "Literal Standard Version (LSV)"),
+            ("fbv", "Free Bible Version (FBV)"),
+        ] {
+            let hits = e.lookup("Romans 8:28", Some(id));
+            assert_eq!(hits.len(), 1, "{id}");
+            assert_eq!(hits[0].label, "Romans 8:28");
+            assert_eq!(hits[0].translation, name);
+            assert!(hits[0].text.len() > 40);
+            // Verses after a gap keep their own numbers: Matthew 17:22 is still 17:22.
+            let m = e.lookup("Matthew 17:22", Some(id));
+            assert!(m[0].text.contains("Galilee"), "{id}: {}", m[0].text);
+        }
     }
 
     #[test]
