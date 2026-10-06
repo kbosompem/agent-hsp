@@ -331,6 +331,7 @@ fn spawn_capture(
                 }
                 total.fetch_add(chunk.len() as u64, Ordering::SeqCst);
             }
+            crate::session::audio(&chunk);
         };
         let stream = match cfg.sample_format() {
             cpal::SampleFormat::F32 => device.build_input_stream(
@@ -491,6 +492,9 @@ fn spawn_segmenter(app: AppHandle, shared: Arc<ListenState>, gen: usize, cfg: Se
                 if partial && text.is_empty() {
                     return;
                 }
+                if !partial && !text.is_empty() {
+                    crate::session::transcript(end, &text);
+                }
                 let ev = if partial { "transcript-partial" } else { "transcript" };
                 let _ = app.emit(ev, TranscriptEvent { text, ms, seg: s });
             }));
@@ -596,6 +600,15 @@ pub fn start_listening(
         ctx: state.ctx.clone(),
         ctx_model: state.ctx_model.clone(),
     });
+    // Record the session (audio, transcript, slides) for replay afterwards.
+    if let Ok(root) = app.path().app_data_dir().map(|d| d.join("sessions")) {
+        match crate::session::start(root, state.total.load(Ordering::SeqCst)) {
+            Ok(dir) => eprintln!("recording session to {}", dir.display()),
+            Err(e) => {
+                let _ = app.emit("listen-status", format!("Listening, but could not record the session: {}", e));
+            }
+        }
+    }
     spawn_capture(app.clone(), device, shared.clone(), gen);
     spawn_segmenter(app, shared, gen, SegConfig::streaming());
     Ok("started".to_string())
@@ -605,4 +618,5 @@ pub fn start_listening(
 pub fn stop_listening(state: tauri::State<'_, ListenState>) {
     state.running.store(false, Ordering::SeqCst);
     state.generation.fetch_add(1, Ordering::SeqCst);
+    crate::session::stop();
 }

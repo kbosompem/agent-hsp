@@ -172,6 +172,7 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
 - **App data folder** (`com.agenthsp.desktop` in the OS app data location):
   - `models/` whisper model files
   - `translations/` imported translations as JSON
+  - `sessions/<YYYY-MM-DD_HH-MM-SS>/` one folder per listening session (UTC time): `audio.wav`, `transcript.jsonl`, `slides.jsonl`. Written by a single thread in `session.rs`; the audio callback only sends it chunks.
   - On first start, data from the old `com.amcpreso.desktop` folder is moved here.
 - **Browser localStorage in the console window.** Only two keys: `preso-theme` (light/dark console) and `preso-output-theme` (the projector theme, including any background image as a data URL; a large image may not fit and then only lasts for the session).
 - **Console memory only.** Transcript, verse history, pending cards, sermon outline and notes. These are lost when the app closes.

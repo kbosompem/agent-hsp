@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod segmenter;
+pub mod session;
 
 use audio::ListenState;
 use preso_core::{engine, Engine, LiveLookup, VerseHit};
@@ -168,6 +169,7 @@ fn show_verse(app: tauri::AppHandle, hit: VerseHit) -> Slide {
         sub: hit.translation.clone(),
     };
     let _ = app.emit("slide", &slide);
+    session::slide(&slide.kind, &slide.title, &slide.body, &slide.sub);
     slide
 }
 
@@ -186,6 +188,7 @@ fn show_slide(
         sub,
     };
     let _ = app.emit("slide", &slide);
+    session::slide(&slide.kind, &slide.title, &slide.body, &slide.sub);
     slide
 }
 
