@@ -17,6 +17,7 @@ type OutputTheme = {
   accent: string;
   font: "serif" | "sans";
   textScale?: number;
+  churchName?: string;
 };
 
 function slideBg(t: OutputTheme | null): any {
@@ -76,6 +77,51 @@ export default function Output() {
   const bg: any = slideBg(ot);
   const txt: any = ot ? { color: ot.textColor, fontFamily: ot.font === "sans" ? "inherit" : undefined } : undefined;
   const accent: any = ot ? { color: ot.accent } : undefined;
+
+  const church = ot?.churchName?.trim() || "AMC CHURCH";
+
+  // Blackout: nothing on the projector at all.
+  if (slide.kind === "blank") {
+    return <div className="output blackout" />;
+  }
+
+  // Logo: the theme background with the church name, between items.
+  if (slide.kind === "logo") {
+    return (
+      <div className="output">
+        <div className="slide logo" style={bg}>
+          {overlayEl(ot)}
+          <div className="logoname" style={{ position: "relative", zIndex: 1, ...accent }}>
+            {church}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Text: song lyrics, announcements, any plain slide. Title and sub are optional.
+  if (slide.kind === "text") {
+    return (
+      <div className="output">
+        <div className="slide text" style={bg}>
+          {overlayEl(ot)}
+          {slide.title && (
+            <div className="texttitle" style={{ position: "relative", zIndex: 1, ...accent }}>
+              {slide.title}
+            </div>
+          )}
+          <div className={"textbody " + sizeClass(slide.body)} style={{ position: "relative", zIndex: 1, ...txt }}>
+            {slide.body}
+          </div>
+          {slide.sub && (
+            <div className="textsub" style={{ zIndex: 1 }}>
+              {slide.sub}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (slide.kind === "summary") {
     let data: { points: { text: string; verses: string[] }[] } | null = null;
@@ -161,7 +207,7 @@ export default function Output() {
       <div className="slide verse" style={bg}>
         {overlayEl(ot)}
         <span className="vlogo" style={{ position: "absolute", zIndex: 1 }}>
-          AMC CHURCH
+          {church}
         </span>
         <div className={"vtxt " + sizeClass(slide.body)} style={{ position: "relative", zIndex: 1, ...txt }}>
           {slide.body}

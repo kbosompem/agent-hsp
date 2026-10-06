@@ -37,7 +37,7 @@ On first use, click **Load model** to download the speech model (466 MB `small.e
 - Translation by voice: "show NLT", "read it in the NIV" (for translations you have imported)
 - Spoken corrections: "Isaiah 2:14... sorry, chapter 3" updates the on-screen verse
 - Quote matching: say "while we were yet sinners" without naming the verse and Romans 5:8 appears. Engine: precomputed verse embeddings plus local sentence embeddings (MiniLM). Needs the verse index (see below).
-- Verse lifecycle: instant show, 60-second hold, then a live summary slide
+- Verse lifecycle: instant show; the verse stays up until the next one. The summary slide shows only when the operator asks for it
 - Sermon outline capture: "the title of my message is...", "point number one..." drive the summary
 - Instant show on the projector, light/dark operator themes, output theme designer with auto-generated styling from any background image
 - Projector text scales with the screen, with a text-size control (Theme slider, A- / A+ on the console preview)

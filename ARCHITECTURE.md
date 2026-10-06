@@ -50,7 +50,7 @@ The Rust side has two parts:
             -> sermon outline notes -> lookup_live(commit=true)
             -> quote matching (embeddings)
           |
-          |  a "card" waits 600 ms, then fires
+          |  a spoken reference fires at once; a quote match waits 600 ms
           v
    invoke("show_verse") / invoke("show_slide")      (Rust command)
           |
@@ -103,8 +103,10 @@ Much of the "when should the screen change" logic lives in the console, in TypeS
 - **Corrections.** Within 30 seconds of a verse, "sorry, chapter 3" or "I mean verse 5" changes the verse on screen.
 - **Following a reading** (`lib/voice.ts`). While a range such as Matthew 5:1-12 is up, the console moves to the next verse once the preacher has read past the current one. It compares stemmed content words, so it tolerates a different translation.
 - **Translation by voice** (`lib/voice.ts`). "show NLT" or "read it in the NIV" switches translation if it is loaded.
+- **Chapter-only mentions.** "Turn to Mark 2" opens the chapter for follow-ups but shows nothing. Many were misheard or never read.
+- **Transcription health.** The Rust side sends `stt-health` after every whisper call (lag behind live audio, or the error) and `stt-alive` every second between calls. The status chip shows Listening, Behind by N s, or Not transcribing. `AGENTHSP_STT_FAULT=fail` or `slow:<ms>` forces the failure states for testing.
 - **Repeat rules.** A spoken reference is not re-shown within 30 seconds unless it is off screen. Quote matches wait 3 minutes.
-- **Hold and summary** (`lib/sermon.ts`). A verse stays up for 60 seconds, then a summary slide built from the sermon outline replaces it. The outline comes from phrases such as "the title of my message is" and "point number one".
+- **Hold and summary** (`lib/sermon.ts`). A verse stays up until the next one. The operator can show a summary slide built from the sermon outline with "Summary now"; it never replaces a verse on its own. The outline comes from phrases such as "the title of my message is" and "point number one".
 - `lib/stt.ts`, `lib/stt-worker.ts` and `lib/audio.ts` are left over from browser speech recognition. They are not used by the desktop app.
 
 ### 6. Quote matching (embeddings)
@@ -154,6 +156,8 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
 | `transcript` | Rust | console | `{text, ms, seg}` (sent even when empty, to clear the live line) |
 | `level` | Rust | console | input level, about 3 times a second |
 | `listen-status` | Rust | console | plain-text status or error |
+| `stt-health` | Rust | console | `{lag_s, ms, error}` after every whisper call |
+| `stt-alive` | Rust | console | heartbeat, every second between whisper calls |
 | `model-progress` | Rust | console | download status and byte counts |
 | `model-ready` | Rust | console | model name |
 | `slide` | Rust | all windows (the output draws it) | `{kind, title, body, sub}` |
@@ -182,7 +186,7 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
 
 ### The latency harness
 
-`examples/latency.rs` replays a WAV fixture through the real segmenter, whisper and parser. It runs in simulated real time: while whisper works, audio keeps "arriving", as it would from a live microphone. For each expected reference it reports whether the verse was found, any wrong verses, and the seconds between the speaker finishing the reference and the app knowing the verse. The 600 ms console fire delay comes on top.
+`examples/latency.rs` replays a WAV fixture through the real segmenter, whisper and parser. It runs in simulated real time: while whisper works, audio keeps "arriving", as it would from a live microphone. For each expected reference it reports whether the verse was found, any wrong verses, and the seconds between the speaker finishing the reference and the app knowing the verse. Spoken references show the moment they are detected; `FIRE_DELAY_S` adds a delay and `ONE_PARTIAL=1` accepts a hit from a single partial, for experiments.
 
 - Fixtures: `fixtures/latency/*.wav` plus a `.json` answer key with the time each reference ends. They are made with macOS text-to-speech by `scripts/latency-fixture/make.py`, some with simulated echo and noise.
 - `scripts/latency-fixture/run-all.sh <model>` runs every fixture and prints one line each.

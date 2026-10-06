@@ -153,6 +153,32 @@ pub fn run_whisper_opts(
     partial: bool,
     audio_ctx: bool,
 ) -> (String, usize) {
+    run_whisper_checked(state, samples, partial, audio_ctx).unwrap_or((String::new(), 0))
+}
+
+/// Test hook for the lag warning: AGENTHSP_STT_FAULT=fail makes every whisper
+/// call fail; AGENTHSP_STT_FAULT=slow:<ms> adds that much time to each call.
+fn injected_fault() -> Result<(), String> {
+    match std::env::var("AGENTHSP_STT_FAULT") {
+        Ok(v) if v == "fail" => Err("test fault".to_string()),
+        Ok(v) => {
+            if let Some(ms) = v.strip_prefix("slow:").and_then(|n| n.parse::<u64>().ok()) {
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+            }
+            Ok(())
+        }
+        Err(_) => Ok(()),
+    }
+}
+
+/// Like `run_whisper_opts`, but reports a failed whisper call instead of
+/// returning empty text.
+pub fn run_whisper_checked(
+    state: &mut WhisperState,
+    samples: &[f32],
+    partial: bool,
+    audio_ctx: bool,
+) -> Result<(String, usize), String> {
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some("en"));
     params.set_translate(false);
@@ -179,8 +205,9 @@ pub fn run_whisper_opts(
         }
     }
     let t0 = std::time::Instant::now();
-    if state.full(params, samples).is_err() {
-        return (String::new(), 0);
+    injected_fault()?;
+    if let Err(e) = state.full(params, samples) {
+        return Err(format!("speech model error: {}", e));
     }
     let ms = t0.elapsed().as_millis() as usize;
     let n = state.full_n_segments().unwrap_or(0);
@@ -190,9 +217,9 @@ pub fn run_whisper_opts(
         .collect();
     let text = text.join(" ").trim().to_string();
     if is_prompt_echo(&text) {
-        return (String::new(), ms);
+        return Ok((String::new(), ms));
     }
-    (text, ms)
+    Ok((text, ms))
 }
 
 pub const PARTIAL_AUDIO_CTX: bool = true;
@@ -377,6 +404,13 @@ struct TranscriptEvent {
     seg: u64,
 }
 
+#[derive(Clone, serde::Serialize)]
+struct SttHealth {
+    lag_s: f32,
+    ms: usize,
+    error: Option<String>,
+}
+
 fn spawn_segmenter(app: AppHandle, shared: Arc<ListenState>, gen: usize, cfg: SegConfig) {
     std::thread::spawn(move || {
         // One whisper state per listening session; creating it per call costs
@@ -393,6 +427,7 @@ fn spawn_segmenter(app: AppHandle, shared: Arc<ListenState>, gen: usize, cfg: Se
         };
         let mut seg = Segmenter::new(cfg, *shared.floor.lock().unwrap());
         let mut last_level_emit = std::time::Instant::now();
+        let mut last_alive_emit = std::time::Instant::now();
         loop {
             if !shared.running.load(Ordering::SeqCst)
                 || shared.generation.load(Ordering::SeqCst) != gen
@@ -411,6 +446,10 @@ fn spawn_segmenter(app: AppHandle, shared: Arc<ListenState>, gen: usize, cfg: Se
                         shared.total.load(Ordering::SeqCst),
                     )
                 };
+                if last_alive_emit.elapsed().as_millis() >= 1000 {
+                    last_alive_emit = std::time::Instant::now();
+                    let _ = app.emit("stt-alive", ());
+                }
                 if last_level_emit.elapsed().as_millis() > 300 {
                     last_level_emit = std::time::Instant::now();
                     let _ = app.emit("level", tail_rms);
@@ -427,13 +466,27 @@ fn spawn_segmenter(app: AppHandle, shared: Arc<ListenState>, gen: usize, cfg: Se
                     let total = shared.total.load(Ordering::SeqCst);
                     slice_abs(&buf, total, start, end)
                 };
-                let (text, ms) = run_whisper(&mut wstate, &samples, partial);
+                let res = run_whisper_checked(&mut wstate, &samples, partial, PARTIAL_AUDIO_CTX);
                 // The user may have pressed Stop while whisper was running.
                 if !shared.running.load(Ordering::SeqCst)
                     || shared.generation.load(Ordering::SeqCst) != gen
                 {
                     return;
                 }
+                // How far the audio just transcribed trails live audio, so the
+                // console can warn the operator (issue 2).
+                let lag_s = shared.total.load(Ordering::SeqCst).saturating_sub(end) as f32 / TARGET_SR as f32;
+                let (text, ms) = match res {
+                    Ok(r) => {
+                        let _ = app.emit("stt-health", SttHealth { lag_s, ms: r.1, error: None });
+                        r
+                    }
+                    Err(e) => {
+                        eprintln!("whisper failed on samples {}..{}: {}", start, end, e);
+                        let _ = app.emit("stt-health", SttHealth { lag_s, ms: 0, error: Some(e) });
+                        return;
+                    }
+                };
                 // Finals are sent even when empty so the console clears its live line.
                 if partial && text.is_empty() {
                     return;

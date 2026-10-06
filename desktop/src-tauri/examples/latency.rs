@@ -132,6 +132,11 @@ fn main() {
     let mut shown_log: Vec<serde_json::Value> = Vec::new();
     let mut prev: HashSet<String> = HashSet::new();
     let mut prev_seg = u64::MAX;
+    // Experiment knobs: ONE_PARTIAL=1 accepts a chapter:verse hit from a single
+    // partial (tried 2026-10-06: about 0.5 s faster but 2.7x the wrong verses);
+    // FIRE_DELAY_S sets the console's delay before a spoken reference shows.
+    let one_partial = std::env::var("ONE_PARTIAL").is_ok();
+    let fire_delay: f64 = std::env::var("FIRE_DELAY_S").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
     let (mut n_partial, mut n_final, mut whisper_ms) = (0usize, 0usize, 0usize);
 
     while (t as usize) < audio.len() {
@@ -172,7 +177,7 @@ fn main() {
             if s != prev_seg {
                 prev.clear();
             }
-            let a = labels.intersection(&prev).cloned().collect();
+            let a = if one_partial { labels.iter().cloned().collect() } else { labels.intersection(&prev).cloned().collect() };
             prev = labels.clone();
             prev_seg = s;
             a
@@ -183,8 +188,7 @@ fn main() {
         for l in accepted {
             if !shown.iter().any(|(at, sl, _)| *sl == l && now - at < 180.0) {
                 let vt = hits.iter().find(|h| h.label == l).map(|h| h.text.clone()).unwrap_or_default();
-                // The console fires a verse 600 ms after detection.
-                shown_log.push(serde_json::json!({ "t": now + 0.6, "label": l, "text": vt, "trigger": text }));
+                shown_log.push(serde_json::json!({ "t": now + fire_delay, "label": l, "text": vt, "trigger": text }));
                 shown.push((now, l, if partial { "partial" } else { "final" }));
             }
         }

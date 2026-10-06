@@ -88,8 +88,11 @@ const REF_REPEAT_MS = 30000;
 // A quote match is not repeated within this window.
 const QUOTE_REPEAT_MS = 180000;
 
+// A spoken reference has already been confirmed by two partials in a row, so
+// it goes up at once. Quote matches are less certain and wait so the operator
+// can skip them.
+const REF_FIRE_DELAY = 0;
 const FIRE_DELAY = 600;
-const VERSE_HOLD_MS = 60000;
 
 function isJunk(text: string): boolean {
   const t = text.trim();
@@ -123,6 +126,26 @@ function settleTail(text: string): string {
   return words.join(" ");
 }
 
+// What the operator needs to know about transcription right now.
+function sttHealth(
+  listening: boolean,
+  h: { lag: number; error: string; errorAt: number; aliveAt: number; okAt: number },
+  now: number
+): { label: string; cls: string; detail: string } {
+  if (!listening) return { label: "IDLE", cls: "", detail: "Not listening" };
+  if (h.error && h.errorAt > h.okAt) {
+    return { label: "NOT TRANSCRIBING", cls: "bad", detail: h.error };
+  }
+  if (now - h.aliveAt > 6000) {
+    const s = Math.round((now - h.aliveAt) / 1000);
+    return { label: "NOT TRANSCRIBING", cls: "bad", detail: "The speech model has not answered for " + s + " s" };
+  }
+  if (h.lag > 3) {
+    return { label: "BEHIND " + Math.round(h.lag) + " s", cls: "warn", detail: "Transcription trails live audio" };
+  }
+  return { label: "LISTENING", cls: "live", detail: "Transcription keeping up" };
+}
+
 export default function App() {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<VerseHit[]>([]);
@@ -131,6 +154,9 @@ export default function App() {
   const [modelStatus, setModelStatus] = useState("native whisper.cpp · model loaded");
   const [micStatus, setMicStatus] = useState("");
   const [micLevelPct, setMicLevelPct] = useState(0);
+  // Transcription health (issue 2): lag behind live audio, last whisper error,
+  // and when text or speech was last seen, so a stalled model is never silent.
+  const healthRef = useRef({ lag: 0, error: "", errorAt: 0, aliveAt: 0, okAt: 0 });
   const [mics, setMics] = useState<string[]>([]);
   const [micId, setMicId] = useState("");
   // small.en finds the most verses in noisy-room tests; Macs run it on the GPU.
@@ -464,11 +490,15 @@ export default function App() {
     }
     try {
       await invoke("reset_live");
+      const now0 = Date.now();
+      healthRef.current = { lag: 0, error: "", errorAt: 0, aliveAt: now0, okAt: now0 };
       const r = await invoke<string>("start_listening", { device: micId || null, model: model });
       listeningRef.current = true;
+      // Model loading happens inside start_listening; start the stall clock after it.
+      healthRef.current.aliveAt = Date.now();
       setListening(true);
       if (r === "already") setMicStatus("Already listening.");
-      else setMicStatus("Listening natively · verse shows instantly, holds 60 s");
+      else setMicStatus("Listening natively · verses show instantly");
       void loadQuoteIndex();
     } catch (e: any) {
       setMicStatus(String(e).replace(/^Error:\s*/, ""));
@@ -509,6 +539,22 @@ export default function App() {
       listen<{ text: string; ms: number; seg: number }>("transcript-partial", (e) =>
         onPartial(e.payload.text, e.payload.ms, e.payload.seg)
       ),
+      listen<{ lag_s: number; ms: number; error: string | null }>("stt-health", (e) => {
+        const h = healthRef.current;
+        h.lag = e.payload.lag_s;
+        h.aliveAt = Date.now();
+        if (e.payload.error) {
+          h.error = e.payload.error;
+          h.errorAt = h.aliveAt;
+        } else {
+          h.okAt = h.aliveAt;
+        }
+      }),
+      // The segmenter loop sends this every second between whisper calls; if it
+      // stops, whisper is stuck or the thread has died.
+      listen("stt-alive", () => {
+        healthRef.current.aliveAt = Date.now();
+      }),
       listen<number>("level", (e) => {
         const pct = Math.min(100, Math.round(e.payload * 900));
         setMicLevelPct((prev) => (Math.abs(prev - pct) >= 3 ? pct : prev));
@@ -533,6 +579,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep the transcription status chip current even when nothing else changes.
+  useEffect(() => {
+    if (!listening) return;
+    const t = setInterval(() => setForce((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [listening]);
+
   useEffect(() => {
     const t = setInterval(() => {
       const now = Date.now();
@@ -544,14 +597,6 @@ export default function App() {
         });
         cardsRef.current = cardsRef.current.filter((c) => c.status !== "done");
         sync();
-      }
-      if (
-        slideRef.current &&
-        slideRef.current.kind === "verse" &&
-        verseShownAt.current &&
-        now - verseShownAt.current > VERSE_HOLD_MS
-      ) {
-        void emitSummary();
       }
     }, 200);
     return () => clearInterval(t);
@@ -654,7 +699,10 @@ export default function App() {
       console.error(e);
       return;
     }
-    queueHits(found, line);
+    // "Turn to Mark 2" opens the chapter for "verse 5 says" (lookup_live has
+    // already moved the context) but puts nothing on screen: these were often
+    // misheard or never read (issue 1).
+    queueHits(found.filter((h) => !h.reference || h.reference.verse != null), line);
   }
 
   function queueHits(found: VerseHit[], line: TrLine) {
@@ -672,7 +720,7 @@ export default function App() {
         hit: h,
         trigger: line.text,
         kind: "ref",
-        fireAt: now + FIRE_DELAY,
+        fireAt: now + REF_FIRE_DELAY,
         status: "pending",
       });
     }
@@ -1041,7 +1089,14 @@ export default function App() {
           <button className="btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? "Light mode" : "Dark mode"}
           </button>
-          <span className={"chip " + (listening ? "live" : "")}>{listening ? "LISTENING" : "IDLE"}</span>
+          {(() => {
+            const hs = sttHealth(listening, healthRef.current, now);
+            return (
+              <span className={"chip " + hs.cls} title={hs.detail}>
+                {hs.label}
+              </span>
+            );
+          })()}
           <span className="level">
             <span className="track">
               <span className="fill" style={{ width: micLevelPct + "%" }} />
@@ -1209,7 +1264,7 @@ export default function App() {
         </div>
       ) : (
         <>
-      <div className="statline">{micStatus || "Speak a reference. It shows instantly, holds 60 s, then the summary takes over. Say \u201Cnext verse\u201D to advance, \u201Cshow the verse again\u201D to bring it back."}</div>
+      <div className="statline">{micStatus || "Speak a reference. It shows instantly and stays up until the next verse. Say \u201Cnext verse\u201D to advance, \u201Cshow the verse again\u201D to bring it back."}</div>
       <div className="cols">
         <div className="pane col-left">
           <div className="rowsp">
@@ -1274,7 +1329,7 @@ export default function App() {
             </span>
           </div>
           <div className="preview">{preview}</div>
-          <div className="tiny">Verses · instant show · 60 s hold · then summary</div>
+          <div className="tiny">Verses · instant show · stays up until the next one</div>
           <div className="cards">
             {cardsRef.current.length === 0 && (
               <div className="sub dim">Detected verses appear here for a moment before they show.</div>

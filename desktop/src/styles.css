@@ -690,3 +690,62 @@ input:focus, select:focus {
 .btn.on {
   outline: 2px solid var(--accent);
 }
+
+.chip.warn {
+  background: var(--warn-bg, rgba(214, 158, 46, 0.15));
+  color: var(--warn, #b7791f);
+  border-color: var(--warn-border, rgba(214, 158, 46, 0.5));
+}
+
+.chip.bad {
+  background: var(--bad-bg, rgba(229, 62, 62, 0.15));
+  color: var(--bad, #e53e3e);
+  border-color: var(--bad-border, rgba(229, 62, 62, 0.6));
+  font-weight: 700;
+}
+
+/* Blackout, logo and text slides (lyrics, announcements). */
+.output.blackout { background: #000; }
+
+.slide.logo,
+.slide.text {
+  background: radial-gradient(120% 95% at 50% 0%, #24314e 0%, #101827 55%, #090d14 100%);
+}
+
+.logoname {
+  font-family: Georgia, serif;
+  font-size: calc(4cqw * var(--ts, 1));
+  letter-spacing: 0.3em;
+  color: #e9c465;
+  text-transform: uppercase;
+}
+
+.texttitle {
+  font-family: Georgia, serif;
+  font-size: calc(1.4cqw * var(--ts, 1));
+  letter-spacing: 0.3em;
+  color: #e9c465;
+  text-transform: uppercase;
+  margin-bottom: calc(2cqw * var(--ts, 1));
+}
+
+.textbody {
+  color: #f3ecdc;
+  max-width: 86%;
+  white-space: pre-line;
+  line-height: 1.4;
+  text-shadow: 0 calc(0.2cqw * var(--ts, 1)) calc(2.4cqw * var(--ts, 1)) rgba(0, 0, 0, 0.6);
+}
+
+.textbody.xl { font-size: calc(3.6cqw * var(--ts, 1)); }
+.textbody.lg { font-size: calc(2.8cqw * var(--ts, 1)); }
+.textbody.md { font-size: calc(2.1cqw * var(--ts, 1)); }
+
+.textsub {
+  position: absolute;
+  bottom: 3%;
+  font-size: calc(1cqw * var(--ts, 1));
+  letter-spacing: 0.2em;
+  color: #5c6b8a;
+  text-transform: uppercase;
+}

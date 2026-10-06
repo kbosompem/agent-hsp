@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Transcription health on the console: Listening, Behind by N s, or Not transcribing with the reason. Whisper failures are logged instead of silently returning empty text (issue 2).
 - Streaming partial transcripts. The app transcribes the current sentence every half second while the preacher is still talking. Typical time from a spoken reference to a verse on screen dropped from about 9 seconds to about 1.4 seconds on the synthetic fixtures. A verse fires from partials only when the same chapter and verse appear in two partials in a row.
 - Following a reading. While a range such as Matthew 5:1-12 is on screen, the console moves to the next verse when the preacher reads past the current one, and stops at the last verse. It tolerates reading from a different translation.
 - Switching translation by voice: "show NLT", "read it in the NIV", "the amplified version says". Commentary such as "in the NIV it says" does not switch. Translations that are not loaded give a clear message.
@@ -23,6 +24,10 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 - Windows `.ico` and macOS `.icns` icons.
 
 ### Changed
+
+- The summary slide no longer replaces a verse after 60 seconds. A verse stays up until the next one; the summary shows only when the operator presses Summary now.
+- Spoken references show the moment two partials agree, without the 600 ms card wait. Quote matches still wait.
+- A chapter-only mention ("turn to Mark 2") opens the chapter for follow-ups but shows nothing. Wrong verses on the 10 scored sermons fell from 27 to 16 with no lost catches (issue 1).
 
 - Renamed the app from AMC Preso to Agent HSP (High Speed Projection). New bundle id `com.agenthsp.desktop`. On first launch, speech models and imported translations move over from the old `com.amcpreso.desktop` folder.
 - whisper.cpp now runs on the Metal GPU on macOS. The README already claimed this, but builds were CPU only.

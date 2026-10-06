@@ -39,11 +39,16 @@ fn main() {
         }
         finals.push(f.clone());
         for h in live.lookup(text, None, t, true) {
+            // Same rule as the console: a chapter-only mention opens the
+            // chapter for follow-ups but shows nothing.
+            if h.reference.as_ref().map_or(false, |r| r.verse.is_none()) {
+                continue;
+            }
             if last.iter().any(|(at, l)| *l == h.label && t - at < 180.0) {
                 continue;
             }
             last.push((t, h.label.clone()));
-            shown.push(serde_json::json!({ "t": t + 0.6, "label": h.label, "text": h.text, "trigger": text }));
+            shown.push(serde_json::json!({ "t": t, "label": h.label, "text": h.text, "trigger": text }));
         }
     }
     let out = serde_json::json!({ "clip": dump["clip"], "finals": finals, "shown": shown });
