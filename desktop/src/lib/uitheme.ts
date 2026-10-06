@@ -113,6 +113,13 @@ export function parseRegistryTheme(json: any): UiTheme | null {
 
 /** Load a theme from a tweakcn link or pasted CSS / JSON. */
 export async function loadTheme(input: string): Promise<UiTheme> {
+  const t = await loadThemeRaw(input);
+  const safe = sanitizeTheme(t);
+  if (!Object.keys(safe.light).length && !Object.keys(safe.dark).length) throw new Error("No usable theme colours found.");
+  return safe;
+}
+
+async function loadThemeRaw(input: string): Promise<UiTheme> {
   const s = input.trim();
   if (/^https?:\/\//.test(s)) {
     let url = s;
@@ -134,6 +141,25 @@ export async function loadTheme(input: string): Promise<UiTheme> {
   return t;
 }
 
+// Theme text comes from the internet or a paste, so only plain custom
+// properties with simple values get through: no braces, semicolons, url(),
+// @import or escapes that could break out of the declaration block.
+const KEY_RE = /^--[a-z0-9-]{1,64}$/i;
+const VALUE_RE = /^[a-z0-9#.,%()\s\/+*'"_-]{1,200}$/i;
+
+function cleanVars(vars: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(vars || {})) {
+    const val = String(v).trim();
+    if (KEY_RE.test(k) && VALUE_RE.test(val) && !/url\s*\(|expression|import/i.test(val)) out[k] = val;
+  }
+  return out;
+}
+
+export function sanitizeTheme(t: UiTheme): UiTheme {
+  return { name: String(t.name || "Custom").slice(0, 60), light: cleanVars(t.light), dark: cleanVars(t.dark) };
+}
+
 function block(sel: string, vars: Record<string, string>): string {
   const lines = Object.entries(vars).map(([k, v]) => "  " + k + ": " + v + ";");
   return lines.length ? sel + " {\n" + lines.join("\n") + "\n}\n" : "";
@@ -146,9 +172,10 @@ export function applyTheme(t: UiTheme) {
     el.id = STYLE_ID;
     document.head.appendChild(el);
   }
-  el.textContent = block(":root", t.light) + block(".dark", t.dark);
+  const safe = sanitizeTheme(t);
+  el.textContent = block(":root", safe.light) + block(".dark", safe.dark);
   try {
-    localStorage.setItem(KEY_THEME, JSON.stringify(t));
+    localStorage.setItem(KEY_THEME, JSON.stringify(safe));
   } catch {
     /* storage full or blocked; the theme still applies for this session */
   }
@@ -157,7 +184,7 @@ export function applyTheme(t: UiTheme) {
 export function savedTheme(): UiTheme {
   try {
     const s = localStorage.getItem(KEY_THEME);
-    if (s) return JSON.parse(s);
+    if (s) return sanitizeTheme(JSON.parse(s));
   } catch {
     /* ignore */
   }
