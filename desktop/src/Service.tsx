@@ -315,7 +315,7 @@ export default function Service(p: Props) {
   const thumb = (sl: ItemSlide | null, label?: ReactNode) => (
     <div className="aspect-video w-full overflow-hidden rounded-md border bg-black">
       <div className="relative h-full w-full">
-        <SlideView slide={sl} theme={p.theme} idle={label ?? "End of service"} />
+        <SlideView slide={sl} theme={p.theme} idle={label ?? "End of service"} still />
       </div>
     </div>
   );

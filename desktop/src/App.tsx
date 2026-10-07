@@ -1517,7 +1517,7 @@ export default function App() {
                   ].map((sl, i) => (
                     <div key={i} className="aspect-video overflow-hidden rounded-md border bg-black">
                       <div className="relative h-full w-full">
-                        <SlideView slide={sl} theme={outTheme} />
+                        <SlideView slide={sl} theme={outTheme} still />
                       </div>
                     </div>
                   ))}

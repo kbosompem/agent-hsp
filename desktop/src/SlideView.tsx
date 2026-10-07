@@ -13,6 +13,8 @@ export type OutputTheme = {
   image: string;
   /** Looping video URL (asset protocol), for motion backgrounds. */
   video?: string;
+  /** Still picture of the video, for thumbnails that should not play it. */
+  videoPoster?: string;
   overlay: number;
   textColor: string;
   accent: string;
@@ -67,40 +69,69 @@ function Corners({ t }: { t: OutputTheme | null }) {
   );
 }
 
-/** A muted, looping background video. React does not set the `muted`
- * attribute, and WebKit only autoplays muted video, so set it by hand and
- * start playback ourselves; restart it if anything pauses it. */
+/** A muted background video that loops without a visible jump: two copies
+ * of the clip, and one second before the visible one ends the other starts
+ * from the beginning and fades in over it. Most stock clips are camera
+ * footage, not seamless loops, so a plain `loop` would jump.
+ *
+ * React does not set the `muted` attribute and WebKit only autoplays muted
+ * video, so muting and playback are done by hand. */
+const FADE_S = 1.0;
+
 function LoopingVideo({ src }: { src: string }) {
-  const ref = useRef<HTMLVideoElement>(null);
+  const a = useRef<HTMLVideoElement>(null);
+  const b = useRef<HTMLVideoElement>(null);
+  const front = useRef<0 | 1>(0);
   useEffect(() => {
-    const v = ref.current;
-    if (!v) return;
-    v.muted = true;
-    v.defaultMuted = true;
-    v.loop = true;
-    const play = () => void v.play().catch(() => {});
-    play();
-    v.addEventListener("canplay", play);
-    v.addEventListener("pause", play);
-    v.addEventListener("ended", play);
-    return () => {
-      v.removeEventListener("canplay", play);
-      v.removeEventListener("pause", play);
-      v.removeEventListener("ended", play);
+    const vids = [a.current, b.current];
+    if (!vids[0] || !vids[1]) return;
+    for (const v of vids as HTMLVideoElement[]) {
+      v.muted = true;
+      v.defaultMuted = true;
+      v.loop = false;
+    }
+    const [v0, v1] = vids as HTMLVideoElement[];
+    front.current = 0;
+    v0.style.opacity = "1";
+    v1.style.opacity = "0";
+    v1.pause();
+    const play = (v: HTMLVideoElement) => void v.play().catch(() => {});
+    play(v0);
+    let fading = false;
+    const tick = () => {
+      const cur = front.current === 0 ? v0 : v1;
+      const next = front.current === 0 ? v1 : v0;
+      // Keep the visible copy running whatever paused it.
+      if (cur.paused && !fading) play(cur);
+      const d = cur.duration;
+      if (!fading && d && isFinite(d) && d > FADE_S * 3 && cur.currentTime >= d - FADE_S) {
+        fading = true;
+        next.currentTime = 0;
+        play(next);
+        next.style.transition = "opacity " + FADE_S + "s linear";
+        cur.style.transition = "opacity " + FADE_S + "s linear";
+        next.style.opacity = "1";
+        cur.style.opacity = "0";
+        window.setTimeout(() => {
+          cur.pause();
+          front.current = front.current === 0 ? 1 : 0;
+          fading = false;
+        }, FADE_S * 1000 + 50);
+      } else if (cur.ended && !fading) {
+        // Clips too short to crossfade just restart.
+        cur.currentTime = 0;
+        play(cur);
+      }
     };
+    const t = window.setInterval(tick, 100);
+    return () => window.clearInterval(t);
   }, [src]);
+  const style: CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" };
   return (
-    <video
-      ref={ref}
-      src={src}
-      autoPlay
-      loop
-      muted
-      playsInline
-      disablePictureInPicture
-      controls={false}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }}
-    />
+    <>
+      <video ref={a} src={src} autoPlay muted playsInline preload="auto" disablePictureInPicture controls={false} style={style} />
+      <video ref={b} src={src} muted playsInline preload="auto" disablePictureInPicture controls={false} style={{ ...style, opacity: 0 }} />
+    </>
   );
 }
 
@@ -120,11 +151,14 @@ function density(data: SummaryData | null): string {
   return n <= 2 && chars < 200 ? "compact" : n <= 3 && chars < 420 ? "mid" : "dense";
 }
 
-function Background({ t }: { t: OutputTheme | null }) {
+function Background({ t, still }: { t: OutputTheme | null; still?: boolean }) {
   if (!t) return null;
   return (
     <>
-      {t.bgKind === "video" && t.video && <LoopingVideo key={t.video} src={t.video} />}
+      {t.bgKind === "video" && t.video && !still && <LoopingVideo key={t.video} src={t.video} />}
+      {t.bgKind === "video" && still && t.videoPoster && (
+        <img src={t.videoPoster} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+      )}
       {(t.bgKind === "image" || t.bgKind === "video") && t.overlay > 0 && (
         <div style={{ position: "absolute", inset: 0, background: "rgba(5,8,14," + t.overlay + ")" }} />
       )}
@@ -144,7 +178,8 @@ function bgStyle(t: OutputTheme | null): CSSProperties {
 
 const front: CSSProperties = { position: "relative", zIndex: 1 };
 
-export default function SlideView({ slide, theme, idle }: { slide: Slide | null; theme: OutputTheme | null; idle?: ReactNode }) {
+/** `still`: draw a motion background as its poster picture (thumbnails). */
+export default function SlideView({ slide, theme, idle, still }: { slide: Slide | null; theme: OutputTheme | null; idle?: ReactNode; still?: boolean }) {
   const t = theme;
   const txt: CSSProperties = t ? { color: t.textColor, fontFamily: t.font === "sans" ? "inherit" : undefined } : {};
   const accent: CSSProperties = t ? { color: t.accent } : {};
@@ -163,7 +198,7 @@ export default function SlideView({ slide, theme, idle }: { slide: Slide | null;
   if (slide.kind === "logo") {
     return (
       <div className="slide logo" style={bgStyle(t)}>
-        <Background t={t} />
+        <Background t={t} still={still} />
         {t?.logoImage ? (
           <img className="logoimage" src={t.logoImage} alt={church} style={front} />
         ) : (
@@ -176,7 +211,7 @@ export default function SlideView({ slide, theme, idle }: { slide: Slide | null;
   if (slide.kind === "text") {
     return (
       <div className="slide text" style={bgStyle(t)}>
-        <Background t={t} />
+        <Background t={t} still={still} />
         <Corners t={t} />
         {slide.title && <div className="texttitle" style={{ ...front, ...accent }}>{slide.title}</div>}
         <div className={"textbody " + sizeClass(slide.body)} style={{ ...front, ...txt }}>{slide.body}</div>
@@ -194,7 +229,7 @@ export default function SlideView({ slide, theme, idle }: { slide: Slide | null;
     }
     return (
       <div className={"slide summary " + density(data)} style={bgStyle(t)}>
-        <Background t={t} />
+        <Background t={t} still={still} />
         <Corners t={t} />
         <div className="sumtitle" style={{ ...front, ...accent }}>{slide.title}</div>
         {data && data.points ? (
@@ -226,7 +261,7 @@ export default function SlideView({ slide, theme, idle }: { slide: Slide | null;
 
   return (
     <div className="slide verse" style={bgStyle(t)}>
-      <Background t={t} />
+      <Background t={t} still={still} />
       <Corners t={t} />
       <div className={"vtxt " + sizeClass(slide.body)} style={{ ...front, ...txt }}>{slide.body}</div>
       <div className="vref" style={{ ...front, ...accent }}>

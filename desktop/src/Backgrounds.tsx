@@ -73,6 +73,7 @@ export default function Backgrounds({ theme, setTheme, setStatus }: Props) {
         bgKind: b.kind,
         image: b.kind === "image" ? src : theme.image,
         video: b.kind === "video" ? src : theme.video,
+        videoPoster: b.kind === "video" ? thumbUrl(b).replace(/w=\d+/, "w=1280").replace(/h=\d+/, "h=720") : theme.videoPoster,
         overlay: Math.max(theme.overlay, 0.4),
         bgId: b.id,
       });
