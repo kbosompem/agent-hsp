@@ -4,6 +4,7 @@ import {
   MonitorPlay, Palette, Plus, Radio, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -193,6 +194,11 @@ export default function App() {
   const [uiTheme, setUiTheme] = useState<UiTheme>(savedTheme);
   const [themeInput, setThemeInput] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dgKey, setDgKey] = useState("");
+  const [dgKeySaved, setDgKeySaved] = useState(false);
+  useEffect(() => {
+    invoke<boolean>("has_deepgram_key").then(setDgKeySaved).catch(() => setDgKeySaved(false));
+  }, []);
   const [transcriptView, setTranscriptView] = useState<"processed" | "raw">("processed");
   const [view, setView] = useState<"console" | "service" | "theme" | "downloads">("console");
   const viewRef = useRef(view);
@@ -1409,10 +1415,12 @@ export default function App() {
               </div>
             </ScrollArea>
           ) : view === "theme" ? (
-            <div className="grid h-full min-h-0 grid-cols-[minmax(320px,420px)_1fr] gap-3">
+            <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] grid-cols-[minmax(320px,420px)_1fr] gap-3">
               <ScrollArea className="h-full rounded-lg border bg-card">
-                <div className="flex flex-col gap-5 p-4">
-                  <Section label="Background">
+                <Accordion type="multiple" defaultValue={["background", "stock"]} className="px-4">
+                  <AccordionItem value="background">
+                    <AccordionTrigger>Background colour or your own picture</AccordionTrigger>
+                    <AccordionContent className="flex flex-col gap-3">
                     <div className="grid grid-cols-6 gap-2">
                       {GRADIENTS.map((g, i) => (
                         <button
@@ -1445,20 +1453,24 @@ export default function App() {
                     <p className="text-xs text-muted-foreground">
                       The text colour and dimming adjust to the picture so verses stay readable.
                     </p>
-                  </Section>
-                  <Backgrounds theme={outTheme} setTheme={setOutTheme} setStatus={setMicStatus} />
-                  <Section label={"Dim the background · " + Math.round(outTheme.overlay * 100) + "%"}>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="stock">
+                    <AccordionTrigger>Free photos and motion</AccordionTrigger>
+                    <AccordionContent className="flex flex-col gap-3">
+                      <Backgrounds theme={outTheme} setTheme={setOutTheme} setStatus={setMicStatus} />
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="text">
+                    <AccordionTrigger>Text and dimming</AccordionTrigger>
+                    <AccordionContent className="flex flex-col gap-4">
+                      <Section label={"Dim the background · " + Math.round(outTheme.overlay * 100) + "%"}>
                     <Slider min={0} max={85} value={[Math.round(outTheme.overlay * 100)]} onValueChange={(v) => setOutTheme({ ...outTheme, overlay: v[0] / 100 })} />
-                  </Section>
-                  <Section label={"Text size · " + textPct + "%"}>
+                      </Section>
+                      <Section label={"Text size · " + textPct + "%"}>
                     <Slider min={60} max={220} step={5} value={[textPct]} onValueChange={(v) => setOutTheme({ ...outTheme, textScale: v[0] / 100 })} />
-                  </Section>
-                  <Section label="Church name">
-                    <Input value={outTheme.churchName ?? ""} placeholder="AMC CHURCH" onChange={(e) => setOutTheme({ ...outTheme, churchName: e.target.value })} />
-                    <p className="text-xs text-muted-foreground">Shown on the Logo screen when it has no picture.</p>
-                  </Section>
-                  <CornerSettings theme={outTheme} setTheme={setOutTheme} />
-                  <Section label="Lettering">
+                      </Section>
+                      <Section label="Lettering">
                     <div className="flex flex-wrap gap-2">
                       <ToggleGroup type="single" variant="outline" value={outTheme.font} onValueChange={(v) => v && setOutTheme({ ...outTheme, font: v as "serif" | "sans" })}>
                         <ToggleGroupItem value="serif" className="px-3 font-serif">Serif</ToggleGroupItem>
@@ -1472,8 +1484,20 @@ export default function App() {
                         <RotateCcw /> Reset
                       </Button>
                     </div>
-                  </Section>
-                </div>
+                      </Section>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="logos">
+                    <AccordionTrigger>Church name and corner logos</AccordionTrigger>
+                    <AccordionContent className="flex flex-col gap-4">
+                      <Section label="Church name">
+                    <Input value={outTheme.churchName ?? ""} placeholder="AMC CHURCH" onChange={(e) => setOutTheme({ ...outTheme, churchName: e.target.value })} />
+                    <p className="text-xs text-muted-foreground">Shown on the Logo screen when it has no picture.</p>
+                      </Section>
+                      <CornerSettings theme={outTheme} setTheme={setOutTheme} />
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </ScrollArea>
               <div className="flex min-h-0 flex-col gap-3 rounded-lg border bg-card p-4">
                 <SectionLabel>Projector preview</SectionLabel>
@@ -1501,7 +1525,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="grid h-full min-h-0 grid-cols-[minmax(260px,1fr)_minmax(420px,2fr)_minmax(260px,1fr)] gap-3">
+            <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] grid-cols-[minmax(260px,1fr)_minmax(420px,2fr)_minmax(260px,1fr)] gap-3">
               {/* Transcript */}
               <div className="flex min-h-0 flex-col rounded-lg border bg-card">
                 <div className="flex items-center justify-between border-b px-3 py-2">
@@ -1670,11 +1694,44 @@ export default function App() {
                       <SelectItem value="small.en">Whisper small.en · 466 MB · most accurate</SelectItem>
                       <SelectItem value="nemotron-160">Nemotron · 475 MB download · fastest verses</SelectItem>
                       <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>
+                      <SelectItem value="deepgram">Deepgram · online, paid, needs internet</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button variant="secondary" onClick={loadModel}><Download /> Load</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">{modelStatus} · quote matching: {quoteStatus}</p>
+                {model === "deepgram" && (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex gap-2">
+                      <Input
+                        type="password"
+                        autoComplete="off"
+                        placeholder={dgKeySaved ? "Key saved · paste a new one to replace it" : "Deepgram API key"}
+                        value={dgKey}
+                        onChange={(e) => setDgKey(e.target.value)}
+                      />
+                      <Button
+                        variant="secondary"
+                        disabled={!dgKey.trim()}
+                        onClick={() =>
+                          void invoke("set_deepgram_key", { key: dgKey })
+                            .then(() => {
+                              setDgKey("");
+                              setDgKeySaved(true);
+                              toast.success("Deepgram key saved on this computer.");
+                            })
+                            .catch((e) => toast.error(String(e)))
+                        }
+                      >
+                        Save key
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Sermon audio is sent to Deepgram while listening. About $0.50 per hour of listening. The key is stored
+                      only on this computer.
+                    </p>
+                  </div>
+                )}
               </Section>
               <Section label="Audio input">
                 <Select value={micId || "__default"} onValueChange={(v) => setMicId(v === "__default" ? "" : v)}>

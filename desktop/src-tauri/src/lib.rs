@@ -2,6 +2,7 @@ use std::io::Read;
 pub mod audio;
 pub mod segmenter;
 pub mod session;
+pub mod deepgram;
 #[cfg(feature = "nemotron")]
 pub mod nemotron;
 
@@ -267,6 +268,8 @@ pub fn run() {
             load_library,
             save_library,
             fetch_background,
+            deepgram::set_deepgram_key,
+            deepgram::has_deepgram_key,
             audio::list_audio_inputs,
             audio::ensure_model,
             audio::start_listening,

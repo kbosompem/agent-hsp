@@ -9,6 +9,7 @@ import { Check, Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import type { OutputTheme } from "./SlideView";
 
@@ -22,10 +23,13 @@ export type StockBackground = {
   downloadUrl: string;
   license: string;
   licenseUrl: string;
+  /** Small preview picture (videos have one from Pexels too). */
+  thumbUrl?: string;
 };
 
 /** Small preview image straight from Pexels (images only). */
 function thumbUrl(b: StockBackground): string {
+  if (b.thumbUrl) return b.thumbUrl;
   return b.downloadUrl.replace(/([?&])w=\d+/, "$1w=400").replace(/([?&])h=\d+/, "$1h=225");
 }
 
@@ -50,6 +54,7 @@ export default function Backgrounds({ theme, setTheme, setStatus }: Props) {
   const [list, setList] = useState<StockBackground[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [credits, setCredits] = useState(false);
+  const [tab, setTab] = useState<"image" | "video">(theme.bgKind === "video" ? "video" : "image");
 
   useEffect(() => {
     fetch("/backgrounds/manifest.json")
@@ -91,8 +96,11 @@ export default function Backgrounds({ theme, setTheme, setStatus }: Props) {
         onClick={() => void choose(b)}
         className={cn("relative aspect-video overflow-hidden rounded-md border-2 border-transparent bg-muted", on && "border-primary")}
       >
-        {b.kind === "image" ? (
-          <img src={thumbUrl(b)} alt={b.title} loading="lazy" className="h-full w-full object-cover" />
+        {b.kind === "image" || b.thumbUrl ? (
+          <>
+            <img src={thumbUrl(b)} alt={b.title} loading="lazy" className="h-full w-full object-cover" />
+            {b.kind === "video" && <Film className="absolute bottom-1 left-1 size-3.5 rounded bg-black/60 p-0.5 text-white" />}
+          </>
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-slate-800 to-slate-950 p-1 text-white">
             <Film className="size-4 opacity-80" />
@@ -110,11 +118,13 @@ export default function Backgrounds({ theme, setTheme, setStatus }: Props) {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Free photos and motion</div>
+        <ToggleGroup type="single" size="sm" variant="outline" value={tab} onValueChange={(v) => v && setTab(v as "image" | "video")}>
+          <ToggleGroupItem value="image" className="px-3 text-xs">Photos · {list.filter((b) => b.kind === "image").length}</ToggleGroupItem>
+          <ToggleGroupItem value="video" className="px-3 text-xs">Motion · {list.filter((b) => b.kind === "video").length}</ToggleGroupItem>
+        </ToggleGroup>
         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setCredits(true)}>Credits</Button>
       </div>
-      <div className="grid grid-cols-3 gap-2">{list.filter((b) => b.kind === "image").map(tile)}</div>
-      <div className="grid grid-cols-3 gap-2">{list.filter((b) => b.kind === "video").map(tile)}</div>
+      <div className="grid grid-cols-3 gap-2">{list.filter((b) => b.kind === tab).map(tile)}</div>
       <p className="text-xs text-muted-foreground">
         {current ? <Credit b={current} /> : "Free to use from Pexels. Downloaded the first time you pick one, then kept on this computer."}
       </p>

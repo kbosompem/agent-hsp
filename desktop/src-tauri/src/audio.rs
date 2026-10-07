@@ -49,6 +49,12 @@ pub fn model_file(app: &AppHandle, model: &str) -> std::path::PathBuf {
 }
 
 pub fn download_model(app: AppHandle, model: String) {
+    if model == crate::deepgram::MODEL {
+        // Nothing to download; it only needs the API key.
+        let msg = if crate::deepgram::load_key(&app).is_some() { "deepgram" } else { "deepgram (add the API key)" };
+        let _ = app.emit("model-ready", msg);
+        return;
+    }
     #[cfg(feature = "nemotron")]
     if crate::nemotron::is_nemotron(&model) {
         std::thread::spawn(move || {
@@ -585,6 +591,9 @@ pub fn start_listening(
     if state.running.load(Ordering::SeqCst) {
         return Ok("already".to_string());
     }
+    if model == crate::deepgram::MODEL {
+        return start_deepgram(app, state, device);
+    }
     #[cfg(feature = "nemotron")]
     if crate::nemotron::is_nemotron(&model) {
         return start_nemotron(app, state, device, model);
@@ -634,6 +643,32 @@ pub fn start_listening(
     }
     spawn_capture(app.clone(), device, shared.clone(), gen);
     spawn_segmenter(app, shared, gen, SegConfig::streaming());
+    Ok("started".to_string())
+}
+
+/// Listen with Deepgram's live service (needs internet and an API key).
+fn start_deepgram(app: AppHandle, state: tauri::State<'_, ListenState>, device: Option<String>) -> Result<String, String> {
+    let key = crate::deepgram::load_key(&app).ok_or("Add your Deepgram API key in Settings first.")?;
+    state.pcm.lock().unwrap().clear();
+    state.running.store(true, Ordering::SeqCst);
+    let gen = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let shared = Arc::new(ListenState {
+        running: state.running.clone(),
+        generation: state.generation.clone(),
+        pcm: state.pcm.clone(),
+        total: state.total.clone(),
+        level: state.level.clone(),
+        floor: state.floor.clone(),
+        ctx: state.ctx.clone(),
+        ctx_model: state.ctx_model.clone(),
+    });
+    if let Ok(root) = app.path().app_data_dir().map(|d| d.join("sessions")) {
+        if let Err(e) = crate::session::start(root, state.total.load(Ordering::SeqCst)) {
+            let _ = app.emit("listen-status", format!("Listening, but could not record the session: {}", e));
+        }
+    }
+    spawn_capture(app.clone(), device, shared.clone(), gen);
+    crate::deepgram::spawn(app, shared, gen, key);
     Ok("started".to_string())
 }
 

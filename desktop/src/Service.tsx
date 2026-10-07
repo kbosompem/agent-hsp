@@ -343,7 +343,7 @@ export default function Service(p: Props) {
   const nextSlide = peekNext();
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[300px_minmax(0,1fr)_minmax(300px,380px)] gap-3">
+    <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] grid-cols-[300px_minmax(0,1fr)_minmax(300px,380px)] gap-3">
       {/* Order of service */}
       <div className="flex min-h-0 flex-col rounded-lg border bg-card">
         <div className="flex flex-col gap-2 border-b p-3">

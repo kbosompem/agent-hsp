@@ -18,6 +18,8 @@ preso-core = { path = "../crates/preso-core" }
 cpal = "0.15"
 whisper-rs = "0.13"
 ureq = "2"
+# Deepgram live speech-to-text (websocket over rustls).
+tungstenite = { version = "0.24", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 # Nemotron streaming speech model via sherpa-onnx (optional; needs the native
 # libraries from scripts/sherpa/build.sh). Pinned to main for streaming
 # hotword support, which is newer than the v1.13.8 release.
