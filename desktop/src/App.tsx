@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { Mode, PRESETS, UiTheme, applyMode, applyTheme, loadTheme, savedMode, savedTheme } from "@/lib/uitheme";
 import SlideView, { OutputTheme, Slide } from "./SlideView";
 import Backgrounds from "./Backgrounds";
+import CornerSettings from "./CornerSettings";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { Embedder } from "./lib/embed";
@@ -1454,8 +1455,9 @@ export default function App() {
                   </Section>
                   <Section label="Church name">
                     <Input value={outTheme.churchName ?? ""} placeholder="AMC CHURCH" onChange={(e) => setOutTheme({ ...outTheme, churchName: e.target.value })} />
-                    <p className="text-xs text-muted-foreground">Shown in the corner of verses and on the logo screen.</p>
+                    <p className="text-xs text-muted-foreground">Shown on the Logo screen when it has no picture.</p>
                   </Section>
+                  <CornerSettings theme={outTheme} setTheme={setOutTheme} />
                   <Section label="Lettering">
                     <div className="flex flex-wrap gap-2">
                       <ToggleGroup type="single" variant="outline" value={outTheme.font} onValueChange={(v) => v && setOutTheme({ ...outTheme, font: v as "serif" | "sans" })}>

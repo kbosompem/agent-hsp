@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Corner logos: each of the four corners of verse, lyric, announcement and summary slides can show nothing, text, or a logo picture with its own size (Look page). The Logo screen can show a picture instead of the church name.
 - Optional Nemotron streaming speech engine (NVIDIA Nemotron 3.5, 0.6B, run locally with sherpa-onnx and Bible book-name hotwords). Choose it in Settings. Verses typically reach the console about a second after the reference is spoken. Build with `npm run build:nemotron` after `scripts/sherpa/build.sh`.
 - Three more bundled translations: Berean Standard Bible (BSB, public domain), Literal Standard Version (LSV, CC BY-SA 4.0) and Free Bible Version (FBV, CC BY-SA 4.0). KJV stays the default. Licences and credits are in `desktop/crates/preso-core/assets/BIBLES.md`. `scripts/bibles/usfm2json.py` rebuilds them from eBible.org USFM. The app binary grows by about 12 MB.
 - Free stock backgrounds: 12 photos and 6 motion loops from Pexels, chosen in the Look page, downloaded on first use (not bundled) and credited to their creators. Motion (video) backgrounds play behind verses and lyrics.
@@ -53,6 +54,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Fixed
 
+- Motion backgrounds stood still with a play button: React does not set the video's muted attribute, so WebKit refused to autoplay. Videos are now muted and started by hand, and restarted if anything pauses them.
 - "Number thirteen verse twenty six" (the s dropped by the speech engine) shows Numbers 13:26. "Point number one" still shows nothing.
 - Chapters read digit by digit: "Psalm one one nine verse five" is Psalm 119:5 and "Psalm one o seven" is 107 (was Psalm 1:1).
 - A numbered book split across two transcripts ("... First" / "John four four") shows 1 John 4:4, not John 4:4. Only the words first, second and third join; a trailing "verse 1" does not.
