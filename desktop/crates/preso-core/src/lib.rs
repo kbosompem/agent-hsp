@@ -593,6 +593,21 @@ impl Engine {
         })
     }
 
+    /// A chapter-only hit ("Romans 8"), as the parser makes for "turn to
+    /// Romans 8": moves the open passage but the console does not show it.
+    pub fn chapter_hit(&self, tr_id: Option<&str>, book: usize, chapter: usize) -> Option<VerseHit> {
+        let tr = self.tr_index(tr_id);
+        let r = self.valid_ref(tr, book, chapter, None, None)?;
+        let trs = self.translations.read().unwrap();
+        let books = &trs[tr].books;
+        Some(VerseHit {
+            label: ref_label_books(books, &r),
+            text: get_verse_books(books, &r),
+            reference: Some(r),
+            translation: trs[tr].name.clone(),
+        })
+    }
+
     pub fn verse_range(
         &self,
         tr_id: Option<&str>,
@@ -1232,6 +1247,12 @@ impl LiveLookup {
         LiveLookup { ctx: None, tail: Vec::new(), tail_labels: Vec::new(), tail_at: 0.0 }
     }
 
+    /// The console showed a verse some other way (search box, service
+    /// reading, history): follow-ups like "verse 95" refer to its chapter.
+    pub fn set_context(&mut self, book: usize, chapter: usize, now_s: f64) {
+        self.ctx = Some((book, chapter, now_s));
+    }
+
     pub fn reset(&mut self) {
         self.ctx = None;
         self.tail.clear();
@@ -1308,7 +1329,32 @@ impl LiveLookup {
         let mut resolved_chapters: Vec<(usize, usize)> = Vec::new();
         let mut i = 0;
         while i < tokens.len() {
-            if tokens[i] == "verse" || tokens[i] == "verses" {
+            // "chapter 4 verse 5" / "go to chapter 4" with no book: the book
+            // of the open passage.
+            if CHAPTER_WORDS.contains(&tokens[i]) {
+                let named_book = refs.iter().any(|r| r.pos <= i && i - r.pos <= 4);
+                if let (false, Some((b, _)), Some((c, len))) = (named_book, ctx, parse_num_seq(&tokens, i + 1)) {
+                    let k = i + 1 + len;
+                    let vw = tokens.get(k).copied().unwrap_or("");
+                    let verse = if VERSE_WORDS.contains(&vw) || vw == "versus" {
+                        parse_num_seq(&tokens, k + 1)
+                    } else {
+                        None
+                    };
+                    let h = match verse {
+                        Some((v, _)) => eng.verse_at(tr_id, b, c, v),
+                        None => eng.chapter_hit(tr_id, b, c),
+                    };
+                    if let Some(h) = h {
+                        if !hits.iter().any(|x| x.label == h.label) {
+                            hits.push(h);
+                        }
+                    }
+                    i = k + verse.map_or(0, |(_, l)| 1 + l);
+                    continue;
+                }
+            }
+            if matches!(tokens[i], "verse" | "verses" | "vs" | "versus") {
                 if let Some((v, len)) = parse_num_seq(&tokens, i + 1) {
                     // "John 3 verse 16": the parser already has this verse.
                     let owned_by_ref = refs.iter().any(|r| r.verse.is_some() && r.pos <= i && i - r.pos <= 6);
@@ -1401,6 +1447,31 @@ mod tests {
     #[test]
     fn chapter_only() {
         assert_eq!(refs("Turn to Psalms twenty three"), vec!["Psalm 23"]);
+    }
+
+    #[test]
+    fn chapter_and_verse_without_a_book_use_the_open_passage() {
+        let mut live = LiveLookup::new();
+        live.lookup("turn to Romans chapter 8 verse 1", None, 10.0, true);
+        let labels = |h: Vec<VerseHit>| h.into_iter().map(|x| x.label).collect::<Vec<_>>();
+        assert_eq!(labels(live.lookup("let's go to chapter 4 vs 5", None, 20.0, true)), vec!["Romans 4:5"]);
+        assert_eq!(labels(live.lookup("chapter twelve verse one", None, 30.0, true)), vec!["Romans 12:1"]);
+        // A bare chapter moves the passage (shown as a chapter-only hit, which
+        // the console does not put on screen) and the next verse follows it.
+        assert_eq!(labels(live.lookup("go to chapter 2", None, 40.0, true)), vec!["Romans 2"]);
+        assert_eq!(labels(live.lookup("verse 5 says", None, 45.0, true)), vec!["Romans 2:5"]);
+        // A named book still wins.
+        assert_eq!(labels(live.lookup("John chapter 3 verse 16", None, 50.0, true)), vec!["John 3:16"]);
+    }
+
+    #[test]
+    fn verse_follow_up_after_context_set_by_the_console() {
+        let mut live = LiveLookup::new();
+        live.set_context(18, 119, 5.0); // Psalm 119, shown from the search box
+        let h = live.lookup("verse ninety five", None, 10.0, true);
+        assert_eq!(h.iter().map(|x| x.label.clone()).collect::<Vec<_>>(), vec!["Psalm 119:95"]);
+        let h = live.lookup("verse 96", None, 12.0, true);
+        assert_eq!(h.iter().map(|x| x.label.clone()).collect::<Vec<_>>(), vec!["Psalm 119:96"]);
     }
 
     #[test]

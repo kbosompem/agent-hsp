@@ -41,7 +41,7 @@ import {
 } from "./lib/sermon";
 import Service, { ServiceNav } from "./Service";
 import { AgendaItem, ItemSlide, Library, emptyLibrary, parseLibrary } from "./lib/library";
-import { contentWords, findLoaded, hasReferenceWords, readPast, readingOverlap, translationRequest } from "./lib/voice";
+import { contentWords, findLoaded, hasBookName, hasReferenceWords, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
 type VerseHit = {
   label: string;
@@ -377,6 +377,7 @@ export default function App() {
     setSlide(s);
     slideRef.current = s;
     lastVerse.current = h;
+    openPassage(h);
     verseShownAt.current = Date.now();
     const lastHist = historyRef.current[historyRef.current.length - 1];
     if (!lastHist || lastHist.label !== h.label) {
@@ -400,6 +401,7 @@ export default function App() {
     setSlide(s);
     slideRef.current = s;
     lastVerse.current = h;
+    openPassage(h);
     verseShownAt.current = Date.now();
     addNote(h.label + " — " + trimWords(h.text, 12));
   }
@@ -445,6 +447,29 @@ export default function App() {
     beforeCover.current = null;
     await showVerse(c.hit, c.trigger);
     sync();
+  }
+
+  /** Tell the parser which chapter is on screen, however it got there. */
+  function openPassage(h: VerseHit) {
+    const r = h.reference;
+    if (r) void invoke("set_live_context", { book: r.book, chapter: r.chapter }).catch(() => {});
+  }
+
+  /** Verse `verse` of `chapter` in the book on screen (or the open passage). */
+  async function showInBook(chapter: number, verse: number, what: string) {
+    const ref = lastVerse.current?.reference;
+    if (!ref) {
+      setMicStatus("Show a verse first, then " + what + ".");
+      return;
+    }
+    const hit = await invoke<VerseHit | null>("verse_at", { book: ref.book, chapter, verse, translation: trIdRef.current });
+    if (hit) {
+      seqRef.current = null;
+      await showVerse(hit, "");
+      setMicStatus(hit.label);
+    } else {
+      setMicStatus("There is no " + (verse > 1 ? "verse " + verse + " in " : "") + "chapter " + chapter + " there.");
+    }
   }
 
   async function nextVerse() {
@@ -581,6 +606,8 @@ export default function App() {
     }
     try {
       await invoke("reset_live");
+      // Keep the passage already on screen as the open one.
+      if (lastVerse.current) openPassage(lastVerse.current);
       const now0 = Date.now();
       healthRef.current = { lag: 0, error: "", errorAt: 0, aliveAt: now0, okAt: now0 };
       const r = await invoke<string>("start_listening", { device: micId || null, model: model });
@@ -730,6 +757,8 @@ export default function App() {
       const h = it.hit as VerseHit;
       s = await invoke<Slide>("show_verse", { hit: h });
       lastVerse.current = h;
+      openPassage(h);
+    openPassage(h);
       verseShownAt.current = Date.now();
     } else {
       s = await invoke<Slide>("show_slide", { kind: it.kind, title: it.title, body: it.body, sub: it.sub });
@@ -976,30 +1005,38 @@ export default function App() {
   function matchCommand(text: string): boolean {
     const norm = text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
     const now = Date.now();
-    const jump = norm.match(/(?:jump|go|skip|fast forward)\s+to\s+verse\s+(\d{1,3})/);
-    if (jump) {
-      if (now - lastCmdAt.current < 1200) return true;
+    const once = () => {
+      if (now - lastCmdAt.current < 1200) return false;
       lastCmdAt.current = now;
-      const ref = lastVerse.current?.reference;
-      if (!ref) {
-        setMicStatus("Show a verse first, then jump within that chapter.");
+      return true;
+    };
+    const cur = lastVerse.current?.reference;
+    // "jump to verse 15", "go to verse fifteen"
+    const jumpVerse = norm.match(/(?:jump|go|skip|turn|move|fast forward)\s+(?:back\s+)?to\s+(?:verse|vs|v)\s+([a-z0-9 ]+)/);
+    // "jump to chapter 2", "go to chapter four verse five"
+    const jumpChapter = norm.match(/(?:jump|go|skip|turn|move)\s+(?:back\s+)?to\s+chapter\s+([a-z0-9 ]+?)(?:\s+(?:verse|vs|v|versus)\s+([a-z0-9 ]+))?$/);
+    if (jumpChapter && cur && !hasBookName(norm)) {
+      const c = spokenNumber(jumpChapter[1]);
+      const v = jumpChapter[2] ? spokenNumber(jumpChapter[2]) : 1;
+      if (c && v) {
+        if (once()) void showInBook(c, v, "jump to a chapter");
         return true;
       }
-      const n = parseInt(jump[1], 10);
-      invoke<VerseHit | null>("verse_at", {
-        book: ref.book,
-        chapter: ref.chapter,
-        verse: n,
-        translation: trIdRef.current,
-      }).then((hit) => {
-        if (hit) {
-          seqRef.current = null;
-          void showVerse(hit, "");
-          setMicStatus("Jumped to " + hit.label);
-        } else {
-          setMicStatus("Verse " + n + " is out of range for that chapter.");
-        }
-      });
+    }
+    if (jumpVerse && cur) {
+      const v = spokenNumber(jumpVerse[1]);
+      if (v) {
+        if (once()) void showInBook(cur.chapter, v, "jump to a verse");
+        return true;
+      }
+    }
+    // "next chapter", "previous chapter"
+    if (cur && /\b(?:next|following) chapter\b/.test(norm) && !hasBookName(norm)) {
+      if (once()) void showInBook(cur.chapter + 1, 1, "move to the next chapter");
+      return true;
+    }
+    if (cur && /\b(?:previous|last) chapter\b/.test(norm) && !hasBookName(norm)) {
+      if (once()) void showInBook(Math.max(1, cur.chapter - 1), 1, "go back a chapter");
       return true;
     }
     // A translation request switches the screen but does not consume the
@@ -1019,7 +1056,9 @@ export default function App() {
     // Navigation phrases yield to a reference in the same sentence.
     const navOnly = !hasReferenceWords(norm);
     const nextPhrases = ["next verse", "next slide", "next one", "keep going"];
-    if (navOnly && nextPhrases.some((p) => norm.includes(p))) {
+    // "Next." on its own (or "okay next", "next please").
+    const bareNext = /^(?:ok(?:ay)? |and |the )?next(?: please| one)?$/.test(norm);
+    if (navOnly && (bareNext || nextPhrases.some((p) => norm.includes(p)))) {
       if (now - lastCmdAt.current < 1200) return true;
       lastCmdAt.current = now;
       void nextVerse();

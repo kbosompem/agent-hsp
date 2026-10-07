@@ -82,6 +82,53 @@ export function hasReferenceWords(normalized: string): boolean {
   return /\d|\b(chapter|chapters|verse|verses)\b/.test(normalized.replace(/\b(next|previous|last) verse\b/g, ""));
 }
 
+const SMALL: Record<string, number> = {
+  one: 1, two: 2, to: 2, too: 2, three: 3, four: 4, for: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, first: 1, second: 2, third: 3,
+};
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+
+/**
+ * The number at the start of a spoken phrase: "15", "fifteen", "ninety five",
+ * "one hundred and nineteen", "a hundred". Null if it does not start with one.
+ */
+export function spokenNumber(phrase: string): number | null {
+  const w = phrase.toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim().split(/\s+/);
+  if (/^\d{1,3}$/.test(w[0] || "")) return parseInt(w[0], 10);
+  let n = 0;
+  let any = false;
+  for (let i = 0; i < w.length; i++) {
+    const t = w[i];
+    if ((t === "hundred" || t === "hundreds") && (any || i === 0 || w[i - 1] === "a")) {
+      n = (n || 1) * 100;
+      any = true;
+    } else if (t === "a" && w[i + 1] === "hundred") {
+      continue;
+    } else if (t === "and" && any && i + 1 < w.length) {
+      continue;
+    } else if (TENS[t] !== undefined && n % 100 === 0) {
+      n += TENS[t];
+      any = true;
+    } else if (SMALL[t] !== undefined && n % 10 === 0) {
+      n += SMALL[t];
+      any = true;
+    } else {
+      break;
+    }
+  }
+  return any && n > 0 ? n : null;
+}
+
+const BOOKS =
+  "genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|song of solomon|songs|isaiah|jeremiah|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelations?";
+const BOOK_RE = new RegExp("\\b(?:" + BOOKS + ")\\b");
+
+/** True when a normalized sentence names a Bible book ("go to Romans chapter 4"). */
+export function hasBookName(normalized: string): boolean {
+  return BOOK_RE.test(normalized);
+}
+
 // ----------------------------------------------------------- translations
 
 /** Common English translations: code, full name, and the ways people say them. */

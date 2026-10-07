@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Voice commands: "next" on its own, "next chapter", "previous chapter", "jump to chapter 2", "go to chapter 4 verse 5" (also "vs"), and spoken numbers ("go to verse twenty"). "Chapter 4 verse 5" without a book uses the book on screen.
 - Deepgram (online, paid) as a third speech engine in Settings, with the API key stored only on this computer. Streams 16-bit audio to Deepgram's live service and reconnects on its own if the connection drops.
 - The Look page is an accordion (background, free photos and motion, text and dimming, church name and corner logos), with Photos and Motion tabs and video preview pictures.
 - Corner logos: each of the four corners of verse, lyric, announcement and summary slides can show nothing, text, or a logo picture with its own size (Look page). The Logo screen can show a picture instead of the church name.
@@ -56,6 +57,8 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Fixed
 
+- "Verse 95" and other follow-ups only worked after a spoken reference. A verse shown from the search box, a service reading, history or a voice command now sets the open passage too, and pressing Listen keeps it.
+- Upgraded React to 19: the shadcn components pass refs as props, so on React 18 the search boxes could not be focused from code.
 - Motion backgrounds no longer jump when the clip restarts: two copies of the clip crossfade over the last second. Thumbnails show a still picture so only the live screen and the projector play video.
 - Side panels on the Live, Service and Look pages grew past the window instead of scrolling (grid rows sized to their content).
 - Motion backgrounds stood still with a play button: React does not set the video's muted attribute, so WebKit refused to autoplay. Videos are now muted and started by hand, and restarted if anything pauses them.

@@ -33,6 +33,18 @@ fn lookup_live(
     state.lock().unwrap().lookup(&input, translation.as_deref(), now, commit)
 }
 
+/// The console put a verse on screen without speech (search box, service
+/// reading, history, voice command): make its chapter the open passage so
+/// "verse 95" and "chapter 4 verse 5" follow it.
+#[tauri::command]
+fn set_live_context(state: tauri::State<'_, Mutex<LiveLookup>>, book: usize, chapter: usize) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    state.lock().unwrap().set_context(book, chapter, now);
+}
+
 #[tauri::command]
 fn reset_live(state: tauri::State<'_, Mutex<LiveLookup>>) {
     state.lock().unwrap().reset();
@@ -258,6 +270,7 @@ pub fn run() {
             lookup,
             lookup_live,
             reset_live,
+            set_live_context,
             verse_at,
             verse_range,
             list_translations,

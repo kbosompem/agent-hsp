@@ -7,7 +7,7 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 1. Install the latest build. On a Mac, open the `.dmg`, drag Agent HSP to Applications, then open it once from Applications (right-click, Open, if macOS warns).
 2. Allow the microphone when macOS asks. If you missed the prompt: System Settings, Privacy & Security, Microphone, turn on Agent HSP.
 3. Open Settings (the sliders button, top right):
-   - Speech model: `small.en` on a Mac. Press Load and wait for "ready".
+   - Speech model: "Nemotron" on a Mac (fastest; works offline). Press Load and wait for "ready". "Deepgram" also works if you have a key and good internet; `small.en` is the fallback.
    - Audio input: the sound desk feed (USB from the mixer) if you have one, else the laptop microphone.
 4. On the Look page, pick a background and set the church name. Pick backgrounds while you have internet; they download once and then work offline.
 5. On the Service page, import songs (VideoPsalm `.vpagd` or songbook `.json`, OpenLyrics, OpenSong or plain text) and build the order of service. Use Duplicate to start from last week.
@@ -30,6 +30,7 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 | H | Hold: the AI cannot change the screen; detected verses wait as cards |
 | Enter | Show the oldest waiting card |
 
+- Voice commands the preacher can use: "next" or "next verse", "previous verse", "next chapter", "previous chapter", "jump to chapter 2", "go to chapter 4 verse 5", "go to verse 20", "verse 95" (in the chapter on screen), "show it again", "read it in the Berean". They do nothing while Hold is on.
 - Songs, readings and announcements: only you change the screen. The AI is held.
 - Sermon: going live on the Sermon item turns Hold off and starts listening. Verses the preacher names go up on their own. Press H if you want to approve each one.
 - A wrong verse: press B, or just let the next verse replace it. "Turn to Mark 2" alone does not change the screen; "Mark 2 verse 5" does.
