@@ -4,6 +4,7 @@ pub mod segmenter;
 pub mod session;
 pub mod deepgram;
 pub mod bundle;
+pub mod backgrounds;
 #[cfg(feature = "nemotron")]
 pub mod nemotron;
 
@@ -286,6 +287,9 @@ pub fn run() {
             bundle::export_service,
             bundle::import_service,
             bundle::media_path,
+            backgrounds::list_user_backgrounds,
+            backgrounds::import_user_backgrounds,
+            backgrounds::delete_user_background,
             deepgram::set_deepgram_key,
             deepgram::has_deepgram_key,
             audio::list_audio_inputs,

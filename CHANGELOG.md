@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- My photos and My motion tabs on the Look page: add your own pictures (JPG, PNG, WebP, GIF) and videos (MP4, MOV, M4V, WebM). They are copied into the app data folder, listed in backgrounds/user.json, kept between runs, can be removed, and travel in service bundles. Replaces the one-off "Use my own picture".
 - Export a service two ways from the Service page menu: "for this computer" (.hspservice: the order of service, songs by reference, background by its path) or "bundle for another computer" (.hspbundle: a zip with the songs in full, the projector look and the background file). Import reads either: songs are matched by title, missing ones are added from a bundle, and its look can be applied with one click.
 - Recordings are compressed at Stop to audio.m4a (AAC 48 kbps, about 21 MB an hour instead of 115 MB) with macOS's built-in afconvert. Recording itself stays WAV so a crash loses almost nothing; continuing a session converts it back first. Windows keeps WAV for now.
 - Listen starts a session folder named by local date and time; Stop saves audio.wav, transcript.txt (raw transcript with times) and summary.md (title, outline, every verse shown with its time, key lines). Listen after a recent session asks whether it is the same service (append to the same recording) or a new one. Going live on the Sermon item continues the day's session without asking. "Open recordings folder" in Settings.

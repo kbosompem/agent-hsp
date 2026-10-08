@@ -27,6 +27,9 @@ export type OutputTheme = {
   logoImage?: string;
   /** Stock background id (public/backgrounds/manifest.json), for its credit. */
   bgId?: string;
+  /** File name of the background in the app data backgrounds/ folder
+   * (stock downloads and the church's own), for service bundles. */
+  bgFile?: string;
 };
 
 export type CornerPos = "tl" | "tr" | "bl" | "br";

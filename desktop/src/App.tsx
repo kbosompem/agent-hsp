@@ -307,53 +307,6 @@ export default function App() {
     void emit("output-theme", outTheme);
   }, [outTheme]);
 
-  async function applyImage(f: File) {
-    const dataUrl: string = await new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.readAsDataURL(f);
-    });
-    const lum: number = await new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement("canvas");
-        c.width = 64;
-        c.height = 36;
-        const ctx = c.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, 64, 36);
-        const d = ctx.getImageData(0, 0, 64, 36).data;
-        let r = 0, g = 0, b = 0;
-        const hues: Record<number, number> = {};
-        for (let i = 0; i < d.length; i += 4) {
-          r += d[i]; g += d[i + 1]; b += d[i + 2];
-          const mx = Math.max(d[i], d[i + 1], d[i + 2]);
-          const mn = Math.min(d[i], d[i + 1], d[i + 2]);
-          const l = (mx + mn) / 2 / 255;
-          if (mx - mn > 30 && l > 0.15 && l < 0.85) {
-            let h = 0;
-            const df = mx - mn;
-            if (mx === d[i]) h = ((d[i + 1] - d[i + 2]) / df) % 6;
-            else if (mx === d[i + 1]) h = (d[i + 2] - d[i]) / df + 2;
-            else h = (d[i] - d[i + 1]) / df + 4;
-            h = Math.round((((h * 60) + 360) % 360) / 20) * 20;
-            hues[h] = (hues[h] || 0) + 1;
-          }
-        }
-        resolve(((r / d.length) * 0.299 + (g / d.length) * 0.587 + (b / d.length) * 0.114) / 255);
-        void hues;
-      };
-      img.src = dataUrl;
-    });
-    setOutTheme((t) => ({
-      ...t,
-      bgKind: "image",
-      image: dataUrl,
-      overlay: Math.min(0.75, Math.max(0.25, 0.78 - lum)),
-      textColor: lum > 0.55 ? "#f8f5ea" : "#f3ecdc",
-    }));
-    setMicStatus("Theme auto-generated from your image. Fine-tune below.");
-  }
-
   function addNote(bullet: string) {
     addSermonNote(stRef.current, bullet);
   }
@@ -1647,7 +1600,7 @@ export default function App() {
               <ScrollArea className="h-full rounded-lg border bg-card">
                 <Accordion type="multiple" defaultValue={["background", "stock"]} className="px-4">
                   <AccordionItem value="background">
-                    <AccordionTrigger>Background colour or your own picture</AccordionTrigger>
+                    <AccordionTrigger>Background colour</AccordionTrigger>
                     <AccordionContent className="flex flex-col gap-3">
                     <div className="grid grid-cols-6 gap-2">
                       {GRADIENTS.map((g, i) => (
@@ -1663,28 +1616,13 @@ export default function App() {
                         />
                       ))}
                     </div>
-                    <Button variant="secondary" asChild>
-                      <label>
-                        <ImageIcon /> Use my own picture…
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files && e.target.files[0];
-                            if (f) void applyImage(f);
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                    </Button>
                     <p className="text-xs text-muted-foreground">
-                      The text colour and dimming adjust to the picture so verses stay readable.
+                      To use your own pictures or videos, open "Photos and motion" below and choose My photos or My motion.
                     </p>
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="stock">
-                    <AccordionTrigger>Free photos and motion</AccordionTrigger>
+                    <AccordionTrigger>Photos and motion</AccordionTrigger>
                     <AccordionContent className="flex flex-col gap-3">
                       <Backgrounds theme={outTheme} setTheme={setOutTheme} setStatus={setMicStatus} />
                     </AccordionContent>

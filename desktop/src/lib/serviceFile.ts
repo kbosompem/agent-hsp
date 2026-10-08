@@ -20,7 +20,9 @@ export type ServiceFile = {
 
 /** The app data path of a stock background the theme uses, if any. */
 export function themeMedia(t: OutputTheme): string | null {
-  if (!t.bgId || (t.bgKind !== "image" && t.bgKind !== "video")) return null;
+  if (t.bgKind !== "image" && t.bgKind !== "video") return null;
+  if (t.bgFile) return "backgrounds/" + t.bgFile;
+  if (!t.bgId) return null;
   return "backgrounds/" + t.bgId + (t.bgKind === "video" ? ".mp4" : ".jpg");
 }
 
