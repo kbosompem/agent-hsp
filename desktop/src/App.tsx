@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
-  BookOpen, Check, Copy, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
+  BookOpen, Check, Copy, FolderOpen, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
   MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -259,6 +259,10 @@ export default function App() {
   const undoRef = useRef<{ before: Slide | null; label: string; at: number } | null>(null);
   const blockedRef = useRef<Record<string, number>>({});
   const hspSegRef = useRef(-1);
+  // Every verse shown while listening, for the session summary.
+  const shownLogRef = useRef<{ at: number; label: string; translation: string; text: string }[]>([]);
+  const sessionRef = useRef<{ dir: string; name: string; startedAt: number } | null>(null);
+  const [continuePrompt, setContinuePrompt] = useState<{ dir: string; name: string; age_s: number; audio_s: number } | null>(null);
   const lastTrAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
@@ -390,6 +394,9 @@ export default function App() {
     lastVerse.current = h;
     openPassage(h);
     verseShownAt.current = Date.now();
+    if (listeningRef.current) {
+      shownLogRef.current.push({ at: Date.now(), label: h.label, translation: h.translation, text: h.text });
+    }
     const lastHist = historyRef.current[historyRef.current.length - 1];
     if (!lastHist || lastHist.label !== h.label) {
       historyRef.current.push({ label: h.label, hit: h });
@@ -673,13 +680,76 @@ export default function App() {
     await invoke("ensure_model", { model: model });
   }
 
+  /** Folder name for a new session from local time: 2026-10-11_10-02. */
+  function sessionName(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "_" + p(d.getHours()) + "-" + p(d.getMinutes());
+  }
+
+  /** summary.md for the session folder, written at Stop. */
+  function sessionSummary(): string {
+    const st = stRef.current;
+    const started = sessionRef.current?.startedAt ?? Date.now();
+    const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const lines: string[] = [];
+    const guess = titleFor(st, transcriptRef.current.map((l) => l.text));
+    const title = st.title || (guess && guess !== "Sermon summary" ? guess : "Service " + new Date(started).toLocaleDateString());
+    lines.push("# " + title);
+    lines.push("");
+    lines.push(new Date(started).toLocaleString() + " · speech model: " + model);
+    lines.push("");
+    if (st.points.length) {
+      lines.push("## Outline", "");
+      st.points.forEach((p) => lines.push(p.num + ". " + p.text));
+      lines.push("");
+    }
+    lines.push("## Verses shown", "");
+    if (!shownLogRef.current.length) lines.push("None.");
+    shownLogRef.current.forEach((v) => lines.push("- " + clock(v.at) + " · **" + v.label + "** (" + v.translation + ") " + v.text));
+    lines.push("");
+    if (st.notes.length) {
+      lines.push("## Key lines", "");
+      st.notes.forEach((n) => lines.push("- " + n));
+      lines.push("");
+    }
+    lines.push("Files in this folder: audio.wav (the recording), transcript.txt (raw transcript with times), summary.md (this file).");
+    return lines.join("\n") + "\n";
+  }
+
   async function toggleListen() {
     if (listeningRef.current) {
       listeningRef.current = false;
       setListening(false);
-      await invoke("stop_listening");
-      setMicStatus("Stopped.");
+      const dir = await invoke<string | null>("stop_listening", { summary: sessionSummary() }).catch(() => null);
+      if (dir) {
+        setMicStatus("Stopped. Saved the recording, transcript and summary.");
+        toast.success("Session saved: audio, transcript and summary", {
+          action: { label: "Open folder", onClick: () => void invoke("open_session_folder", { dir }) },
+        });
+      } else {
+        setMicStatus("Stopped.");
+      }
       return;
+    }
+    // A recent session: ask whether this is the same service.
+    const last = await invoke<{ dir: string; name: string; age_s: number; audio_s: number } | null>("last_session").catch(() => null);
+    if (last && last.age_s < 8 * 3600 && last.audio_s > 5) {
+      setContinuePrompt(last);
+      return;
+    }
+    await startListening(null);
+  }
+
+  /** Start listening into a new session, or continue `continueDir`. */
+  async function startListening(continueDir: string | null) {
+    setContinuePrompt(null);
+    if (!continueDir) {
+      // A new service: start its notes and verse list fresh.
+      stRef.current = newSermonState();
+      shownLogRef.current = [];
+      transcriptRef.current = [];
+      rawRef.current = [];
     }
     try {
       await invoke("reset_live");
@@ -687,13 +757,20 @@ export default function App() {
       if (lastVerse.current) openPassage(lastVerse.current);
       const now0 = Date.now();
       healthRef.current = { lag: 0, error: "", errorAt: 0, aliveAt: now0, okAt: now0 };
-      const r = await invoke<string>("start_listening", { device: micId || null, model: model });
+      const name = sessionName();
+      const r = await invoke<string>("start_listening", {
+        device: micId || null,
+        model: model,
+        sessionName: name,
+        continueSession: continueDir,
+      });
       listeningRef.current = true;
+      if (!continueDir || !sessionRef.current) sessionRef.current = { dir: continueDir ?? "", name, startedAt: now0 };
       // Model loading happens inside start_listening; start the stall clock after it.
       healthRef.current.aliveAt = Date.now();
       setListening(true);
       if (r === "already") setMicStatus("Already listening.");
-      else setMicStatus("Listening natively · verses show instantly");
+      else setMicStatus(continueDir ? "Listening · continuing the same service recording." : "Listening · recording a new service.");
       void loadQuoteIndex();
     } catch (e: any) {
       setMicStatus(String(e).replace(/^Error:\s*/, ""));
@@ -764,6 +841,9 @@ export default function App() {
       }),
       listen<string>("model-ready", (e) => setModelStatus("ready · " + e.payload + " (native)")),
       listen<string>("listen-status", (e) => setMicStatus(e.payload)),
+      listen<string>("session-dir", (e) => {
+        if (sessionRef.current) sessionRef.current.dir = e.payload;
+      }),
       // A reopened projector window asks for what it should be showing.
       listen("output-ready", () => {
         void emit("output-theme", outThemeRef.current);
@@ -871,7 +951,12 @@ export default function App() {
   function enterItem(it: AgendaItem) {
     if (it.kind === "sermon") {
       setHold(false);
-      if (!listeningRef.current) void toggleListen();
+      // Mid-service: continue this service's recording without asking.
+      if (!listeningRef.current) {
+        const dir = sessionRef.current?.dir;
+        if (dir && Date.now() - sessionRef.current!.startedAt < 6 * 3600 * 1000) void startListening(dir);
+        else void toggleListen();
+      }
       setMicStatus("Sermon: listening, verses go on screen as they are named.");
     } else {
       setHold(true);
@@ -1819,6 +1904,30 @@ export default function App() {
           )}
         </main>
 
+        <Dialog open={!!continuePrompt} onOpenChange={(o) => !o && setContinuePrompt(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Same service, or a new one?</DialogTitle>
+              <DialogDescription>
+                {continuePrompt &&
+                  "The last recording (" + continuePrompt.name.replace("_", " at ").replace(/-(\d\d)$/, ":$1") + ", " +
+                    Math.round(continuePrompt.audio_s / 60) + " min) ended " +
+                    (continuePrompt.age_s < 120 ? "just now" : Math.round(continuePrompt.age_s / 60) + " min ago") + "."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-2">
+              <Button size="lg" onClick={() => continuePrompt && void startListening(continuePrompt.dir)}>
+                Continue the same service
+              </Button>
+              <Button size="lg" variant="secondary" onClick={() => void startListening(null)}>
+                Start a new service
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Continuing adds to the same recording, transcript and summary. A new service gets its own folder.
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
@@ -1920,6 +2029,17 @@ export default function App() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">Use the sound desk feed if you have one. Changes apply the next time you press Listen.</p>
+              </Section>
+              <Section label="Recordings">
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => void invoke("open_session_folder", { dir: null })}>
+                    <FolderOpen /> Open recordings folder
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Every time you press Listen, the service is recorded. Stop saves audio.wav, transcript.txt and summary.md in
+                  a folder named by date and time.
+                </p>
               </Section>
               <Section label="Console look">
                 <div className="flex items-center justify-between">

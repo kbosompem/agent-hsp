@@ -286,7 +286,9 @@ pub fn run() {
             audio::list_audio_inputs,
             audio::ensure_model,
             audio::start_listening,
-            audio::stop_listening
+            audio::stop_listening,
+            audio::last_session,
+            audio::open_session_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

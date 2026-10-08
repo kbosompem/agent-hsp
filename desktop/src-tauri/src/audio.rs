@@ -587,16 +587,19 @@ pub fn start_listening(
     state: tauri::State<'_, ListenState>,
     device: Option<String>,
     model: String,
+    session_name: Option<String>,
+    continue_session: Option<String>,
 ) -> Result<String, String> {
+    let session = SessionReq { name: session_name.unwrap_or_else(|| "session".into()), continue_dir: continue_session };
     if state.running.load(Ordering::SeqCst) {
         return Ok("already".to_string());
     }
     if model == crate::deepgram::MODEL {
-        return start_deepgram(app, state, device);
+        return start_deepgram(app, state, device, session);
     }
     #[cfg(feature = "nemotron")]
     if crate::nemotron::is_nemotron(&model) {
-        return start_nemotron(app, state, device, model);
+        return start_nemotron(app, state, device, model, session);
     }
     #[cfg(not(feature = "nemotron"))]
     if model.starts_with("nemotron") {
@@ -632,22 +635,14 @@ pub fn start_listening(
         ctx: state.ctx.clone(),
         ctx_model: state.ctx_model.clone(),
     });
-    // Record the session (audio, transcript, slides) for replay afterwards.
-    if let Ok(root) = app.path().app_data_dir().map(|d| d.join("sessions")) {
-        match crate::session::start(root, state.total.load(Ordering::SeqCst)) {
-            Ok(dir) => eprintln!("recording session to {}", dir.display()),
-            Err(e) => {
-                let _ = app.emit("listen-status", format!("Listening, but could not record the session: {}", e));
-            }
-        }
-    }
+    begin_session(&app, state.total.load(Ordering::SeqCst), &session);
     spawn_capture(app.clone(), device, shared.clone(), gen);
     spawn_segmenter(app, shared, gen, SegConfig::streaming());
     Ok("started".to_string())
 }
 
 /// Listen with Deepgram's live service (needs internet and an API key).
-fn start_deepgram(app: AppHandle, state: tauri::State<'_, ListenState>, device: Option<String>) -> Result<String, String> {
+fn start_deepgram(app: AppHandle, state: tauri::State<'_, ListenState>, device: Option<String>, session: SessionReq) -> Result<String, String> {
     let key = crate::deepgram::load_key(&app).ok_or("Add your Deepgram API key in Settings first.")?;
     state.pcm.lock().unwrap().clear();
     state.running.store(true, Ordering::SeqCst);
@@ -662,11 +657,7 @@ fn start_deepgram(app: AppHandle, state: tauri::State<'_, ListenState>, device: 
         ctx: state.ctx.clone(),
         ctx_model: state.ctx_model.clone(),
     });
-    if let Ok(root) = app.path().app_data_dir().map(|d| d.join("sessions")) {
-        if let Err(e) = crate::session::start(root, state.total.load(Ordering::SeqCst)) {
-            let _ = app.emit("listen-status", format!("Listening, but could not record the session: {}", e));
-        }
-    }
+    begin_session(&app, state.total.load(Ordering::SeqCst), &session);
     spawn_capture(app.clone(), device, shared.clone(), gen);
     crate::deepgram::spawn(app, shared, gen, key);
     Ok("started".to_string())
@@ -680,6 +671,7 @@ fn start_nemotron(
     state: tauri::State<'_, ListenState>,
     device: Option<String>,
     model: String,
+    session: SessionReq,
 ) -> Result<String, String> {
     let models = model_file(&app, &model).parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let dir = models.join(crate::nemotron::model_dir_name(&model).unwrap_or_default());
@@ -710,11 +702,7 @@ fn start_nemotron(
         ctx: state.ctx.clone(),
         ctx_model: state.ctx_model.clone(),
     });
-    if let Ok(root) = app.path().app_data_dir().map(|d| d.join("sessions")) {
-        if let Err(e) = crate::session::start(root, state.total.load(Ordering::SeqCst)) {
-            let _ = app.emit("listen-status", format!("Listening, but could not record the session: {}", e));
-        }
-    }
+    begin_session(&app, state.total.load(Ordering::SeqCst), &session);
     spawn_capture(app.clone(), device, shared.clone(), gen);
     crate::nemotron::spawn(app, shared, gen, rec);
     Ok("started".to_string())
@@ -723,9 +711,78 @@ fn start_nemotron(
 #[cfg(feature = "nemotron")]
 static NEMOTRON: Mutex<Option<(String, std::sync::Arc<sherpa_onnx::OnlineRecognizer>)>> = Mutex::new(None);
 
+/// Which session folder a Listen records into (see session.rs).
+pub struct SessionReq {
+    /// Folder name for a new session, from the console's local time.
+    pub name: String,
+    /// An existing session folder to continue.
+    pub continue_dir: Option<String>,
+}
+
+fn sessions_root(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("sessions"))
+}
+
+fn begin_session(app: &AppHandle, total: u64, req: &SessionReq) {
+    let Some(root) = sessions_root(app) else { return };
+    let _ = std::fs::create_dir_all(&root);
+    let cont = req.continue_dir.as_ref().map(std::path::PathBuf::from);
+    match crate::session::start(&root, &req.name, total, cont.as_deref()) {
+        Ok(dir) => {
+            let _ = app.emit("session-dir", dir.to_string_lossy().to_string());
+        }
+        Err(e) => {
+            let _ = app.emit("listen-status", format!("Listening, but could not record the session: {}", e));
+        }
+    }
+}
+
+/// Stop listening and finish the session: audio.wav, transcript.txt and the
+/// console's summary.md. Returns the session folder.
 #[tauri::command]
-pub fn stop_listening(state: tauri::State<'_, ListenState>) {
+pub fn stop_listening(state: tauri::State<'_, ListenState>, summary: Option<String>) -> Option<String> {
     state.running.store(false, Ordering::SeqCst);
     state.generation.fetch_add(1, Ordering::SeqCst);
-    crate::session::stop();
+    crate::session::stop(summary).map(|d| d.to_string_lossy().to_string())
+}
+
+#[derive(Serialize)]
+pub struct LastSession {
+    dir: String,
+    name: String,
+    /// Seconds since it last changed.
+    age_s: u64,
+    /// Seconds of audio recorded.
+    audio_s: f64,
+}
+
+/// The most recent session, so Listen can offer to continue it.
+#[tauri::command]
+pub fn last_session(app: AppHandle) -> Option<LastSession> {
+    let (p, name, age_s, audio_s) = crate::session::latest(&sessions_root(&app)?)?;
+    Some(LastSession { dir: p.to_string_lossy().to_string(), name, age_s, audio_s })
+}
+
+/// Show a session folder in Finder / Explorer.
+#[tauri::command]
+pub fn open_session_folder(app: AppHandle, dir: Option<String>) -> Result<(), String> {
+    let root = sessions_root(&app).ok_or("no app data folder")?;
+    let _ = std::fs::create_dir_all(&root);
+    let target = match dir {
+        Some(d) => {
+            let p = std::path::PathBuf::from(d);
+            if !p.starts_with(&root) {
+                return Err("not a session folder".into());
+            }
+            p
+        }
+        None => root,
+    };
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(&target).spawn();
+    #[cfg(target_os = "windows")]
+    let r = std::process::Command::new("explorer").arg(&target).spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let r = std::process::Command::new("xdg-open").arg(&target).spawn();
+    r.map(|_| ()).map_err(|e| e.to_string())
 }

@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Listen starts a session folder named by local date and time; Stop saves audio.wav, transcript.txt (raw transcript with times) and summary.md (title, outline, every verse shown with its time, key lines). Listen after a recent session asks whether it is the same service (append to the same recording) or a new one. Going live on the Sermon item continues the day's session without asking. "Open recordings folder" in Settings.
 - "HSP" from the pulpit means the wrong thing went up: the last verse comes down, what was on screen before it comes back, and that verse stays off for a minute. It acts on the first partial transcript. Words after it are an instruction ("HSP clear the screen", "HSP next", "HSP John 3:16"). Works under Hold. U on the keyboard does the same undo.
 - "Clear the screen", "clear the board", "take it down": the Logo screen with no text; L brings the slide back.
 - Agent HSP logo (brand/agent-hsp-icon.svg): app icon, console header, page icons and website.
