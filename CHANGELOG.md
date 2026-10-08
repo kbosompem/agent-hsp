@@ -66,6 +66,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Fixed
 
+- Importing a JSON Bible failed unless it was in the app's own layout. The importer now reads the common layouts ({"Genesis": {"1": {"1": ..}}}, an array of books with chapters, {"books": [...]} with verse objects, and flat verse records), takes the name from the file name ("Bible_NLT.json" becomes "NLT"), gives each import its own id so a second import no longer replaces the first, and accepts files with missing books (at least the New Testament). `cargo run -p preso-core --example check_bible -- file.json` checks a file.
 - "Verse 95" and other follow-ups only worked after a spoken reference. A verse shown from the search box, a service reading, history or a voice command now sets the open passage too, and pressing Listen keeps it.
 - Upgraded React to 19: the shadcn components pass refs as props, so on React 18 the search boxes could not be focused from code.
 - Motion backgrounds no longer jump when the clip restarts: two copies of the clip crossfade over the last second. Thumbnails show a still picture so only the live screen and the projector play video.

@@ -290,9 +290,11 @@ impl Engine {
     }
 
     pub fn parse_translation_any(content: &str, fallback_name: &str) -> Option<Translation> {
-        let trimmed = content.trim_start();
-        if trimmed.starts_with('{') {
-            return Self::parse_translation(content, "imported", fallback_name);
+        let trimmed = content.trim_start_matches('\u{feff}').trim_start();
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            let name = clean_translation_name(fallback_name);
+            let id = translation_id(&name);
+            return Self::parse_translation(trimmed, &id, &name).or_else(|| parse_json_bible(trimmed, &id, &name));
         }
         Self::parse_translation_xml(content, fallback_name)
     }
@@ -734,6 +736,164 @@ fn damerau(a: &str, b: &str) -> usize {
         }
     }
     d[la][lb]
+}
+
+/// "Bible_NLT" -> "NLT", "kjv-bible" -> "kjv": a readable name from a file name.
+fn clean_translation_name(stem: &str) -> String {
+    let s = stem.replace(['_', '-'], " ");
+    let words: Vec<&str> = s.split_whitespace().filter(|w| !w.eq_ignore_ascii_case("bible") && !w.eq_ignore_ascii_case("json")).collect();
+    if words.is_empty() { stem.to_string() } else { words.join(" ") }
+}
+
+/// An id for an imported translation from its name ("NLT" -> "nlt"); never
+/// one of the bundled ids, so an import does not replace them.
+fn translation_id(name: &str) -> String {
+    let id: String = name.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).take(24).collect();
+    let id = if id.is_empty() { "imported".to_string() } else { id };
+    if ["kjv", "asv", "web", "bbe", "bsb", "lsv", "fbv"].contains(&id.as_str()) {
+        format!("{}-imported", id)
+    } else {
+        id
+    }
+}
+
+/// Book index (0-65) from a book name as JSON Bibles write it: "Genesis",
+/// "1 Samuel", "I Samuel", "1Sam"... no; full names and common variants only.
+fn book_index_from_name(name: &str) -> Option<usize> {
+    let mut n = name.trim().to_lowercase();
+    for (roman, digit) in [("iii ", "3 "), ("ii ", "2 "), ("i ", "1 "), ("first ", "1 "), ("second ", "2 "), ("third ", "3 ")] {
+        if n.starts_with(roman) {
+            n = format!("{}{}", digit, &n[roman.len()..]);
+            break;
+        }
+    }
+    let key: String = n.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    let alias = match key.as_str() {
+        "psalm" => "psalms",
+        "songofsongs" | "canticles" | "song" | "songs" => "songofsolomon",
+        "revelations" | "revelationofjohn" | "therevelation" | "apocalypse" => "revelation",
+        "ecclesiastesorthepreacher" | "qoheleth" => "ecclesiastes",
+        k => k,
+    };
+    BOOK_NAMES
+        .iter()
+        .position(|b| b.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>() == alias)
+}
+
+fn num(v: &serde_json::Value) -> Option<usize> {
+    v.as_u64().map(|n| n as usize).or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+}
+
+fn put(books: &mut [Vec<Vec<String>>], b: usize, c: usize, v: usize, text: &str) {
+    if c == 0 || v == 0 || c > 200 || v > 200 {
+        return;
+    }
+    let chs = &mut books[b];
+    while chs.len() < c {
+        chs.push(Vec::new());
+    }
+    let vs = &mut chs[c - 1];
+    while vs.len() < v {
+        vs.push(String::new());
+    }
+    vs[v - 1] = text.split_whitespace().collect::<Vec<_>>().join(" ");
+}
+
+/// Chapters as [[verse, ...], ...] or [{"chapter":1,"verses":[{"verse":1,"text":..}]}].
+fn put_chapters(books: &mut [Vec<Vec<String>>], b: usize, chapters: &serde_json::Value) {
+    let Some(chs) = chapters.as_array() else { return };
+    for (ci, ch) in chs.iter().enumerate() {
+        if let Some(vs) = ch.as_array() {
+            for (vi, v) in vs.iter().enumerate() {
+                if let Some(t) = v.as_str() {
+                    put(books, b, ci + 1, vi + 1, t);
+                } else if let (Some(n), Some(t)) = (v.get("verse").and_then(num), v.get("text").and_then(|t| t.as_str())) {
+                    put(books, b, ci + 1, n, t);
+                }
+            }
+        } else if let Some(vs) = ch.get("verses").and_then(|x| x.as_array()) {
+            let c = ch.get("chapter").and_then(num).unwrap_or(ci + 1);
+            for (vi, v) in vs.iter().enumerate() {
+                if let Some(t) = v.as_str() {
+                    put(books, b, c, vi + 1, t);
+                } else if let Some(t) = v.get("text").and_then(|t| t.as_str()) {
+                    put(books, b, c, v.get("verse").and_then(num).unwrap_or(vi + 1), t);
+                }
+            }
+        }
+    }
+}
+
+/// JSON Bibles in the layouts commonly shared online:
+/// - {"Genesis": {"1": {"1": "In the beginning..."}}}
+/// - [{"name"|"abbrev": .., "chapters": [[verse, ...], ...]}, ...] (66 in order)
+/// - {"books": [{"name": "Genesis", "chapters": [{"chapter": 1, "verses": [{"verse": 1, "text": ..}]}]}]}
+/// - [{"book_name"|"book": "Genesis", "chapter": 1, "verse": 1, "text": ..}, ...]
+/// Needs at least the New Testament (27 books); missing books stay empty.
+fn parse_json_bible(content: &str, id: &str, name: &str) -> Option<Translation> {
+    let v: serde_json::Value = serde_json::from_str(content).ok()?;
+    let mut books: Vec<Vec<Vec<String>>> = vec![Vec::new(); 66];
+    let mut name = name.to_string();
+    let book_list = v.get("books").and_then(|b| b.as_array()).or_else(|| v.as_array());
+    if let Some(obj) = v.as_object().filter(|o| o.keys().filter(|k| book_index_from_name(k).is_some()).count() >= 20) {
+        for (bk, chs) in obj {
+            let Some(b) = book_index_from_name(bk) else { continue };
+            if let Some(chs) = chs.as_object() {
+                for (ck, vs) in chs {
+                    let Some(c) = ck.trim().parse::<usize>().ok() else { continue };
+                    if let Some(vs) = vs.as_object() {
+                        for (vk, t) in vs {
+                            if let (Some(vn), Some(t)) = (vk.trim().parse::<usize>().ok(), t.as_str()) {
+                                put(&mut books, b, c, vn, t);
+                            }
+                        }
+                    } else if let Some(vs) = vs.as_array() {
+                        for (vi, t) in vs.iter().enumerate() {
+                            if let Some(t) = t.as_str() {
+                                put(&mut books, b, c, vi + 1, t);
+                            }
+                        }
+                    }
+                }
+            } else {
+                put_chapters(&mut books, b, chs);
+            }
+        }
+    } else if let Some(list) = book_list {
+        let flat = list.first().map_or(false, |x| x.get("text").is_some() && x.get("verse").is_some());
+        if flat {
+            for r in list {
+                let b = r.get("book_name").or_else(|| r.get("book")).and_then(|x| {
+                    x.as_str().and_then(book_index_from_name).or_else(|| num(x).filter(|n| (1..=66).contains(n)).map(|n| n - 1))
+                });
+                if let (Some(b), Some(c), Some(vn), Some(t)) = (b, r.get("chapter").and_then(num), r.get("verse").and_then(num), r.get("text").and_then(|t| t.as_str())) {
+                    put(&mut books, b, c, vn, t);
+                }
+            }
+        } else {
+            for (i, bk) in list.iter().enumerate() {
+                let by_name = bk.get("name").or_else(|| bk.get("book")).and_then(|x| x.as_str()).and_then(book_index_from_name);
+                let b = by_name.or_else(|| (list.len() == 66).then_some(i));
+                if let (Some(b), Some(chs)) = (b, bk.get("chapters")) {
+                    put_chapters(&mut books, b, chs);
+                }
+            }
+        }
+        if let Some(n) = v.get("name").or_else(|| v.get("translation")).and_then(|x| x.as_str()) {
+            if !n.trim().is_empty() {
+                name = n.trim().to_string();
+            }
+        }
+    }
+    if books.iter().filter(|b| !b.is_empty()).count() < 27 {
+        return None;
+    }
+    let books = books
+        .into_iter()
+        .enumerate()
+        .map(|(i, chapters)| RawBook { name: BOOK_NAMES[i].to_string(), chapters })
+        .collect();
+    Some(Translation { id: id.to_string(), name, books })
 }
 
 const BOOK_NAMES: [&str; 66] = [
@@ -1447,6 +1607,34 @@ mod tests {
     #[test]
     fn chapter_only() {
         assert_eq!(refs("Turn to Psalms twenty three"), vec!["Psalm 23"]);
+    }
+
+    #[test]
+    fn json_bibles_in_common_layouts_import() {
+        let nested = r#"{"Genesis":{"1":{"1":"In the beginning.","2":"And the earth."}},"Matthew":{"1":{"1":"The book."}},"John":{"3":{"16":"For God so loved the world."}}}"#;
+        // Too few books on its own; pad with the rest of the New Testament.
+        let mut padded: serde_json::Value = serde_json::from_str(nested).unwrap();
+        for b in &BOOK_NAMES[39..] {
+            padded.as_object_mut().unwrap().entry(b.to_string()).or_insert(serde_json::json!({"1":{"1":"x"}}));
+        }
+        let t = Engine::parse_translation_any(&padded.to_string(), "Bible_NLT").unwrap();
+        assert_eq!((t.id.as_str(), t.name.as_str()), ("nlt", "NLT"));
+        assert_eq!(t.books[42].chapters[2][15], "For God so loved the world.");
+        assert_eq!(t.books[0].chapters[0][1], "And the earth.");
+        // Array of 66 books with chapters of strings.
+        let arr: Vec<serde_json::Value> = (0..66).map(|i| serde_json::json!({"abbrev": "x", "chapters": [[format!("b{} c1 v1", i)]]})).collect();
+        let t = Engine::parse_translation_any(&serde_json::to_string(&arr).unwrap(), "my-version").unwrap();
+        assert_eq!(t.books[65].chapters[0][0], "b65 c1 v1");
+        // Flat verse records with book names.
+        let flat: Vec<serde_json::Value> = BOOK_NAMES[39..].iter().map(|b| serde_json::json!({"book_name": b, "chapter": 1, "verse": 1, "text": "v"})).collect();
+        assert!(Engine::parse_translation_any(&serde_json::to_string(&flat).unwrap(), "x").is_some());
+        // Not a Bible.
+        assert!(Engine::parse_translation_any(r#"{"hello": 1}"#, "x").is_none());
+        // Never takes a bundled id.
+        assert_eq!(translation_id("KJV"), "kjv-imported");
+        assert_eq!(book_index_from_name("I Samuel"), Some(8));
+        assert_eq!(book_index_from_name("Song of Songs"), Some(21));
+        assert_eq!(book_index_from_name("Psalm"), Some(18));
     }
 
     #[test]
