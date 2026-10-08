@@ -46,7 +46,7 @@ import {
 } from "./lib/sermon";
 import Service, { ServiceNav } from "./Service";
 import { PerSlide, groupVerses, parsePerSlide, slideHas } from "./lib/verses";
-import { AgendaItem, ItemSlide, Library, emptyLibrary, parseLibrary } from "./lib/library";
+import { AgendaItem, ItemBackground, ItemSlide, Library, emptyLibrary, parseLibrary } from "./lib/library";
 import { contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
 type VerseHit = {
@@ -256,6 +256,11 @@ export default function App() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [mediaFolders, setMediaFolders] = useState<MediaFolder[]>([]);
   const audioRef = useRef<AudioControl>(null);
+  // The sound of a video on the projector. The projector and previews play it
+  // muted and follow this copy's clock ("video-sync"), because macOS only
+  // lets a window play sound after someone clicks in it, and nobody clicks
+  // the projector.
+  const videoSound = useRef<HTMLVideoElement>(null);
   // YouTube downloads in progress: video id -> percent.
   const [ytProgress, setYtProgress] = useState<Record<string, number>>({});
   const mediaRef = useRef<MediaItem[]>([]);
@@ -276,6 +281,7 @@ export default function App() {
     }
     return DEFAULT_THEME;
   });
+  const [itemBg, setItemBg] = useState<ItemBackground | null>(null);
   const outThemeRef = useRef(outTheme);
   outThemeRef.current = outTheme;
   const [quoteStatus, setQuoteStatus] = useState("not loaded");
@@ -359,8 +365,15 @@ export default function App() {
     } catch (e) {
       /* image too large for localStorage; theme stays for this session */
     }
-    void emit("output-theme", outTheme);
   }, [outTheme]);
+  // The projector uses the live service item's own background, if it has one.
+  const liveTheme: OutputTheme = itemBg ? { ...outTheme, ...itemBg } : outTheme;
+  const liveThemeRef = useRef(liveTheme);
+  liveThemeRef.current = liveTheme;
+  useEffect(() => {
+    void emit("output-theme", liveTheme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outTheme, itemBg]);
 
   function addNote(bullet: string) {
     addSermonNote(stRef.current, bullet);
@@ -863,7 +876,7 @@ export default function App() {
       }),
       // A reopened projector window asks for what it should be showing.
       listen("output-ready", () => {
-        void emit("output-theme", outThemeRef.current);
+        void emit("output-theme", liveThemeRef.current);
         const cur = slideRef.current;
         if (cur) void invoke("show_slide", { kind: cur.kind, title: cur.title, body: cur.body, sub: cur.sub });
       }),
@@ -929,14 +942,47 @@ export default function App() {
   }, []);
 
   /** Put a library video on the projector (with sound there). */
+  /** Start the console's copy of a video's sound. Call it straight from a click or key press. */
+  function startVideoSound(src: string) {
+    const v = videoSound.current;
+    if (!v) return;
+    if (v.getAttribute("src") !== src) {
+      v.src = src;
+      v.currentTime = 0;
+    }
+    void v.play().catch((e) => setMicStatus("Could not play the video's sound: " + String(e?.name || e)));
+  }
+
   async function showVideo(m: MediaItem) {
     beforeCover.current = null;
     seqRef.current = null;
-    const s = await invoke<Slide>("show_slide", { kind: "video", title: m.title, body: convertFileSrc(m.path), sub: "" });
+    const src = convertFileSrc(m.path);
+    startVideoSound(src);
+    const s = await invoke<Slide>("show_slide", { kind: "video", title: m.title, body: src, sub: "" });
     setSlide(s);
     slideRef.current = s;
     setMicStatus("Video: " + m.title);
   }
+
+  // Keep the video's sound with what is on screen, and tell every copy where it is.
+  useEffect(() => {
+    const v = videoSound.current;
+    if (!v) return;
+    if (slide?.kind !== "video") {
+      if (v.getAttribute("src")) {
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      }
+      return;
+    }
+    if (v.getAttribute("src") !== slide.body) startVideoSound(slide.body);
+    const t = window.setInterval(() => {
+      void emit("video-sync", { src: slide.body, t: v.currentTime, playing: !v.paused && !v.ended });
+    }, 250);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slide]);
 
   /** Add a media item to the open service. */
   function addMediaToService(m: MediaItem) {
@@ -974,6 +1020,7 @@ export default function App() {
   }, [library]);
 
   async function showItemSlide(it: ItemSlide) {
+    if (it.kind === "video") startVideoSound(it.body);
     beforeCover.current = null;
     seqRef.current = null;
     let s: Slide;
@@ -1018,6 +1065,7 @@ export default function App() {
 
   // Going live on an agenda item. Only a sermon lets the AI change the screen.
   function enterItem(it: AgendaItem) {
+    setItemBg(it.bg ?? null);
     // Audio: an audio item plays its track; any item may start (or stop) background audio.
     const find = (id?: string) => mediaRef.current.find((m) => m.id === id);
     if (it.kind === "audio") {
@@ -1552,7 +1600,7 @@ export default function App() {
   }
 
   const now = Date.now();
-  const preview = <SlideView slide={slide} theme={outTheme} idle="Nothing on screen" />;
+  const preview = <SlideView slide={slide} theme={liveTheme} idle="Nothing on screen" />;
   const hs = sttHealth(listening, healthRef.current, now);
   const textPct = Math.round((outTheme.textScale ?? 1) * 100);
 
@@ -1595,7 +1643,15 @@ export default function App() {
               variant="ghost"
               className="size-7 text-white hover:bg-white/15 hover:text-white"
               title={a === "play" ? "Play" : a === "pause" ? "Pause" : "Restart"}
-              onClick={() => void emit("video-control", { action: a })}
+              onClick={() => {
+                const v = videoSound.current;
+                if (!v) return;
+                if (a === "pause") v.pause();
+                else {
+                  if (a === "restart") v.currentTime = 0;
+                  void v.play().catch(() => {});
+                }
+              }}
             >
               {a === "play" ? <Play /> : a === "pause" ? <Pause /> : <RotateCw />}
             </Button>
@@ -2055,6 +2111,7 @@ export default function App() {
           )}
         </main>
         <AudioPlayer ref={audioRef} onStatus={setMicStatus} />
+        <video ref={videoSound} className="hidden" playsInline preload="auto" />
 
         <Dialog open={!!editTr} onOpenChange={(o) => !o && setEditTr(null)}>
           <DialogContent className="sm:max-w-lg">

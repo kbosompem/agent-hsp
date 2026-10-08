@@ -3,7 +3,7 @@
 // Styles live in slides.css; sizes scale with the box the slide is drawn in.
 
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
-import { emit, listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 
 export type Slide = { kind: string; title: string; body: string; sub: string };
 
@@ -185,32 +185,39 @@ const front: CSSProperties = { position: "relative", zIndex: 1 };
 /** A video slide (kind "video", body = file URL). Only the projector plays
  * its sound; console previews are muted. "video-control" events
  * (play / pause / restart) drive every copy together. */
-function VideoSlide({ src, audible, still }: { src: string; audible?: boolean; still?: boolean }) {
+function VideoSlide({ src, still }: { src: string; still?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    v.muted = !audible;
-    if (!still)
-      void v.play().catch((e) => {
-        // The projector copy failing to start must not be silent.
-        if (audible) void emit("listen-status", "The projector could not start the video (" + String(e?.name || e) + "). Press Play on the live screen.");
-      });
-    const un = listen<{ action: string }>("video-control", (e) => {
-      if (e.payload.action === "pause") v.pause();
-      else if (e.payload.action === "play") void v.play().catch(() => {});
-      else if (e.payload.action === "restart") {
-        v.currentTime = 0;
-        void v.play().catch(() => {});
+    // Every on-screen copy is muted (muted video may always autoplay). The
+    // sound comes from the console (VideoSound in App.tsx), which the
+    // operator has clicked, and "video-sync" keeps these copies in step.
+    v.muted = true;
+    if (still) return;
+    void v.play().catch(() => {});
+    const un = listen<{ src: string; t: number; playing: boolean }>("video-sync", (e) => {
+      const m = e.payload;
+      if (m.src !== src) return;
+      if (m.playing && v.paused) void v.play().catch(() => {});
+      if (!m.playing && !v.paused) v.pause();
+      const drift = v.currentTime - m.t;
+      if (Math.abs(drift) > 0.35) {
+        v.currentTime = m.t;
+        v.playbackRate = 1;
+      } else if (m.playing) {
+        // Small drift: catch up gently instead of jumping.
+        v.playbackRate = Math.abs(drift) < 0.04 ? 1 : drift > 0 ? 0.96 : 1.04;
       }
     });
     return () => void un.then((f) => f());
-  }, [src, audible, still]);
+  }, [src, still]);
   return (
     <div className="slide idle" style={{ background: "#000" }}>
       <video
         ref={ref}
         src={src + (still ? "#t=2" : "")}
+        muted
         playsInline
         preload={still ? "metadata" : "auto"}
         disablePictureInPicture
@@ -222,8 +229,8 @@ function VideoSlide({ src, audible, still }: { src: string; audible?: boolean; s
 }
 
 /** `still`: draw a motion background as its poster picture (thumbnails).
- * `audible`: this copy plays video sound (only the projector window). */
-export default function SlideView({ slide, theme, idle, still, audible }: { slide: Slide | null; theme: OutputTheme | null; idle?: ReactNode; still?: boolean; audible?: boolean }) {
+ * Video slides play muted everywhere; their sound comes from the console. */
+export default function SlideView({ slide, theme, idle, still }: { slide: Slide | null; theme: OutputTheme | null; idle?: ReactNode; still?: boolean }) {
   const t = theme;
   const txt: CSSProperties = t ? { color: t.textColor, fontFamily: t.font === "sans" ? "inherit" : undefined } : {};
   const accent: CSSProperties = t ? { color: t.accent } : {};
@@ -237,7 +244,7 @@ export default function SlideView({ slide, theme, idle, still, audible }: { slid
     );
   }
 
-  if (slide.kind === "video") return <VideoSlide key={slide.body} src={slide.body} audible={audible} still={still} />;
+  if (slide.kind === "video") return <VideoSlide key={slide.body} src={slide.body} still={still} />;
 
   if (slide.kind === "blank") return <div className="slide idle" style={{ background: "#000" }} />;
 

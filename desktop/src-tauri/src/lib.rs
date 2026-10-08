@@ -80,6 +80,23 @@ struct TranslationInfo {
     name: String,
 }
 
+#[derive(Serialize)]
+struct BookShape {
+    name: String,
+    /// Verses in each chapter.
+    chapters: Vec<usize>,
+}
+
+/// Books with their chapter and verse counts, for the scripture pickers.
+#[tauri::command]
+fn bible_structure(translation: Option<String>) -> Vec<BookShape> {
+    engine()
+        .structure(translation.as_deref())
+        .into_iter()
+        .map(|(name, chapters)| BookShape { name, chapters })
+        .collect()
+}
+
 /// Every translation with its short name, edition and copyright notice.
 #[tauri::command]
 fn list_translations() -> Vec<preso_core::TranslationMeta> {
@@ -321,6 +338,7 @@ pub fn run() {
             verse_at,
             verse_range,
             list_translations,
+            bible_structure,
             update_translation_info,
             remove_translation,
             import_translation,

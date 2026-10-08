@@ -37,6 +37,9 @@ import { cn } from "@/lib/utils";
 import SlideView, { OutputTheme } from "./SlideView";
 import { PerSlide, parsePerSlide } from "./lib/verses";
 import { MediaItem } from "./lib/media";
+import ScripturePicker from "./ScripturePicker";
+import Backgrounds from "./Backgrounds";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -122,6 +125,11 @@ export default function Service(p: Props) {
   const [editSong, setEditSong] = useState<{ id: string | null; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const songSearchRef = useRef<HTMLInputElement>(null);
+  // An item to take live as soon as its slides are ready (double-clicked song).
+  const pendingLive = useRef<string | null>(null);
+  // The item whose background is being chosen.
+  const [bgFor, setBgFor] = useState<string | null>(null);
+  const pendingBg = useRef<AgendaItem["bg"] | null>(null);
 
   const songsById = useMemo(() => new Map(lib.songs.map((s) => [s.id, s])), [lib.songs]);
   const sel = agenda?.items.find((i) => i.id === selId) || null;
@@ -179,6 +187,15 @@ export default function Service(p: Props) {
         return [];
     }
   }
+
+  useEffect(() => {
+    const id = pendingLive.current;
+    if (id && slides[id]) {
+      pendingLive.current = null;
+      void goLive(id, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slides]);
 
   async function goLive(itemId: string, idx: number) {
     if (!agenda) return;
@@ -240,12 +257,13 @@ export default function Service(p: Props) {
 
   // ---------- agenda editing ----------
 
-  function addItem(kind: AgendaKind, extra: Partial<AgendaItem> = {}) {
+  function addItem(kind: AgendaKind, extra: Partial<AgendaItem> = {}): string | undefined {
     if (!agenda) return;
     const it: AgendaItem = { id: newId(), kind, title: extra.title || KIND_NAMES[kind].replace(/ \(.*\)$/, ""), ...extra };
     const at = sel ? agenda.items.findIndex((i) => i.id === sel.id) + 1 : agenda.items.length;
     updateAgenda((a) => ({ ...a, items: [...a.items.slice(0, at), it, ...a.items.slice(at)] }));
     setSelId(it.id);
+    return it.id;
   }
   // Drag and drop: move the dragged item to the drop target's position.
   const dragId = useRef<string | null>(null);
@@ -409,10 +427,11 @@ export default function Service(p: Props) {
 
   // ---------- render ----------
 
-  const thumb = (sl: ItemSlide | null, label?: ReactNode) => (
+  const themeFor = (it?: AgendaItem | null): OutputTheme => (it?.bg ? { ...p.theme, ...it.bg } : p.theme);
+  const thumb = (sl: ItemSlide | null, label?: ReactNode, it?: AgendaItem | null) => (
     <div className="aspect-video w-full overflow-hidden rounded-md border bg-black">
       <div className="relative h-full w-full">
-        <SlideView slide={sl} theme={p.theme} idle={label ?? "End of service"} still />
+        <SlideView slide={sl} theme={themeFor(it)} idle={label ?? "End of service"} still />
       </div>
     </div>
   );
@@ -497,7 +516,7 @@ export default function Service(p: Props) {
                   <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground opacity-0 group-hover:opacity-100" />
                   <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                   <Icon className={cn("size-4 shrink-0", isLive ? "text-live" : "text-muted-foreground")} />
-                  <span className="min-w-0 flex-1 truncate font-medium">{it.title}</span>
+                  <span className="line-clamp-2 min-w-0 flex-1 break-words font-medium" title={it.title}>{it.title}</span>
                   {isLive && <Badge className="bg-live text-live-foreground">LIVE</Badge>}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -551,10 +570,12 @@ export default function Service(p: Props) {
                 <Button onClick={() => void goLive(sel.id, 0)}><Play /> Go live</Button>
               </div>
               {sel.kind === "scripture" && (
+                <ScripturePicker value={sel.reference || ""} translation={sel.translation} onChange={(r) => updateItem(sel.id, { reference: r, title: sel.title === "Scripture reading" || !sel.title || sel.title === sel.reference ? r : sel.title })} />
+              )}
+              {sel.kind === "scripture" && (
                 <div className="flex gap-2">
-                  <Input className="flex-1" placeholder="Reference, e.g. John 3:16-18 or Psalm 23" value={sel.reference || ""} onChange={(e) => updateItem(sel.id, { reference: e.target.value })} />
                   <Select value={sel.perSlide || "__default"} onValueChange={(v) => updateItem(sel.id, { perSlide: v === "__default" ? undefined : v })}>
-                    <SelectTrigger className="w-44" title="Verses per slide for this reading">
+                    <SelectTrigger className="flex-1" title="Verses per slide for this reading">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -566,7 +587,7 @@ export default function Service(p: Props) {
                     </SelectContent>
                   </Select>
                   <Select value={sel.translation || "__live"} onValueChange={(v) => updateItem(sel.id, { translation: v === "__live" ? undefined : v })}>
-                    <SelectTrigger className="w-64" title="Translation for this reading">
+                    <SelectTrigger className="flex-1" title="Translation for this reading">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -606,6 +627,17 @@ export default function Service(p: Props) {
                   </SelectContent>
                 </Select>
               )}
+              <div className="flex items-center gap-2">
+                <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                <Button variant="outline" size="sm" className="h-8 flex-1 justify-start text-xs font-normal" onClick={() => setBgFor(sel.id)}>
+                  {sel.bg ? "Background: " + (sel.bg.title || (sel.bg.bgKind === "video" ? "motion" : "photo")) : "Background: the Look page's (default)"}
+                </Button>
+                {sel.bg && (
+                  <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => updateItem(sel.id, { bg: undefined })}>
+                    Use default
+                  </Button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <AudioLines className="size-4 shrink-0 text-muted-foreground" />
                 <Select
@@ -648,7 +680,7 @@ export default function Service(p: Props) {
                   return (
                     <button key={i} className="group flex flex-col gap-1.5 text-left" onClick={() => void goLive(sel.id, i)}>
                       <div className={cn("rounded-lg p-0.5 ring-2 ring-transparent transition group-hover:ring-primary/60", isLive && "ring-live")}>
-                        {thumb(s)}
+                        {thumb(s, undefined, sel)}
                       </div>
                       <div className="flex items-center gap-1.5 px-0.5 text-xs">
                         <span className="tabular-nums text-muted-foreground">{i + 1}</span>
@@ -666,6 +698,34 @@ export default function Service(p: Props) {
           </>
         )}
       </div>
+
+      <Dialog open={!!bgFor} onOpenChange={(o) => !o && setBgFor(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Background for this item</DialogTitle>
+            <DialogDescription>Shown behind this item's slides while it is live. Other items keep the Look page's background.</DialogDescription>
+          </DialogHeader>
+          {bgFor && (
+            <ScrollArea className="max-h-[65vh] pr-3">
+              <Backgrounds
+                theme={themeFor(agenda.items.find((i) => i.id === bgFor))}
+                setTheme={(t) => {
+                  if (t.bgKind !== "image" && t.bgKind !== "video") return;
+                  // Saved once the picker reports the name (setStatus), in a single update.
+                  pendingBg.current = { bgKind: t.bgKind, image: t.image, video: t.video, videoPoster: t.videoPoster, bgId: t.bgId, bgFile: t.bgFile, overlay: t.overlay };
+                }}
+                setStatus={(m) => {
+                  const bg = pendingBg.current;
+                  if (bg && m.startsWith("Background: ")) {
+                    pendingBg.current = null;
+                    updateItem(bgFor, { bg: { ...bg, title: m.replace(/^Background: /, "").replace(/ by .*$/, "").replace(/\.$/, "") } });
+                  } else p.setStatus(m);
+                }}
+              />
+            </ScrollArea>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Live, next, song library */}
       <div className="flex min-h-0 flex-col gap-3">
@@ -715,7 +775,15 @@ export default function Service(p: Props) {
               <ScrollArea className="min-h-0 flex-1">
                 <div className="flex flex-col p-1 pt-0">
                   {songHits.map((s) => (
-                    <div key={s.id} className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                    <div
+                      key={s.id}
+                      className="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                      title="Double-click to add to the service and go live"
+                      onDoubleClick={() => {
+                        const id = addItem("song", { title: s.title, songId: s.id });
+                        if (id) pendingLive.current = id;
+                      }}
+                    >
                       <Music className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate">{s.title}</span>
                       <Button size="icon" variant="ghost" className="size-7 opacity-0 group-hover:opacity-100" title="Edit lyrics" onClick={() => setEditSong({ id: s.id, text: songToText(s) })}>

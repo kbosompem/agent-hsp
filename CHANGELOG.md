@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Scripture readings have Book, Chapter, From verse and To verse pickers (typing a reference still works). Any service item can have its own background (photo or motion, from the same choices as the Look page) while it is live. Double-click a song to add it and go live; double-click media to play or show it.
 - Media library (Media page) with five folders: General video, Song video (no lyrics), Song audio, Instrumental audio, Instrumental with lyrics. Add files from the computer, or search YouTube in the app and download into a folder (yt-dlp, fetched on first use and kept up to date; HD video when ffmpeg is installed, H.264 preferred). Live streams are left out of results. A notice reminds churches to download only what they have the right to use.
 - Audio while projecting: a player bar at the bottom of the console (play/pause, seek, loop, volume, mute, 4-second fade out, stop) that keeps playing while slides change. Service items: Video (plays full screen on the projector with sound; play/pause/restart on the live screen) and Audio; any item can start background audio (looping by default) or fade it out, e.g. piano under a prayer session's topics and verses.
 - Translation details: every Bible has a short name (NLT), full name, edition and copyright notice. The bundled ones are filled in; imported ones are edited on the Bibles page (Edit), saved with the translation, and can be removed. Slides show the short name after the reference by default ("JOHN 3:16 · NLT"); the Look page switches to full names. Dropdowns show "NLT · New Living Translation".
@@ -70,6 +71,8 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Fixed
 
+- Videos on the projector failed with NotAllowedError: macOS only lets a window play sound after someone clicks in it, and nobody clicks the projector. The console now plays the video's sound and the projector and previews play muted, kept in step every quarter second.
+- Long service item names spilled out of the list; they now wrap to two lines with an ellipsis (the scroll area let rows grow wider than the panel).
 - Importing a JSON Bible failed unless it was in the app's own layout. The importer now reads the common layouts ({"Genesis": {"1": {"1": ..}}}, an array of books with chapters, {"books": [...]} with verse objects, and flat verse records), takes the name from the file name ("Bible_NLT.json" becomes "NLT"), gives each import its own id so a second import no longer replaces the first, and accepts files with missing books (at least the New Testament). `cargo run -p preso-core --example check_bible -- file.json` checks a file.
 - "Verse 95" and other follow-ups only worked after a spoken reference. A verse shown from the search box, a service reading, history or a voice command now sets the open passage too, and pressing Listen keeps it.
 - Upgraded React to 19: the shadcn components pass refs as props, so on React 18 the search boxes could not be focused from code.

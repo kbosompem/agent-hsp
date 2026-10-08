@@ -123,7 +123,12 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
               </p>
             )}
             {shown.map((m) => (
-              <div key={m.id} className="group flex flex-col overflow-hidden rounded-md border bg-background">
+              <div
+                key={m.id}
+                className="group flex cursor-pointer flex-col overflow-hidden rounded-md border bg-background"
+                title="Double-click to play"
+                onDoubleClick={() => (m.kind === "audio" ? onPlayAudio(m) : onShowVideo(m))}
+              >
                 <div className="relative aspect-video bg-black">
                   {m.kind === "video" ? (
                     <video src={convertFileSrc(m.path) + "#t=2"} muted preload="metadata" className="h-full w-full object-cover" />

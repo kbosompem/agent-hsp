@@ -35,7 +35,21 @@ export type AgendaItem = {
   bgAudioId?: string;
   /** Loop that audio (default on for background audio). */
   bgLoop?: boolean;
+  /** Any item: a background (photo or motion) used instead of the Look page's while it is live. */
+  bg?: ItemBackground;
 };
+/** The background fields of a projector theme (SlideView OutputTheme). */
+export type ItemBackground = {
+  bgKind: "image" | "video";
+  image?: string;
+  video?: string;
+  videoPoster?: string;
+  bgId?: string;
+  bgFile?: string;
+  overlay?: number;
+  title?: string;
+};
+
 export type Agenda = { id: string; name: string; date: string; items: AgendaItem[] };
 
 export type Library = { version: 1; songs: Song[]; agendas: Agenda[]; currentAgendaId: string | null };

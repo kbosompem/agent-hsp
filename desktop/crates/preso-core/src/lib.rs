@@ -301,6 +301,19 @@ impl Engine {
         }
     }
 
+    /// Book names and the number of verses in each chapter, for the
+    /// book / chapter / verse pickers.
+    pub fn structure(&self, tr_id: Option<&str>) -> Vec<(String, Vec<usize>)> {
+        let tr = self.tr_index(tr_id);
+        let trs = self.translations.read().unwrap();
+        trs[tr]
+            .books
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (BOOK_NAMES[i].to_string(), b.chapters.iter().map(|c| c.len()).collect()))
+            .collect()
+    }
+
     /// Every translation with its details, for the Bibles page.
     pub fn translation_meta(&self) -> Vec<TranslationMeta> {
         self.translations
