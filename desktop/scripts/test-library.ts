@@ -52,3 +52,9 @@ import { buildServiceFile, mergeServiceFile, parseServiceFile } from "../src/lib
   eq(threw, true, "rejects other JSON");
   console.log(fail ? fail + " failed" : "service files passed");
 }
+{
+  const { themeMedia } = await import("../src/lib/serviceFile");
+  const base: any = { bgKind: "image", gradient: "", image: "", overlay: 0, textColor: "", accent: "", font: "serif" };
+  eq([themeMedia({ ...base, bgFile: "user-abc.jpg" }), themeMedia({ ...base, bgFile: "../library.json" }), themeMedia({ ...base, bgFile: ".hidden" })], ["backgrounds/user-abc.jpg", null, null], "themeMedia only plain names");
+  console.log(fail ? fail + " failed" : "media names passed");
+}

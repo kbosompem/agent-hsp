@@ -21,7 +21,8 @@ export type ServiceFile = {
 /** The app data path of a stock background the theme uses, if any. */
 export function themeMedia(t: OutputTheme): string | null {
   if (t.bgKind !== "image" && t.bgKind !== "video") return null;
-  if (t.bgFile) return "backgrounds/" + t.bgFile;
+  // A plain file name only; Rust (bundle.rs safe_media) enforces the same.
+  if (t.bgFile) return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,119}$/.test(t.bgFile) ? "backgrounds/" + t.bgFile : null;
   if (!t.bgId) return null;
   return "backgrounds/" + t.bgId + (t.bgKind === "video" ? ".mp4" : ".jpg");
 }
