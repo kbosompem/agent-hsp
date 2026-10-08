@@ -23,6 +23,8 @@ export type AgendaItem = {
   songId?: string;
   /** scripture: a reference such as "John 3:16-18". */
   reference?: string;
+  /** scripture: translation id ("kjv", "bsb"); empty uses the Live page's choice. */
+  translation?: string;
   /** text: slides separated by a blank line. */
   body?: string;
 };

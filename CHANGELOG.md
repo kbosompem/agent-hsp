@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Each scripture reading in a service has its own translation picker (default: the Live page's translation), saved with the reading.
 - Console themes from tweakcn are saved under "Your themes" in Settings, named from the theme or by you, shown with colour dots, selectable and removable.
 - My photos and My motion tabs on the Look page: add your own pictures (JPG, PNG, WebP, GIF) and videos (MP4, MOV, M4V, WebM). They are copied into the app data folder, listed in backgrounds/user.json, kept between runs, can be removed, and travel in service bundles. Replaces the one-off "Use my own picture".
 - Export a service two ways from the Service page menu: "for this computer" (.hspservice: the order of service, songs by reference, background by its path) or "bundle for another computer" (.hspbundle: a zip with the songs in full, the projector look and the background file). Import reads either: songs are matched by title, missing ones are added from a bundle, and its look can be applied with one click.

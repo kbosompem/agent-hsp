@@ -887,22 +887,23 @@ export default function App() {
     slideRef.current = s;
   }
 
-  async function scriptureSlides(reference: string): Promise<ItemSlide[]> {
-    const found = await invoke<VerseHit[]>("lookup", { input: reference, translation: trIdRef.current });
+  async function scriptureSlides(reference: string, translation?: string): Promise<ItemSlide[]> {
+    const tr = translation || trIdRef.current;
+    const found = await invoke<VerseHit[]>("lookup", { input: reference, translation: tr });
     const h = found.find((x) => x.reference);
     const r = h?.reference;
     if (!h || !r) return [];
     let hits: VerseHit[] = [];
     if (r.verse != null && r.end_verse != null) {
       hits = await invoke<VerseHit[]>("verse_range", {
-        book: r.book, chapter: r.chapter, from: r.verse, to: r.end_verse, translation: trIdRef.current,
+        book: r.book, chapter: r.chapter, from: r.verse, to: r.end_verse, translation: tr,
       });
     } else if (r.verse != null) {
       hits = [h];
     } else {
       // A whole chapter: one slide per verse.
       for (let v = 1; v <= 200; v++) {
-        const x = await invoke<VerseHit | null>("verse_at", { book: r.book, chapter: r.chapter, verse: v, translation: trIdRef.current });
+        const x = await invoke<VerseHit | null>("verse_at", { book: r.book, chapter: r.chapter, verse: v, translation: tr });
         if (!x) break;
         hits.push(x);
       }
@@ -1548,6 +1549,8 @@ export default function App() {
               setTheme={setOutTheme}
               showSlide={showItemSlide}
               scriptureSlides={scriptureSlides}
+              translations={translations}
+              translation={trId}
               onEnterItem={enterItem}
               registerNav={(n) => {
                 navRef.current = n;

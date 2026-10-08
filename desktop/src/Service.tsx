@@ -54,8 +54,11 @@ type Props = {
   setTheme: (t: OutputTheme) => void;
   /** Put one slide on the projector. */
   showSlide: (s: ItemSlide) => Promise<void>;
-  /** Verse slides for a scripture item ("John 3:16-18"). */
-  scriptureSlides: (reference: string) => Promise<ItemSlide[]>;
+  /** Verse slides for a scripture item ("John 3:16-18") in a translation (default: the Live page's). */
+  scriptureSlides: (reference: string, translation?: string) => Promise<ItemSlide[]>;
+  /** Loaded translations, and the one the Live page uses. */
+  translations: { id: string; name: string }[];
+  translation: string;
   /** Called when the operator goes live on an item (App sets Hold, starts the sermon). */
   onEnterItem: (item: AgendaItem) => void;
   registerNav: (nav: ServiceNav | null) => void;
@@ -137,7 +140,7 @@ export default function Service(p: Props) {
       stop = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agenda, lib.songs]);
+  }, [agenda, lib.songs, p.translation]);
 
   async function itemSlides(it: AgendaItem): Promise<ItemSlide[]> {
     switch (it.kind) {
@@ -146,7 +149,7 @@ export default function Service(p: Props) {
         return s ? songSlides(s) : [];
       }
       case "scripture":
-        return it.reference ? await p.scriptureSlides(it.reference).catch(() => []) : [];
+        return it.reference ? await p.scriptureSlides(it.reference, it.translation || undefined).catch(() => []) : [];
       case "text":
         return textSlides(it);
       case "logo":
@@ -527,7 +530,22 @@ export default function Service(p: Props) {
                 <Button onClick={() => void goLive(sel.id, 0)}><Play /> Go live</Button>
               </div>
               {sel.kind === "scripture" && (
-                <Input placeholder="Reference, e.g. John 3:16-18 or Psalm 23" value={sel.reference || ""} onChange={(e) => updateItem(sel.id, { reference: e.target.value })} />
+                <div className="flex gap-2">
+                  <Input className="flex-1" placeholder="Reference, e.g. John 3:16-18 or Psalm 23" value={sel.reference || ""} onChange={(e) => updateItem(sel.id, { reference: e.target.value })} />
+                  <Select value={sel.translation || "__live"} onValueChange={(v) => updateItem(sel.id, { translation: v === "__live" ? undefined : v })}>
+                    <SelectTrigger className="w-64" title="Translation for this reading">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__live">
+                        Same as Live ({p.translations.find((t) => t.id === p.translation)?.name ?? p.translation})
+                      </SelectItem>
+                      {p.translations.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
               {sel.kind === "text" && (
                 <Textarea rows={5} placeholder="One slide per paragraph. Leave a blank line between slides." value={sel.body || ""} onChange={(e) => updateItem(sel.id, { body: e.target.value })} />
