@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
-  BookOpen, Check, Copy, FolderOpen, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
+  BookOpen, Check, Copy, FolderOpen, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
   MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,7 +20,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { Mode, PRESETS, UiTheme, applyMode, applyTheme, loadTheme, savedMode, savedTheme } from "@/lib/uitheme";
+import {
+  Mode, PRESETS, UiTheme, applyMode, applyTheme, customThemes, loadTheme, removeCustomTheme, saveCustomTheme, savedMode, savedTheme, uniqueName,
+} from "@/lib/uitheme";
 import SlideView, { OutputTheme, Slide } from "./SlideView";
 import Backgrounds from "./Backgrounds";
 import CornerSettings from "./CornerSettings";
@@ -196,6 +198,14 @@ export default function App() {
   const [mode, setMode] = useState<Mode>(savedMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(savedTheme);
   const [themeInput, setThemeInput] = useState("");
+  const [themeName, setThemeName] = useState("");
+  const [myThemes, setMyThemes] = useState<UiTheme[]>(() => {
+    // A theme applied before themes were saved: keep it in the list.
+    const cur = savedTheme();
+    const list = customThemes();
+    if (!PRESETS.some((p) => p.name === cur.name) && !list.some((t) => t.name === cur.name)) return saveCustomTheme(cur).list;
+    return list;
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dgKey, setDgKey] = useState("");
   const [dgKeySaved, setDgKeySaved] = useState(false);
@@ -1985,11 +1995,40 @@ export default function App() {
                   <Label htmlFor="mode">Dark mode</Label>
                   <Switch id="mode" checked={mode === "dark"} onCheckedChange={(c) => setMode(c ? "dark" : "light")} />
                 </div>
+                <div className="text-xs text-muted-foreground">Built in</div>
                 <div className="flex flex-wrap gap-2">
-                  {[...PRESETS, ...(uiTheme && !PRESETS.some((p) => p.name === uiTheme.name) ? [uiTheme] : [])].map((p) => (
+                  {PRESETS.map((p) => (
                     <Button key={p.name} size="sm" variant={uiTheme?.name === p.name ? "default" : "outline"} onClick={() => setUiTheme(p)}>
                       {p.name}
                     </Button>
+                  ))}
+                </div>
+                <div className="text-xs text-muted-foreground">Your themes</div>
+                <div className="flex flex-wrap gap-2">
+                  {myThemes.length === 0 && <span className="text-xs text-muted-foreground">None yet. Themes you add below are kept here.</span>}
+                  {myThemes.map((p) => (
+                    <div key={p.name} className="flex items-center">
+                      <Button
+                        size="sm"
+                        variant={uiTheme?.name === p.name ? "default" : "outline"}
+                        className="rounded-r-none"
+                        onClick={() => setUiTheme(p)}
+                      >
+                        <ThemeDots t={p} /> {p.name}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-l-none border-l-0 px-2"
+                        title={"Remove " + p.name}
+                        onClick={() => {
+                          setMyThemes(removeCustomTheme(p.name));
+                          if (uiTheme?.name === p.name) setUiTheme(PRESETS[0]);
+                        }}
+                      >
+                        <X />
+                      </Button>
+                    </div>
                   ))}
                 </div>
                 <Textarea
@@ -2000,6 +2039,12 @@ export default function App() {
                   className="font-mono text-xs"
                 />
                 <div className="flex items-center gap-2">
+                  <Input
+                    className="h-8 flex-1 text-xs"
+                    placeholder="Name (optional)"
+                    value={themeName}
+                    onChange={(e) => setThemeName(e.target.value)}
+                  />
                   <Button
                     size="sm"
                     variant="secondary"
@@ -2007,14 +2052,19 @@ export default function App() {
                     onClick={() =>
                       void loadTheme(themeInput)
                         .then((t) => {
-                          setUiTheme(t);
+                          const taken = PRESETS.map((p) => p.name);
+                          const wanted = themeName.trim() || (t.name && t.name !== "Custom" ? t.name : uniqueName("Custom", [...taken, ...myThemes.map((m) => m.name)]));
+                          const { theme, list } = saveCustomTheme({ ...t, name: wanted });
+                          setMyThemes(list);
+                          setUiTheme(theme);
                           setThemeInput("");
-                          toast.success("Theme applied: " + t.name);
+                          setThemeName("");
+                          toast.success("Saved and applied: " + theme.name);
                         })
                         .catch((e) => toast.error(String(e.message || e)))
                     }
                   >
-                    <Palette /> Apply theme
+                    <Palette /> Save and apply
                   </Button>
                   <Button size="sm" variant="link" onClick={() => openLink("https://tweakcn.com/editor/theme")}>Open tweakcn</Button>
                 </div>
@@ -2025,6 +2075,20 @@ export default function App() {
         <Toaster position="bottom-right" />
       </div>
     </TooltipProvider>
+  );
+}
+
+/** Three colour dots from a theme, so saved themes are recognisable. */
+function ThemeDots({ t }: { t: UiTheme }) {
+  const v = (k: string) => t.dark[k] || t.light[k];
+  const cols = [v("--primary"), v("--background"), v("--accent")].filter(Boolean) as string[];
+  if (!cols.length) return null;
+  return (
+    <span className="flex -space-x-1">
+      {cols.map((c, i) => (
+        <span key={i} className="size-3 rounded-full border border-black/20" style={{ background: c }} />
+      ))}
+    </span>
   );
 }
 

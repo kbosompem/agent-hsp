@@ -191,6 +191,49 @@ export function savedTheme(): UiTheme {
   return PRESETS[0];
 }
 
+const KEY_SAVED = "hsp-ui-themes";
+
+/** Themes the operator has added (from tweakcn), kept on this computer. */
+export function customThemes(): UiTheme[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(KEY_SAVED) || "[]");
+    return Array.isArray(list) ? list.map(sanitizeTheme) : [];
+  } catch {
+    return [];
+  }
+}
+
+function storeCustom(list: UiTheme[]) {
+  try {
+    localStorage.setItem(KEY_SAVED, JSON.stringify(list));
+  } catch {
+    /* storage full or blocked */
+  }
+}
+
+/** A name not used by a built-in or another saved theme. */
+export function uniqueName(wanted: string, taken: string[]): string {
+  const base = wanted.trim().slice(0, 40) || "Custom";
+  if (!taken.includes(base)) return base;
+  for (let i = 2; ; i++) if (!taken.includes(base + " " + i)) return base + " " + i;
+}
+
+/** Save `t` (replacing a saved theme with the same name). Returns the saved theme and the new list. */
+export function saveCustomTheme(t: UiTheme): { theme: UiTheme; list: UiTheme[] } {
+  const safe = sanitizeTheme(t);
+  const list = customThemes().filter((x) => x.name !== safe.name);
+  if (PRESETS.some((p) => p.name === safe.name)) safe.name = uniqueName(safe.name, [...PRESETS.map((p) => p.name), ...list.map((x) => x.name)]);
+  const next = [...list, safe];
+  storeCustom(next);
+  return { theme: safe, list: next };
+}
+
+export function removeCustomTheme(name: string): UiTheme[] {
+  const next = customThemes().filter((x) => x.name !== name);
+  storeCustom(next);
+  return next;
+}
+
 export type Mode = "dark" | "light";
 
 export function applyMode(m: Mode) {
