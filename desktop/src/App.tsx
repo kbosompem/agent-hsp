@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
-  BookOpen, Check, Copy, FolderOpen, Pencil, Trash2, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
+  BookOpen, Check, Clapperboard, Copy, FolderOpen, Pause, Pencil, Play, RotateCw, Trash2, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
   MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,7 +26,10 @@ import {
 import SlideView, { OutputTheme, Slide } from "./SlideView";
 import Backgrounds from "./Backgrounds";
 import CornerSettings from "./CornerSettings";
-import { invoke } from "@tauri-apps/api/core";
+import AudioPlayer, { AudioControl } from "./AudioPlayer";
+import MediaLibrary from "./MediaLibrary";
+import { MediaFolder, MediaItem } from "./lib/media";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { Embedder } from "./lib/embed";
 import {
@@ -249,7 +252,12 @@ export default function App() {
     invoke<boolean>("has_deepgram_key").then(setDgKeySaved).catch(() => setDgKeySaved(false));
   }, []);
   const [transcriptView, setTranscriptView] = useState<"processed" | "raw">("processed");
-  const [view, setView] = useState<"console" | "service" | "theme" | "downloads">("console");
+  const [view, setView] = useState<"console" | "service" | "media" | "theme" | "downloads">("console");
+  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [mediaFolders, setMediaFolders] = useState<MediaFolder[]>([]);
+  const audioRef = useRef<AudioControl>(null);
+  const mediaRef = useRef<MediaItem[]>([]);
+  mediaRef.current = media;
   const viewRef = useRef(view);
   viewRef.current = view;
   // Songs and agendas (lib/library.ts), saved to library.json in the app data folder.
@@ -893,6 +901,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    invoke<MediaItem[]>("list_media").then(setMedia).catch(() => {});
+    invoke<MediaFolder[]>("media_folders").then(setMediaFolders).catch(() => {});
+  }, []);
+
+  /** Put a library video on the projector (with sound there). */
+  async function showVideo(m: MediaItem) {
+    beforeCover.current = null;
+    seqRef.current = null;
+    const s = await invoke<Slide>("show_slide", { kind: "video", title: m.title, body: convertFileSrc(m.path), sub: "" });
+    setSlide(s);
+    slideRef.current = s;
+    setMicStatus("Video: " + m.title);
+  }
+
+  /** Add a media item to the open service. */
+  function addMediaToService(m: MediaItem) {
+    setLibraryState((l) => {
+      const a = l.agendas.find((x) => x.id === l.currentAgendaId);
+      if (!a) {
+        toast.error("Open or create a service on the Service page first.");
+        return l;
+      }
+      const it: AgendaItem = { id: Math.random().toString(36).slice(2, 10), kind: m.kind === "video" ? "video" : "audio", title: m.title, mediaId: m.id };
+      toast.success("Added “" + m.title + "” to " + a.name + ".");
+      return { ...l, agendas: l.agendas.map((x) => (x.id === a.id ? { ...x, items: [...x.items, it] } : x)) };
+    });
+  }
+
+  useEffect(() => {
     invoke<string>("load_library")
       .then((j) => {
         setLibraryState(parseLibrary(j));
@@ -958,6 +995,17 @@ export default function App() {
 
   // Going live on an agenda item. Only a sermon lets the AI change the screen.
   function enterItem(it: AgendaItem) {
+    // Audio: an audio item plays its track; any item may start (or stop) background audio.
+    const find = (id?: string) => mediaRef.current.find((m) => m.id === id);
+    if (it.kind === "audio") {
+      const m = find(it.mediaId);
+      if (m) audioRef.current?.play(m, { loop: !!it.bgLoop });
+    }
+    if (it.bgAudioId === "__stop") audioRef.current?.fadeOut(3);
+    else if (it.bgAudioId) {
+      const m = find(it.bgAudioId);
+      if (m) audioRef.current?.play(m, { loop: it.bgLoop !== false });
+    }
     if (it.kind === "sermon") {
       setHold(false);
       // Mid-service: continue this service's recording without asking.
@@ -1513,6 +1561,22 @@ export default function App() {
         <div className="relative h-full w-full">{preview}</div>
       </div>
       <Badge className="absolute left-2 top-2 bg-live text-live-foreground">LIVE</Badge>
+      {slide?.kind === "video" && (
+        <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 p-0.5 text-white">
+          {(["play", "pause", "restart"] as const).map((a) => (
+            <Button
+              key={a}
+              size="icon"
+              variant="ghost"
+              className="size-7 text-white hover:bg-white/15 hover:text-white"
+              title={a === "play" ? "Play" : a === "pause" ? "Pause" : "Restart"}
+              onClick={() => void emit("video-control", { action: a })}
+            >
+              {a === "play" ? <Play /> : a === "pause" ? <Pause /> : <RotateCw />}
+            </Button>
+          ))}
+        </div>
+      )}
       <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/50 p-0.5 text-white">
         <Button size="icon" variant="ghost" className="size-7 text-white hover:bg-white/15 hover:text-white" title="Smaller text" onClick={() => bumpText(-0.1)}>
           <Minus />
@@ -1540,6 +1604,7 @@ export default function App() {
             <TabsList>
               <TabsTrigger value="console"><MonitorPlay /> Live</TabsTrigger>
               <TabsTrigger value="service"><ListOrdered /> Service</TabsTrigger>
+              <TabsTrigger value="media"><Clapperboard /> Media</TabsTrigger>
               <TabsTrigger value="theme"><Palette /> Look</TabsTrigger>
               <TabsTrigger value="downloads"><BookOpen /> Bibles</TabsTrigger>
             </TabsList>
@@ -1598,11 +1663,21 @@ export default function App() {
               translations={translations}
               translation={trId}
               perSlide={perSlide}
+              media={media}
               onEnterItem={enterItem}
               registerNav={(n) => {
                 navRef.current = n;
               }}
               setStatus={setMicStatus}
+            />
+          ) : view === "media" ? (
+            <MediaLibrary
+              media={media}
+              setMedia={setMedia}
+              folders={mediaFolders}
+              onPlayAudio={(m) => audioRef.current?.play(m)}
+              onShowVideo={(m) => void showVideo(m)}
+              onAddToService={addMediaToService}
             />
           ) : view === "downloads" ? (
             <ScrollArea className="h-full">
@@ -1952,6 +2027,7 @@ export default function App() {
             </div>
           )}
         </main>
+        <AudioPlayer ref={audioRef} onStatus={setMicStatus} />
 
         <Dialog open={!!editTr} onOpenChange={(o) => !o && setEditTr(null)}>
           <DialogContent className="sm:max-w-lg">

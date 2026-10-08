@@ -5,6 +5,7 @@ pub mod session;
 pub mod deepgram;
 pub mod bundle;
 pub mod backgrounds;
+pub mod media;
 #[cfg(feature = "nemotron")]
 pub mod nemotron;
 
@@ -333,6 +334,14 @@ pub fn run() {
             bundle::import_service,
             bundle::media_path,
             backgrounds::list_user_backgrounds,
+            media::media_folders,
+            media::list_media,
+            media::import_media,
+            media::delete_media,
+            media::rename_media,
+            media::youtube_search,
+            media::youtube_download,
+            media::media_tools,
             backgrounds::import_user_backgrounds,
             backgrounds::delete_user_background,
             deepgram::set_deepgram_key,

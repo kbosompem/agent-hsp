@@ -14,6 +14,8 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 
 6. To move a service to the church laptop: on the Service page, open the ⋯ menu next to the service name and choose "Export bundle for another computer". On the other laptop choose "Import a service…". The bundle carries the songs, the look and the background. "Export for this computer" is a smaller file for backups on the same laptop.
 
+7. Media page: search YouTube or add files into the five folders. On the Service page, add Video or Audio items, or give any item "Background audio" (for example piano under the prayer topics); it keeps playing across items until an item says "fade out and stop" or you press Fade out on the player bar.
+
 ## Sunday, 30 minutes before
 
 1. Connect the projector. Drag the "Agent HSP · Output" window onto it and double-click it to go full screen.

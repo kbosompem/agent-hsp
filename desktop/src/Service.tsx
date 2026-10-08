@@ -21,7 +21,7 @@ import {
 } from "./lib/library";
 import { parseVideoPsalmAgenda, parseVideoPsalmJson } from "./lib/videopsalm";
 import {
-  BookOpen, ChevronDown, ChevronUp, Copy, Download, EyeOff, FolderInput, Package, FileText, GripVertical, Image as ImageIcon, Mic, MoreHorizontal,
+  AudioLines, BookOpen, ChevronDown, ChevronUp, Copy, Download, EyeOff, Film, FolderInput, Package, FileText, GripVertical, Image as ImageIcon, Mic, MoreHorizontal,
   Music, Pencil, Play, Plus, Search, Trash2, Upload,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import SlideView, { OutputTheme } from "./SlideView";
 import { PerSlide, parsePerSlide } from "./lib/verses";
+import { MediaItem } from "./lib/media";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -59,6 +60,8 @@ type Props = {
   scriptureSlides: (reference: string, translation?: string, per?: PerSlide) => Promise<ItemSlide[]>;
   /** Verses per slide from the Look page, the default for readings. */
   perSlide: PerSlide;
+  /** The media library, for video and audio items and background audio. */
+  media: MediaItem[];
   /** Loaded translations, and the one the Live page uses. */
   translations: { id: string; name: string; abbrev?: string }[];
   translation: string;
@@ -77,6 +80,8 @@ const KIND_ICONS: Record<AgendaKind, typeof Music> = {
   logo: ImageIcon,
   blank: EyeOff,
   sermon: Mic,
+  video: Film,
+  audio: AudioLines,
 };
 
 const KIND_NAMES: Record<AgendaKind, string> = {
@@ -86,6 +91,8 @@ const KIND_NAMES: Record<AgendaKind, string> = {
   logo: "Logo",
   blank: "Blackout",
   sermon: "Sermon (AI listens)",
+  video: "Video",
+  audio: "Audio",
 };
 
 export default function Service(p: Props) {
@@ -143,7 +150,7 @@ export default function Service(p: Props) {
       stop = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agenda, lib.songs, p.translation, p.perSlide]);
+  }, [agenda, lib.songs, p.translation, p.perSlide, p.media]);
 
   async function itemSlides(it: AgendaItem): Promise<ItemSlide[]> {
     switch (it.kind) {
@@ -162,6 +169,13 @@ export default function Service(p: Props) {
       case "blank":
         return [{ kind: "blank", title: "", body: "", sub: "", label: "Blackout" }];
       case "sermon":
+        return [];
+      case "video": {
+        const m = p.media.find((x) => x.id === it.mediaId);
+        return m ? [{ kind: "video", title: m.title, body: convertFileSrc(m.path), sub: "", label: "Video" }] : [];
+      }
+      case "audio":
+        // Plays in the audio bar; the screen stays as it is.
         return [];
     }
   }
@@ -513,6 +527,8 @@ export default function Service(p: Props) {
             <Button size="sm" variant="outline" onClick={() => addItem("logo")}><ImageIcon /> Logo</Button>
             <Button size="sm" variant="outline" onClick={() => addItem("blank")}><EyeOff /> Blackout</Button>
             <Button size="sm" variant="outline" onClick={() => songSearchRef.current?.focus()}><Music /> Song</Button>
+            <Button size="sm" variant="outline" onClick={() => addItem("video", { title: "Video" })}><Film /> Video</Button>
+            <Button size="sm" variant="outline" onClick={() => addItem("audio", { title: "Audio", bgLoop: false })}><AudioLines /> Audio</Button>
           </div>
         </div>
       </div>
@@ -574,6 +590,50 @@ export default function Service(p: Props) {
                   </Button>
                 </div>
               )}
+              {(sel.kind === "video" || sel.kind === "audio") && (
+                <Select
+                  value={sel.mediaId || undefined}
+                  onValueChange={(v) => {
+                    const m = p.media.find((x) => x.id === v);
+                    updateItem(sel.id, { mediaId: v, title: m && (sel.title === "Video" || sel.title === "Audio" || !sel.title) ? m.title : sel.title });
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder={"Choose " + (sel.kind === "video" ? "a video" : "audio") + " from the Media page library"} /></SelectTrigger>
+                  <SelectContent>
+                    {p.media.filter((m) => m.kind === sel.kind).map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="flex items-center gap-2">
+                <AudioLines className="size-4 shrink-0 text-muted-foreground" />
+                <Select
+                  value={sel.kind === "audio" ? "__self" : sel.bgAudioId || "__none"}
+                  disabled={sel.kind === "audio"}
+                  onValueChange={(v) => updateItem(sel.id, { bgAudioId: v === "__none" ? undefined : v })}
+                >
+                  <SelectTrigger className="h-8 flex-1 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {sel.kind === "audio" && <SelectItem value="__self">Plays the audio chosen above</SelectItem>}
+                    <SelectItem value="__none">Background audio: keep whatever is playing</SelectItem>
+                    <SelectItem value="__stop">Background audio: fade out and stop</SelectItem>
+                    {p.media.filter((m) => m.kind === "audio").map((m) => (
+                      <SelectItem key={m.id} value={m.id}>Background audio: {m.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {(sel.kind === "audio" || (sel.bgAudioId && sel.bgAudioId !== "__stop")) && (
+                  <label className="flex items-center gap-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={sel.kind === "audio" ? !!sel.bgLoop : sel.bgLoop !== false}
+                      onChange={(e) => updateItem(sel.id, { bgLoop: e.target.checked })}
+                    />
+                    Loop
+                  </label>
+                )}
+              </div>
               {sel.kind === "sermon" && (
                 <p className="text-sm text-muted-foreground">
                   Going live here releases Hold and starts listening, so verses the preacher names go on screen. Every

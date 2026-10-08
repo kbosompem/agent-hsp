@@ -14,7 +14,7 @@ export type Song = {
   keepSlides?: boolean;
 };
 
-export type AgendaKind = "song" | "scripture" | "text" | "logo" | "blank" | "sermon";
+export type AgendaKind = "song" | "scripture" | "text" | "logo" | "blank" | "sermon" | "video" | "audio";
 export type AgendaItem = {
   id: string;
   kind: AgendaKind;
@@ -29,6 +29,12 @@ export type AgendaItem = {
   perSlide?: string;
   /** text: slides separated by a blank line. */
   body?: string;
+  /** video / audio: the media library item (lib/media.ts). */
+  mediaId?: string;
+  /** Any item: audio to start when it goes live ("__stop" fades out what is playing). */
+  bgAudioId?: string;
+  /** Loop that audio (default on for background audio). */
+  bgLoop?: boolean;
 };
 export type Agenda = { id: string; name: string; date: string; items: AgendaItem[] };
 

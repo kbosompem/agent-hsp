@@ -34,7 +34,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPDATA/backgrounds/**"
+          "$APPDATA/backgrounds/**",
+          "$APPDATA/media/**"
         ]
       }
     }

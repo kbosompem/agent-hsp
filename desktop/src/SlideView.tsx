@@ -3,6 +3,7 @@
 // Styles live in slides.css; sizes scale with the box the slide is drawn in.
 
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 export type Slide = { kind: string; title: string; body: string; sub: string };
 
@@ -181,8 +182,44 @@ function bgStyle(t: OutputTheme | null): CSSProperties {
 
 const front: CSSProperties = { position: "relative", zIndex: 1 };
 
-/** `still`: draw a motion background as its poster picture (thumbnails). */
-export default function SlideView({ slide, theme, idle, still }: { slide: Slide | null; theme: OutputTheme | null; idle?: ReactNode; still?: boolean }) {
+/** A video slide (kind "video", body = file URL). Only the projector plays
+ * its sound; console previews are muted. "video-control" events
+ * (play / pause / restart) drive every copy together. */
+function VideoSlide({ src, audible, still }: { src: string; audible?: boolean; still?: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    v.muted = !audible;
+    if (!still) void v.play().catch(() => {});
+    const un = listen<{ action: string }>("video-control", (e) => {
+      if (e.payload.action === "pause") v.pause();
+      else if (e.payload.action === "play") void v.play().catch(() => {});
+      else if (e.payload.action === "restart") {
+        v.currentTime = 0;
+        void v.play().catch(() => {});
+      }
+    });
+    return () => void un.then((f) => f());
+  }, [src, audible, still]);
+  return (
+    <div className="slide idle" style={{ background: "#000" }}>
+      <video
+        ref={ref}
+        src={src + (still ? "#t=2" : "")}
+        playsInline
+        preload={still ? "metadata" : "auto"}
+        disablePictureInPicture
+        controls={false}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
+      />
+    </div>
+  );
+}
+
+/** `still`: draw a motion background as its poster picture (thumbnails).
+ * `audible`: this copy plays video sound (only the projector window). */
+export default function SlideView({ slide, theme, idle, still, audible }: { slide: Slide | null; theme: OutputTheme | null; idle?: ReactNode; still?: boolean; audible?: boolean }) {
   const t = theme;
   const txt: CSSProperties = t ? { color: t.textColor, fontFamily: t.font === "sans" ? "inherit" : undefined } : {};
   const accent: CSSProperties = t ? { color: t.accent } : {};
@@ -195,6 +232,8 @@ export default function SlideView({ slide, theme, idle, still }: { slide: Slide 
       </div>
     );
   }
+
+  if (slide.kind === "video") return <VideoSlide key={slide.body} src={slide.body} audible={audible} still={still} />;
 
   if (slide.kind === "blank") return <div className="slide idle" style={{ background: "#000" }} />;
 

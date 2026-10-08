@@ -28,7 +28,7 @@ export default function Output() {
 
   return (
     <div className="output">
-      <SlideView slide={slide} theme={ot} />
+      <SlideView slide={slide} theme={ot} audible />
     </div>
   );
 }
