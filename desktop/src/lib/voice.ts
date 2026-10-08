@@ -82,6 +82,40 @@ export function hasReferenceWords(normalized: string): boolean {
   return /\d|\b(chapter|chapters|verse|verses)\b/.test(normalized.replace(/\b(next|previous|last) verse\b/g, ""));
 }
 
+// ----------------------------------------------------------- HSP and clearing
+
+/**
+ * The projectionist's wake word. Preachers say "HSP" when the wrong thing went
+ * up; whatever follows is an instruction ("HSP clear the screen", "HSP next").
+ * Returns the words after it ("" for a bare "HSP"), or null when it is not
+ * there. Speech engines write it many ways: "HSP", "H.S.P.", "H S P",
+ * "HSB", "age SP", "aitch S P".
+ */
+export function hspCommand(text: string): string | null {
+  const words = text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim().split(/\s+/).filter(Boolean);
+  // Join runs of single letters: "h s p" -> "hsp".
+  const joined: string[] = [];
+  for (const w of words) {
+    const last = joined[joined.length - 1];
+    if (w.length === 1 && last !== undefined && /^[a-z]{1,2}$/.test(last) && joined.length > 0 && words.length > 1) {
+      joined[joined.length - 1] = last + w;
+    } else {
+      joined.push(w);
+    }
+  }
+  const s = joined.join(" ");
+  const m = s.match(/(?:^|\s)(?:hsp|hsb|hsps|hspee|hs p|h sp|(?:age|aitch|ach|h) ?sp|(?:age|aitch|ach) ?s ?p)(?=\s|$)/);
+  if (!m) return null;
+  return s.slice((m.index ?? 0) + m[0].length).trim();
+}
+
+/** "clear the screen", "clear the board", "take it down", "blank the screen". */
+export function isClearCommand(normalized: string): boolean {
+  return /\b(?:clear|wipe|clean|blank)\s+(?:the\s+|that\s+|this\s+)?(?:screen|board|slide|projector|display)\b|\btake\s+(?:it|that|this|the verse)\s+(?:down|off)\b|\b(?:clear|blank)\s+(?:it|that)\b/.test(
+    normalized
+  );
+}
+
 const SMALL: Record<string, number> = {
   one: 1, two: 2, to: 2, too: 2, three: 3, four: 4, for: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
   ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,

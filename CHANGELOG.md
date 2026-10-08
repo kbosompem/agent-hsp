@@ -10,6 +10,8 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- "HSP" from the pulpit means the wrong thing went up: the last verse comes down, what was on screen before it comes back, and that verse stays off for a minute. It acts on the first partial transcript. Words after it are an instruction ("HSP clear the screen", "HSP next", "HSP John 3:16"). Works under Hold. U on the keyboard does the same undo.
+- "Clear the screen", "clear the board", "take it down": the Logo screen with no text; L brings the slide back.
 - Agent HSP logo (brand/agent-hsp-icon.svg): app icon, console header, page icons and website.
 - Voice commands: "next" on its own, "next chapter", "previous chapter", "jump to chapter 2", "go to chapter 4 verse 5" (also "vs"), and spoken numbers ("go to verse twenty"). "Chapter 4 verse 5" without a book uses the book on screen.
 - Deepgram (online, paid) as a third speech engine in Settings, with the API key stored only on this computer. Streams 16-bit audio to Deepgram's live service and reconnects on its own if the connection drops.

@@ -41,7 +41,7 @@ import {
 } from "./lib/sermon";
 import Service, { ServiceNav } from "./Service";
 import { AgendaItem, ItemSlide, Library, emptyLibrary, parseLibrary } from "./lib/library";
-import { contentWords, findLoaded, hasBookName, hasReferenceWords, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
+import { contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
 type VerseHit = {
   label: string;
@@ -105,6 +105,8 @@ const QUOTE_REPEAT_MS = 180000;
 // it goes up at once. Quote matches are less certain and wait so the operator
 // can skip them.
 const REF_FIRE_DELAY = 0;
+// A verse taken down with "HSP" stays off the screen this long.
+const BLOCK_MS = 60000;
 const FIRE_DELAY = 600;
 
 function isJunk(text: string): boolean {
@@ -251,6 +253,12 @@ export default function App() {
   const beforeCover = useRef<Slide | null>(null);
   // Hold as it was before the blackout or logo, restored when it is lifted.
   const holdBeforeCover = useRef(false);
+  // The last verse put up and what was on screen before it, so "HSP" (or U)
+  // can take a wrong verse down; and verses taken down that way, which are
+  // kept off the screen for a minute so they do not bounce straight back.
+  const undoRef = useRef<{ before: Slide | null; label: string; at: number } | null>(null);
+  const blockedRef = useRef<Record<string, number>>({});
+  const hspSegRef = useRef(-1);
   const lastTrAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
@@ -347,6 +355,7 @@ export default function App() {
   }
 
   async function showVerse(h: VerseHit, trigger?: string) {
+    undoRef.current = { before: slideRef.current, label: h.label, at: Date.now() };
     const ref = h.reference;
     // A single verse inside the range on screen: jump there and keep following.
     const seqr = seqRef.current;
@@ -414,6 +423,72 @@ export default function App() {
     // Verses heard during Hold are stale; never flush them onto the screen.
     if (!on) cardsRef.current = cardsRef.current.filter((c) => c.status !== "pending");
     sync();
+  }
+
+  function dropPending() {
+    cardsRef.current = cardsRef.current.filter((c) => c.status !== "pending");
+    sync();
+  }
+
+  /** "Clear the screen": the Logo screen, with no text. L brings back what was up. */
+  async function clearScreen() {
+    dropPending();
+    seqRef.current = null;
+    const cur = slideRef.current;
+    if (cur && cur.kind !== "blank" && cur.kind !== "logo") {
+      beforeCover.current = cur;
+      holdBeforeCover.current = holdRef.current;
+    }
+    const s = await invoke<Slide>("show_slide", { kind: "logo", title: "", body: "", sub: "" });
+    setSlide(s);
+    slideRef.current = s;
+    setMicStatus("Screen cleared. Press L to bring the slide back.");
+  }
+
+  /** "HSP" / U: the last verse was wrong. Put back what was on screen before it. */
+  async function undoLast() {
+    const u = undoRef.current;
+    dropPending();
+    seqRef.current = null;
+    if (!u || Date.now() - u.at > 120000) {
+      await clearScreen();
+      return;
+    }
+    undoRef.current = null;
+    blockedRef.current[u.label] = Date.now();
+    const b = u.before;
+    if (b && b.kind !== "blank") {
+      const s = await invoke<Slide>("show_slide", { kind: b.kind, title: b.title, body: b.body, sub: b.sub });
+      setSlide(s);
+      slideRef.current = s;
+    } else {
+      const s = await invoke<Slide>("show_slide", { kind: "logo", title: "", body: "", sub: "" });
+      setSlide(s);
+      slideRef.current = s;
+    }
+    setMicStatus("Took down " + u.label + ". It stays off for a minute unless you show it yourself.");
+  }
+
+  /** What to do with the words after "HSP". */
+  async function handleHsp(rest: string, seg: number) {
+    hspSegRef.current = seg;
+    const norm = rest.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+    if (!norm) return void undoLast();
+    if (isClearCommand(norm) || /^(?:clear|blank|off|down|logo)\b/.test(norm)) return void clearScreen();
+    if (/^(?:black ?out|blackout)\b/.test(norm)) return void cover("blank");
+    if (/^(?:wrong|no|not that|undo|back)\b/.test(norm)) return void undoLast();
+    lastCmdAt.current = 0;
+    if (matchCommand(norm)) return;
+    // "HSP, John 3:16": show exactly that, even if it was taken down earlier.
+    const found = await invoke<VerseHit[]>("lookup_live", { input: rest, translation: trIdRef.current, commit: true }).catch(() => []);
+    const hit = found.find((h) => h.reference && h.reference.verse != null);
+    if (hit) {
+      delete blockedRef.current[hit.label];
+      seqRef.current = null;
+      await showVerse(hit, "");
+      return;
+    }
+    void undoLast();
   }
 
   // Blackout ("blank") or logo. Pressing the same key again brings back the
@@ -816,6 +891,8 @@ export default function App() {
     else if (k === "l" || k === "L") void cover("logo");
     else if (k === "Escape") {
       if (slideRef.current?.kind !== "logo") void cover("logo");
+    } else if (k === "u" || k === "U") {
+      void undoLast();
     } else if (k === "h" || k === "H") {
       setHold(!holdRef.current);
       setMicStatus(holdRef.current ? "Hold is on: detected verses wait for you." : "Hold off: verses show as they are heard.");
@@ -971,6 +1048,7 @@ export default function App() {
     for (const h of found) {
       const last = shownRef.current[h.label];
       if (last && now - last < REF_REPEAT_MS) continue;
+      if (blockedRef.current[h.label] && now - blockedRef.current[h.label] < BLOCK_MS) continue;
       if (lastVerse.current && lastVerse.current.label === h.label && slideRef.current?.kind === "verse") continue;
       if (cardsRef.current.some((c) => c.label === h.label && c.status === "pending")) continue;
       shownRef.current[h.label] = now;
@@ -1140,6 +1218,16 @@ export default function App() {
     }
     const cleaned = cleanText(text);
     partialRef.current.text = cleaned;
+    // A bare "HSP" acts on the first partial: speed matters most here.
+    const hsp = hspCommand(cleaned);
+    if (hsp !== null && hspSegRef.current !== seg) {
+      if (hsp === "") {
+        hspSegRef.current = seg;
+        void undoLast();
+      }
+      return;
+    }
+    if (hsp !== null) return;
     followReading(cleaned, seg);
     diagRef.current = "partial " + ms + " ms · " + trimWords(cleaned, 8);
     sync();
@@ -1248,6 +1336,21 @@ export default function App() {
     if (rawRef.current.length > 60) rawRef.current.shift();
     diagRef.current = "native " + ms + " ms · " + trimWords(text, 8);
     if (isJunk(text)) {
+      sync();
+      return;
+    }
+    // "HSP ..." works even under Hold: it is how the pulpit corrects the screen.
+    const hsp = hspCommand(text);
+    if (hsp !== null) {
+      // The bare "HSP" of this sentence already acted on its partial.
+      if (!(hspSegRef.current === seg && hsp === "")) void handleHsp(hsp, seg);
+      sync();
+      return;
+    }
+    // "Clear the screen" / "clear the board" / "take it down".
+    const normT = text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+    if (isClearCommand(normT)) {
+      void clearScreen();
       sync();
       return;
     }

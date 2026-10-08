@@ -29,8 +29,11 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 | L or Esc | Logo screen. Press L again to bring the slide back |
 | H | Hold: the AI cannot change the screen; detected verses wait as cards |
 | Enter | Show the oldest waiting card |
+| U | Undo: take down the last verse and put back what was there |
 
 - Voice commands the preacher can use: "next" or "next verse", "previous verse", "next chapter", "previous chapter", "jump to chapter 2", "go to chapter 4 verse 5", "go to verse 20", "verse 95" (in the chapter on screen), "show it again", "read it in the Berean". They do nothing while Hold is on.
+- **"HSP"** from the pulpit means "that's wrong": the last verse comes down at once and the previous slide comes back. Anything after "HSP" is an instruction: "HSP clear the screen", "HSP next", "HSP John 3:16". This works even under Hold.
+- "Clear the screen" or "clear the board" shows the Logo screen with no text. Press L to bring the slide back.
 - Songs, readings and announcements: only you change the screen. The AI is held.
 - Sermon: going live on the Sermon item turns Hold off and starts listening. Verses the preacher names go up on their own. Press H if you want to approve each one.
 - A wrong verse: press B, or just let the next verse replace it. "Turn to Mark 2" alone does not change the screen; "Mark 2 verse 5" does.
