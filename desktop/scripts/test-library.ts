@@ -30,7 +30,7 @@ eq(parseVideoPsalmJson('{Text:"Book",Songs:[{Verses:[{Text:"a"}],Text:"S1"},{Ver
 console.log(fail ? fail + " failed" : "videopsalm passed");
 
 // Service files: export for this computer vs bundle, and merging on import.
-import { buildServiceFile, mergeServiceFile, parseServiceFile } from "../src/lib/serviceFile";
+import { buildServiceFile, mergeServiceFile, parseServiceFile, themeMedia } from "../src/lib/serviceFile";
 {
   const lib0 = { version: 1 as const, songs: [{ id: "s1", title: "Way Maker", sections: [{ tag: "V1", text: "a" }], order: [] }, { id: "s2", title: "Amazing Grace", sections: [{ tag: "V1", text: "b" }], order: [] }], agendas: [] as any[], currentAgendaId: null };
   const agenda = { id: "a1", name: "Sunday", date: "2026-10-11", items: [{ id: "i1", kind: "song" as const, title: "Way Maker", songId: "s1" }, { id: "i2", kind: "scripture" as const, title: "Reading", reference: "John 3:16" }] };
@@ -53,7 +53,6 @@ import { buildServiceFile, mergeServiceFile, parseServiceFile } from "../src/lib
   console.log(fail ? fail + " failed" : "service files passed");
 }
 {
-  const { themeMedia } = await import("../src/lib/serviceFile");
   const base: any = { bgKind: "image", gradient: "", image: "", overlay: 0, textColor: "", accent: "", font: "serif" };
   eq([themeMedia({ ...base, bgFile: "user-abc.jpg" }), themeMedia({ ...base, bgFile: "../library.json" }), themeMedia({ ...base, bgFile: ".hidden" })], ["backgrounds/user-abc.jpg", null, null], "themeMedia only plain names");
   console.log(fail ? fail + " failed" : "media names passed");
