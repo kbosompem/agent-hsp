@@ -3,7 +3,7 @@
 // Styles live in slides.css; sizes scale with the box the slide is drawn in.
 
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 
 export type Slide = { kind: string; title: string; body: string; sub: string };
 
@@ -191,7 +191,11 @@ function VideoSlide({ src, audible, still }: { src: string; audible?: boolean; s
     const v = ref.current;
     if (!v) return;
     v.muted = !audible;
-    if (!still) void v.play().catch(() => {});
+    if (!still)
+      void v.play().catch((e) => {
+        // The projector copy failing to start must not be silent.
+        if (audible) void emit("listen-status", "The projector could not start the video (" + String(e?.name || e) + "). Press Play on the live screen.");
+      });
     const un = listen<{ action: string }>("video-control", (e) => {
       if (e.payload.action === "pause") v.pause();
       else if (e.payload.action === "play") void v.play().catch(() => {});

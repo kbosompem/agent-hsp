@@ -52,6 +52,8 @@ pub struct MediaItem {
 }
 
 static INDEX_LOCK: Mutex<()> = Mutex::new(());
+/// One yt-dlp install at a time; a second search waits for the first.
+static INSTALL_LOCK: Mutex<()> = Mutex::new(());
 
 fn media_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let d = app.path().app_data_dir().map_err(|e| e.to_string())?.join("media");
@@ -204,8 +206,13 @@ fn ytdlp_asset() -> &'static str {
 /// Our copy of yt-dlp, downloaded from its GitHub releases the first time,
 /// and updated with `-U` at most once a day.
 fn ytdlp(app: &AppHandle) -> Result<PathBuf, String> {
+    let _install = INSTALL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tools_dir(app)?;
     let exe = dir.join(if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" });
+    // A copy that does not run (an interrupted download) is replaced.
+    if exe.exists() && !Command::new(&exe).arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().map_or(false, |s| s.success()) {
+        let _ = std::fs::remove_file(&exe);
+    }
     if !exe.exists() {
         let _ = app.emit("media-progress", serde_json::json!({ "id": "", "status": "Getting the YouTube downloader (yt-dlp)…" }));
         let url = format!("https://github.com/yt-dlp/yt-dlp/releases/latest/download/{}", ytdlp_asset());

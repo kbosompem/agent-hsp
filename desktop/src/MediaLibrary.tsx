@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Download, Film, Loader2, Music, Pencil, Play, Plus, Search, Trash2, Upload, Clapperboard } from "lucide-react";
 import { toast } from "sonner";
@@ -24,39 +23,22 @@ type Props = {
   onPlayAudio: (m: MediaItem) => void;
   onShowVideo: (m: MediaItem) => void;
   onAddToService: (m: MediaItem) => void;
+  /** Downloads in progress (kept by App so they survive leaving this page). */
+  progress: Record<string, number>;
+  setProgress: React.Dispatch<React.SetStateAction<Record<string, number>>>;
 };
 
-export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, onShowVideo, onAddToService }: Props) {
+export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, onShowVideo, onAddToService, progress, setProgress }: Props) {
   const [folder, setFolder] = useState<string>("all");
   const [q, setQ] = useState("");
   const [yt, setYt] = useState<YtResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [target, setTarget] = useState<Record<string, string>>({});
-  const [progress, setProgress] = useState<Record<string, number>>({});
   const [ffmpeg, setFfmpeg] = useState(true);
 
   useEffect(() => {
     invoke<{ ffmpeg: boolean }>("media_tools").then((t) => setFfmpeg(t.ffmpeg)).catch(() => {});
-    const subs = [
-      listen<{ id: string; percent?: number; status?: string }>("media-progress", (e) => {
-        if (e.payload.id && e.payload.percent != null) setProgress((p) => ({ ...p, [e.payload.id]: e.payload.percent! }));
-        if (e.payload.status) toast.message(e.payload.status);
-      }),
-      listen<{ id: string; ok: boolean; error?: string }>("media-done", (e) => {
-        setProgress((p) => {
-          const n = { ...p };
-          delete n[e.payload.id];
-          return n;
-        });
-        if (e.payload.ok) {
-          toast.success("Downloaded to the library.");
-          void invoke<MediaItem[]>("list_media").then(setMedia);
-        } else {
-          toast.error("Download failed: " + (e.payload.error || "unknown error"));
-        }
-      }),
-    ];
-    return () => subs.forEach((u) => u.then((f) => f()));
+    void invoke<MediaItem[]>("list_media").then(setMedia).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

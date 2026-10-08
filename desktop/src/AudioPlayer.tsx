@@ -72,7 +72,14 @@ const AudioPlayer = forwardRef<AudioControl, { onStatus?: (s: string) => void }>
     play(next, opts) {
       const a = el.current;
       if (!a) return;
-      if (itemRef.current?.id === next.id && !a.paused) return;
+      if (itemRef.current?.id === next.id && !a.paused) {
+        // Already playing: just cancel a fade-out in progress and restore the volume.
+        if (fade.current != null) {
+          clearFade();
+          a.volume = muted ? 0 : volume;
+        }
+        return;
+      }
       clearFade();
       setItem(next);
       setLoop(!!opts?.loop);

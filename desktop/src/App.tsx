@@ -256,6 +256,8 @@ export default function App() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [mediaFolders, setMediaFolders] = useState<MediaFolder[]>([]);
   const audioRef = useRef<AudioControl>(null);
+  // YouTube downloads in progress: video id -> percent.
+  const [ytProgress, setYtProgress] = useState<Record<string, number>>({});
   const mediaRef = useRef<MediaItem[]>([]);
   mediaRef.current = media;
   const viewRef = useRef(view);
@@ -903,6 +905,27 @@ export default function App() {
   useEffect(() => {
     invoke<MediaItem[]>("list_media").then(setMedia).catch(() => {});
     invoke<MediaFolder[]>("media_folders").then(setMediaFolders).catch(() => {});
+    // Downloads finish on whatever page you are on.
+    const subs = [
+      listen<{ id: string; percent?: number; status?: string }>("media-progress", (e) => {
+        if (e.payload.id && e.payload.percent != null) setYtProgress((p) => ({ ...p, [e.payload.id]: e.payload.percent! }));
+        if (e.payload.status) toast.message(e.payload.status);
+      }),
+      listen<{ id: string; ok: boolean; error?: string }>("media-done", (e) => {
+        setYtProgress((p) => {
+          const n = { ...p };
+          delete n[e.payload.id];
+          return n;
+        });
+        if (e.payload.ok) {
+          toast.success("Downloaded to the media library.");
+          void invoke<MediaItem[]>("list_media").then(setMedia);
+        } else {
+          toast.error("Download failed: " + (e.payload.error || "unknown error"));
+        }
+      }),
+    ];
+    return () => subs.forEach((u) => u.then((f) => f()));
   }, []);
 
   /** Put a library video on the projector (with sound there). */
@@ -1001,6 +1024,8 @@ export default function App() {
       const m = find(it.mediaId);
       if (m) audioRef.current?.play(m, { loop: !!it.bgLoop });
     }
+    // A video has its own sound: fade background audio unless the item chose some.
+    if (it.kind === "video" && !it.bgAudioId) audioRef.current?.fadeOut(2);
     if (it.bgAudioId === "__stop") audioRef.current?.fadeOut(3);
     else if (it.bgAudioId) {
       const m = find(it.bgAudioId);
@@ -1678,6 +1703,8 @@ export default function App() {
               onPlayAudio={(m) => audioRef.current?.play(m)}
               onShowVideo={(m) => void showVideo(m)}
               onAddToService={addMediaToService}
+              progress={ytProgress}
+              setProgress={setYtProgress}
             />
           ) : view === "downloads" ? (
             <ScrollArea className="h-full">
