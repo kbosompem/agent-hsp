@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Agent HSP logo (brand/agent-hsp-icon.svg): app icon, console header, page icons and website.
 - Voice commands: "next" on its own, "next chapter", "previous chapter", "jump to chapter 2", "go to chapter 4 verse 5" (also "vs"), and spoken numbers ("go to verse twenty"). "Chapter 4 verse 5" without a book uses the book on screen.
 - Deepgram (online, paid) as a third speech engine in Settings, with the API key stored only on this computer. Streams 16-bit audio to Deepgram's live service and reconnects on its own if the connection drops.
 - The Look page is an accordion (background, free photos and motion, text and dimming, church name and corner logos), with Photos and Motion tabs and video preview pictures.

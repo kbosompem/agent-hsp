@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#1c2a4a"/>
+      <stop offset="0.55" stop-color="#0f1729"/>
+      <stop offset="1" stop-color="#070b14"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.68" cy="0.5" r="0.45">
+      <stop offset="0" stop-color="#f3c969" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#f3c969" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffe7a3" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#e9b949" stop-opacity="0.18"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe29a"/>
+      <stop offset="1" stop-color="#d9a53a"/>
+    </linearGradient>
+    <clipPath id="sq"><rect x="64" y="64" width="896" height="896" rx="200"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq)">
+    <rect x="64" y="64" width="896" height="896" fill="url(#bg)"/>
+    <rect x="64" y="64" width="896" height="896" fill="url(#glow)"/>
+    <!-- speed lines -->
+    <g stroke="#f0c45c" stroke-linecap="round" fill="none">
+      <line x1="196" y1="420" x2="290" y2="420" stroke-width="28" opacity="0.5"/>
+      <line x1="150" y1="512" x2="296" y2="512" stroke-width="32" opacity="0.95"/>
+      <line x1="196" y1="604" x2="290" y2="604" stroke-width="28" opacity="0.5"/>
+    </g>
+    <!-- beam from the lens to the screen -->
+    <path d="M362 512 L752 280 L752 744 Z" fill="url(#beam)"/>
+    <!-- lens -->
+    <circle cx="362" cy="512" r="60" fill="url(#gold)"/>
+    <circle cx="362" cy="512" r="26" fill="#0f1729"/>
+    <!-- screen -->
+    <rect x="752" y="252" width="58" height="520" rx="29" fill="url(#gold)"/>
+    <!-- cross carried by the light -->
+    <g fill="#ffffff">
+      <rect x="610" y="404" width="42" height="216" rx="12"/>
+      <rect x="560" y="454" width="142" height="42" rx="12"/>
+    </g>
+  </g>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="4"/>
+</svg>

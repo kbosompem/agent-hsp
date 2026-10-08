@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
   BookOpen, Copy, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
-  MonitorPlay, Palette, Plus, Radio, RotateCcw, Search, Settings2, Square, Upload,
+  MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -1330,9 +1330,7 @@ export default function App() {
       <div className="flex h-full flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-4">
           <div className="flex items-center gap-2 pr-2">
-            <div className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground">
-              <Radio className="size-4" />
-            </div>
+            <img src="/logo.svg" alt="" className="size-9" />
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-wide">Agent HSP</div>
               <div className="text-[11px] text-muted-foreground">High Speed Projection</div>
