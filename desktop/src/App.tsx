@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
-  BookOpen, Copy, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
+  BookOpen, Check, Copy, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
   MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -164,7 +164,7 @@ export default function App() {
   const [hits, setHits] = useState<VerseHit[]>([]);
   const [slide, setSlide] = useState<Slide | null>(null);
   const [listening, setListening] = useState(false);
-  const [modelStatus, setModelStatus] = useState("native whisper.cpp · model loaded");
+  const [modelStatus, setModelStatus] = useState("");
   const [micStatus, setMicStatus] = useState("");
   const [micLevelPct, setMicLevelPct] = useState(0);
   // Transcription health (issue 2): lag behind live audio, last whisper error,
@@ -189,6 +189,7 @@ export default function App() {
     } catch {
       /* ignore */
     }
+    setModelStatus("");
   }, [model]);
   const [mode, setMode] = useState<Mode>(savedMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(savedTheme);
@@ -196,6 +197,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dgKey, setDgKey] = useState("");
   const [dgKeySaved, setDgKeySaved] = useState(false);
+  const [dgReplacing, setDgReplacing] = useState(false);
   useEffect(() => {
     invoke<boolean>("has_deepgram_key").then(setDgKeySaved).catch(() => setDgKeySaved(false));
   }, []);
@@ -1726,46 +1728,80 @@ export default function App() {
                   <Select value={model} onValueChange={setModel}>
                     <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="tiny.en">Whisper tiny.en · 75 MB · fastest</SelectItem>
-                      <SelectItem value="base.en">Whisper base.en · 142 MB · balanced</SelectItem>
-                      <SelectItem value="small.en">Whisper small.en · 466 MB · most accurate</SelectItem>
-                      <SelectItem value="nemotron-160">Nemotron · 475 MB download · fastest verses</SelectItem>
-                      <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>
-                      <SelectItem value="deepgram">Deepgram · online, paid, needs internet</SelectItem>
+                      <SelectGroup>
+                        <SelectLabel>Best · verses in about a second</SelectLabel>
+                        <SelectItem value="nemotron-160">Nemotron · on this computer, free, offline</SelectItem>
+                        <SelectItem value="deepgram">Deepgram · online, paid, needs good internet</SelectItem>
+                      </SelectGroup>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel>Better · 2 to 3 seconds</SelectLabel>
+                        <SelectItem value="small.en">Whisper small · most accurate Whisper</SelectItem>
+                        <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>
+                      </SelectGroup>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel>Good · older or slower computers</SelectLabel>
+                        <SelectItem value="base.en">Whisper base · balanced</SelectItem>
+                        <SelectItem value="tiny.en">Whisper tiny · lightest</SelectItem>
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                   <Button variant="secondary" onClick={loadModel}><Download /> Load</Button>
                 </div>
-                <p className="text-xs text-muted-foreground">{modelStatus} · quote matching: {quoteStatus}</p>
+                <p className="text-xs text-muted-foreground">
+                  {modelStatus || (model === "deepgram" ? "Online: nothing to download." : "Press Load once to download or check the model.")} · quote matching: {quoteStatus}
+                </p>
                 {model === "deepgram" && (
                   <div className="flex flex-col gap-1.5">
-                    <div className="flex gap-2">
-                      <Input
-                        type="password"
-                        autoComplete="off"
-                        placeholder={dgKeySaved ? "Key saved · paste a new one to replace it" : "Deepgram API key"}
-                        value={dgKey}
-                        onChange={(e) => setDgKey(e.target.value)}
-                      />
-                      <Button
-                        variant="secondary"
-                        disabled={!dgKey.trim()}
-                        onClick={() =>
-                          void invoke("set_deepgram_key", { key: dgKey })
-                            .then(() => {
-                              setDgKey("");
-                              setDgKeySaved(true);
-                              toast.success("Deepgram key saved on this computer.");
+                    {dgKeySaved && !dgReplacing ? (
+                      <div className="flex items-center gap-2 rounded-md border border-live/40 bg-live/10 px-3 py-2 text-sm">
+                        <Check className="size-4 text-live" />
+                        <span className="flex-1">Deepgram key saved on this computer. Nothing more to do.</span>
+                        <Button size="sm" variant="ghost" onClick={() => setDgReplacing(true)}>Replace</Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            void invoke("set_deepgram_key", { key: "" }).then(() => {
+                              setDgKeySaved(false);
+                              toast.success("Deepgram key removed.");
                             })
-                            .catch((e) => toast.error(String(e)))
-                        }
-                      >
-                        Save key
-                      </Button>
-                    </div>
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Input
+                          type="password"
+                          autoComplete="off"
+                          placeholder="Paste your Deepgram API key"
+                          value={dgKey}
+                          onChange={(e) => setDgKey(e.target.value)}
+                        />
+                        <Button
+                          variant="secondary"
+                          disabled={!dgKey.trim()}
+                          onClick={() =>
+                            void invoke("set_deepgram_key", { key: dgKey })
+                              .then(() => {
+                                setDgKey("");
+                                setDgKeySaved(true);
+                                setDgReplacing(false);
+                                toast.success("Deepgram key saved on this computer.");
+                              })
+                              .catch((e) => toast.error(String(e)))
+                          }
+                        >
+                          Save key
+                        </Button>
+                        {dgReplacing && <Button variant="ghost" onClick={() => setDgReplacing(false)}>Cancel</Button>}
+                      </div>
+                    )}
                     <p className="text-xs text-muted-foreground">
-                      Sermon audio is sent to Deepgram while listening. About $0.50 per hour of listening. The key is stored
-                      only on this computer.
+                      Sermon audio is sent to Deepgram while listening. About $0.50 per hour of listening.
                     </p>
                   </div>
                 )}
