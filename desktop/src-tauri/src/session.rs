@@ -271,7 +271,7 @@ mod tests {
 
         // Continue: audio appends, times carry on after the first second.
         let again = start(&root, "ignored", 50_000, Some(&dir)).unwrap();
-        assert_eq!(again, dir);
+        assert_eq!(again, std::fs::canonicalize(&dir).unwrap());
         audio(&vec![0.25; 16000]);
         transcript(50_000 + 16000, "Romans 8 28");
         stop(None);
