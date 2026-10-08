@@ -2,8 +2,11 @@
 // session folder; Stop finishes it:
 //
 //   <app data>/sessions/<YYYY-MM-DD_HH-MM local time>/
-//     audio.wav         16-bit mono 16 kHz; header rewritten every few seconds,
-//                       so a crash loses at most that much
+//     audio.m4a         the recording, AAC 48 kbps (about 21 MB an hour). It is
+//                       recorded as audio.wav (16-bit mono 16 kHz, header
+//                       rewritten every few seconds, so a crash loses at most
+//                       that much) and compressed at Stop on macOS with the
+//                       built-in afconvert; elsewhere audio.wav is kept
 //     transcript.txt    the raw transcript, "[mm:ss] text" per line (at Stop)
 //     summary.md        title, outline, notes and verses shown (from the
 //                       console, at Stop)
@@ -42,6 +45,9 @@ struct Session {
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+/// Held while a stopped session's audio is being compressed, so continuing it
+/// waits instead of appending to a WAV that is about to be replaced.
+static COMPRESSING: Mutex<()> = Mutex::new(());
 
 /// A folder name from the console's local time, e.g. "2026-10-11_10-02".
 /// Anything but digits, letters, '-' and '_' is dropped.
@@ -62,8 +68,9 @@ pub fn session_child(root: &Path, dir: &Path) -> Option<PathBuf> {
 /// continue `continue_dir`. Stops any session already running.
 pub fn start(root: &Path, name: &str, start_sample: u64, continue_dir: Option<&Path>) -> Result<PathBuf, String> {
     stop(None);
+    let _wait = COMPRESSING.lock().unwrap_or_else(|e| e.into_inner());
     let dir = match continue_dir {
-        Some(d) if session_child(root, d).map_or(false, |p| p.join("audio.wav").exists()) => session_child(root, d).unwrap(),
+        Some(d) if session_child(root, d).map_or(false, |p| has_audio(&p)) => session_child(root, d).unwrap(),
         _ => {
             let base = safe_name(name);
             let mut dir = root.join(&base);
@@ -77,6 +84,10 @@ pub fn start(root: &Path, name: &str, start_sample: u64, continue_dir: Option<&P
     };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let wav_path = dir.join("audio.wav");
+    // Continuing a compressed session: back to WAV so new audio can follow it.
+    if !wav_path.exists() && dir.join("audio.m4a").exists() {
+        decompress(&dir)?;
+    }
     let (mut wav, mut samples) = if wav_path.exists() {
         let mut f = OpenOptions::new().read(true).write(true).open(&wav_path).map_err(|e| e.to_string())?;
         let len = f.metadata().map_err(|e| e.to_string())?.len();
@@ -117,12 +128,18 @@ pub fn start(root: &Path, name: &str, start_sample: u64, continue_dir: Option<&P
                 }
                 Ok(Msg::Stop(summary, done)) => {
                     let _ = fix_header(&mut wav, samples);
+                    drop(wav);
                     drop(transcript.take());
                     let _ = write_transcript_txt(&d);
                     if let Some(md) = summary {
                         let _ = std::fs::write(d.join("summary.md"), md);
                     }
+                    let audio_s = samples as f64 / TARGET_SR as f64;
+                    let _ = std::fs::write(d.join("session.json"), json!({ "audio_s": audio_s }).to_string());
+                    let _guard = COMPRESSING.lock().unwrap_or_else(|e| e.into_inner());
                     let _ = done.send(());
+                    // Compress after replying, so Stop is not held up.
+                    let _ = compress(&d);
                     return;
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -181,6 +198,70 @@ pub fn slide(kind: &str, title: &str, body: &str, sub: &str) {
     }
 }
 
+fn has_audio(dir: &Path) -> bool {
+    dir.join("audio.wav").exists() || dir.join("audio.m4a").exists()
+}
+
+/// audio.wav -> audio.m4a (AAC, 48 kbps) with macOS's afconvert, then delete
+/// the WAV. Keeps the WAV if anything fails, and on other systems.
+pub fn compress(dir: &Path) -> Result<(), String> {
+    if !cfg!(target_os = "macos") {
+        return Ok(());
+    }
+    let wav = dir.join("audio.wav");
+    let tmp = dir.join("audio.part.m4a");
+    let ok = std::process::Command::new("/usr/bin/afconvert")
+        .args(["-f", "m4af", "-d", "aac", "-b", "48000"])
+        .arg(&wav)
+        .arg(&tmp)
+        .status()
+        .map_err(|e| e.to_string())?
+        .success();
+    if !ok || std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) < 1000 {
+        let _ = std::fs::remove_file(&tmp);
+        return Err("afconvert failed; keeping audio.wav".into());
+    }
+    std::fs::rename(&tmp, dir.join("audio.m4a")).map_err(|e| e.to_string())?;
+    std::fs::remove_file(&wav).map_err(|e| e.to_string())
+}
+
+/// audio.m4a -> audio.wav (16 kHz mono 16-bit), to continue a session.
+fn decompress(dir: &Path) -> Result<(), String> {
+    let m4a = dir.join("audio.m4a");
+    let wav = dir.join("audio.wav");
+    let ok = std::process::Command::new("/usr/bin/afconvert")
+        .args(["-f", "WAVE", "-d", "LEI16@16000", "-c", "1"])
+        .arg(&m4a)
+        .arg(&wav)
+        .status()
+        .map_err(|e| e.to_string())?
+        .success();
+    if !ok {
+        let _ = std::fs::remove_file(&wav);
+        return Err("Could not reopen the recording to continue it.".into());
+    }
+    // afconvert may write extra chunks; rewrite as a plain 44-byte header WAV.
+    let bytes = std::fs::read(&wav).map_err(|e| e.to_string())?;
+    let data = find_data_chunk(&bytes).ok_or("unreadable recording")?;
+    let mut f = File::create(&wav).map_err(|e| e.to_string())?;
+    write_header(&mut f, (data.len() / 2) as u32).map_err(|e| e.to_string())?;
+    f.write_all(data).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&m4a);
+    Ok(())
+}
+
+fn find_data_chunk(b: &[u8]) -> Option<&[u8]> {
+    let mut i = 12;
+    while i + 8 <= b.len() {
+        let n = u32::from_le_bytes([b[i + 4], b[i + 5], b[i + 6], b[i + 7]]) as usize;
+        if &b[i..i + 4] == b"data" {
+            return Some(&b[i + 8..(i + 8 + n).min(b.len())]);
+        }
+        i += 8 + n + (n & 1);
+    }
+    None
+}
+
 /// transcript.txt from transcript.jsonl: "[mm:ss] text", one line each.
 fn write_transcript_txt(dir: &Path) -> std::io::Result<()> {
     let mut raw = String::new();
@@ -234,7 +315,7 @@ pub fn latest(root: &Path) -> Option<(PathBuf, String, u64, f64)> {
     let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
     for e in std::fs::read_dir(root).ok()?.flatten() {
         let p = e.path();
-        let wav = p.join("audio.wav");
+        let wav = if p.join("audio.wav").exists() { p.join("audio.wav") } else { p.join("audio.m4a") };
         if let Ok(m) = std::fs::metadata(&wav).and_then(|m| m.modified()) {
             if best.as_ref().map_or(true, |(t, _)| m > *t) {
                 best = Some((m, p));
@@ -243,8 +324,14 @@ pub fn latest(root: &Path) -> Option<(PathBuf, String, u64, f64)> {
     }
     let (m, p) = best?;
     let age = m.elapsed().map(|d| d.as_secs()).unwrap_or(0);
-    let len = std::fs::metadata(p.join("audio.wav")).map(|m| m.len()).unwrap_or(44);
-    let secs = len.saturating_sub(44) as f64 / 2.0 / TARGET_SR as f64;
+    let secs = std::fs::read_to_string(p.join("session.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v["audio_s"].as_f64())
+        .unwrap_or_else(|| {
+            let len = std::fs::metadata(p.join("audio.wav")).map(|m| m.len()).unwrap_or(44);
+            len.saturating_sub(44) as f64 / 2.0 / TARGET_SR as f64
+        });
     let name = p.file_name()?.to_string_lossy().to_string();
     Some((p, name, age, secs))
 }
@@ -263,9 +350,16 @@ mod tests {
         transcript(1000 + 8000, "John 3 16");
         slide("verse", "John 3:16", "For God so loved", "KJV");
         assert_eq!(stop(Some("# Summary\n".into())).unwrap(), dir);
-        let wav = std::fs::read(dir.join("audio.wav")).unwrap();
-        assert_eq!(&wav[0..4], b"RIFF");
-        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 32000);
+        // Compression runs after Stop returns; wait for it.
+        drop(COMPRESSING.lock().unwrap());
+        std::thread::sleep(Duration::from_millis(50));
+        drop(COMPRESSING.lock().unwrap());
+        if cfg!(target_os = "macos") {
+            assert!(dir.join("audio.m4a").exists() && !dir.join("audio.wav").exists());
+        } else {
+            let wav = std::fs::read(dir.join("audio.wav")).unwrap();
+            assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 32000);
+        }
         assert!(std::fs::read_to_string(dir.join("transcript.txt")).unwrap().contains("[00:00:00] John 3 16"));
         assert_eq!(std::fs::read_to_string(dir.join("summary.md")).unwrap(), "# Summary\n");
 
@@ -275,9 +369,11 @@ mod tests {
         audio(&vec![0.25; 16000]);
         transcript(50_000 + 16000, "Romans 8 28");
         stop(None);
-        let wav = std::fs::read(dir.join("audio.wav")).unwrap();
-        assert_eq!(wav.len(), 44 + 64000);
-        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 64000);
+        std::thread::sleep(Duration::from_millis(50));
+        drop(COMPRESSING.lock().unwrap());
+        // About two seconds of audio in all (AAC adds a few ms of padding).
+        let (_, _, _, secs) = latest(&root).unwrap();
+        assert!((secs - 2.0).abs() < 0.2, "{}", secs);
         let txt = std::fs::read_to_string(dir.join("transcript.txt")).unwrap();
         assert!(txt.contains("[00:00:02] Romans 8 28"), "{}", txt);
 

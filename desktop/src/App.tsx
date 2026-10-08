@@ -713,7 +713,7 @@ export default function App() {
       st.notes.forEach((n) => lines.push("- " + n));
       lines.push("");
     }
-    lines.push("Files in this folder: audio.wav (the recording), transcript.txt (raw transcript with times), summary.md (this file).");
+    lines.push("Files in this folder: audio.m4a (the recording; audio.wav on Windows), transcript.txt (raw transcript with times), summary.md (this file).");
     return lines.join("\n") + "\n";
   }
 
@@ -2037,7 +2037,7 @@ export default function App() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Every time you press Listen, the service is recorded. Stop saves audio.wav, transcript.txt and summary.md in
+                  Every time you press Listen, the service is recorded. Stop saves the recording (audio.m4a), transcript.txt and summary.md in
                   a folder named by date and time.
                 </p>
               </Section>

@@ -182,7 +182,7 @@ Called from the console with `invoke(...)`. Registered in `desktop/src-tauri/src
   - `models/` whisper model files
   - `translations/` imported translations as JSON
   - `backgrounds/` stock photos and motion loops, downloaded on first use from the list in `desktop/public/backgrounds/manifest.json` (Pexels, credited in the Look page). Nothing is bundled.
-  - `sessions/<YYYY-MM-DD_HH-MM-SS>/` one folder per listening session (UTC time): `audio.wav`, `transcript.jsonl`, `slides.jsonl`. Written by a single thread in `session.rs`; the audio callback only sends it chunks.
+  - `sessions/<YYYY-MM-DD_HH-MM-SS>/` one folder per service (local date and time): `audio.m4a` (compressed at Stop on macOS; `audio.wav` while recording and on Windows), `transcript.txt`, `summary.md`, plus `transcript.jsonl`, `slides.jsonl` and `session.json`. Written by a single thread in `session.rs`; the audio callback only sends it chunks.
   - On first start, data from the old `com.amcpreso.desktop` folder is moved here.
 - **Browser localStorage in the console window.** `hsp-ui-mode` (light/dark console), `hsp-ui-theme` (the console's shadcn/tweakcn theme variables) and `preso-output-theme` (the projector theme, including any picture of your own as a data URL; a large image may not fit and then only lasts for the session).
 - **Console memory only.** Transcript, verse history, pending cards, sermon outline and notes. These are lost when the app closes.

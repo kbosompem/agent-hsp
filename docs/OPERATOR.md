@@ -48,6 +48,6 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 
 ## After the service
 
-Press Stop. The recording is saved in a folder named by date and time, with three files: `audio.wav` (the recording), `transcript.txt` (everything that was heard, with times) and `summary.md` (title, outline, every verse shown and when). Settings, "Open recordings folder", takes you there. On a Mac it is `~/Library/Application Support/com.agenthsp.desktop/sessions/`.
+Press Stop. The recording is saved in a folder named by date and time, with three files: `audio.m4a` (the recording, about 21 MB an hour; `audio.wav` on Windows), `transcript.txt` (everything that was heard, with times) and `summary.md` (title, outline, every verse shown and when). Settings, "Open recordings folder", takes you there. On a Mac it is `~/Library/Application Support/com.agenthsp.desktop/sessions/`.
 
 If you press Listen again within a few hours, the app asks whether it is the same service (it keeps adding to the same recording) or a new one. Send the folder to the developers if a verse was missed or wrong; it lets us replay the service exactly.
