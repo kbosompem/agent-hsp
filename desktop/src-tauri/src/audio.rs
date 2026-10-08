@@ -769,13 +769,7 @@ pub fn open_session_folder(app: AppHandle, dir: Option<String>) -> Result<(), St
     let root = sessions_root(&app).ok_or("no app data folder")?;
     let _ = std::fs::create_dir_all(&root);
     let target = match dir {
-        Some(d) => {
-            let p = std::path::PathBuf::from(d);
-            if !p.starts_with(&root) {
-                return Err("not a session folder".into());
-            }
-            p
-        }
+        Some(d) => crate::session::session_child(&root, std::path::Path::new(&d)).ok_or("not a session folder")?,
         None => root,
     };
     #[cfg(target_os = "macos")]

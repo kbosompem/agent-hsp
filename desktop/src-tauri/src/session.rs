@@ -50,12 +50,20 @@ pub fn safe_name(name: &str) -> String {
     if n.is_empty() { "session".into() } else { n }
 }
 
+/// `dir` if it is an existing folder directly inside `root`, after resolving
+/// symlinks and "..". Anything else (outside the sessions folder) is None.
+pub fn session_child(root: &Path, dir: &Path) -> Option<PathBuf> {
+    let root = std::fs::canonicalize(root).ok()?;
+    let p = std::fs::canonicalize(dir).ok()?;
+    (p.parent() == Some(root.as_path()) && p.is_dir()).then_some(p)
+}
+
 /// Start a new session folder `root/name` (made unique if it exists), or
 /// continue `continue_dir`. Stops any session already running.
 pub fn start(root: &Path, name: &str, start_sample: u64, continue_dir: Option<&Path>) -> Result<PathBuf, String> {
     stop(None);
     let dir = match continue_dir {
-        Some(d) if d.join("audio.wav").exists() && d.starts_with(root) => d.to_path_buf(),
+        Some(d) if session_child(root, d).map_or(false, |p| p.join("audio.wav").exists()) => session_child(root, d).unwrap(),
         _ => {
             let base = safe_name(name);
             let mut dir = root.join(&base);
@@ -279,6 +287,17 @@ mod tests {
         stop(None);
         let (newest, _, _, _) = latest(&root).unwrap();
         assert_eq!(newest, other);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn only_direct_children_of_the_root_are_sessions() {
+        let root = std::env::temp_dir().join(format!("agenthsp-child-test-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("a")).unwrap();
+        assert!(session_child(&root, &root.join("a")).is_some());
+        assert!(session_child(&root, &root.join("a").join("..").join("..")).is_none());
+        assert!(session_child(&root, &root).is_none());
+        assert!(session_child(&root, Path::new("/etc")).is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 
