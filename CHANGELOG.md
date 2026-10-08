@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Export a service two ways from the Service page menu: "for this computer" (.hspservice: the order of service, songs by reference, background by its path) or "bundle for another computer" (.hspbundle: a zip with the songs in full, the projector look and the background file). Import reads either: songs are matched by title, missing ones are added from a bundle, and its look can be applied with one click.
 - Recordings are compressed at Stop to audio.m4a (AAC 48 kbps, about 21 MB an hour instead of 115 MB) with macOS's built-in afconvert. Recording itself stays WAV so a crash loses almost nothing; continuing a session converts it back first. Windows keeps WAV for now.
 - Listen starts a session folder named by local date and time; Stop saves audio.wav, transcript.txt (raw transcript with times) and summary.md (title, outline, every verse shown with its time, key lines). Listen after a recent session asks whether it is the same service (append to the same recording) or a new one. Going live on the Sermon item continues the day's session without asking. "Open recordings folder" in Settings.
 - "HSP" from the pulpit means the wrong thing went up: the last verse comes down, what was on screen before it comes back, and that verse stays off for a minute. It acts on the first partial transcript. Words after it are an instruction ("HSP clear the screen", "HSP next", "HSP John 3:16"). Works under Hold. U on the keyboard does the same undo.

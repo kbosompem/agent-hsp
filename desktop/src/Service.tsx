@@ -21,7 +21,7 @@ import {
 } from "./lib/library";
 import { parseVideoPsalmAgenda, parseVideoPsalmJson } from "./lib/videopsalm";
 import {
-  BookOpen, ChevronDown, ChevronUp, Copy, EyeOff, FileText, GripVertical, Image as ImageIcon, Mic, MoreHorizontal,
+  BookOpen, ChevronDown, ChevronUp, Copy, Download, EyeOff, FolderInput, Package, FileText, GripVertical, Image as ImageIcon, Mic, MoreHorizontal,
   Music, Pencil, Play, Plus, Search, Trash2, Upload,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import SlideView, { OutputTheme } from "./SlideView";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
+import { buildServiceFile, mergeServiceFile, parseServiceFile, ServiceFile } from "./lib/serviceFile";
 
 export type ServiceNav = { next: () => void; prev: () => void };
 
@@ -46,6 +50,8 @@ type Props = {
   liveControls: ReactNode;
   /** Projector theme, for slide thumbnails. */
   theme: OutputTheme;
+  /** Replace the projector theme (applying an imported service's look). */
+  setTheme: (t: OutputTheme) => void;
   /** Put one slide on the projector. */
   showSlide: (s: ItemSlide) => Promise<void>;
   /** Verse slides for a scripture item ("John 3:16-18"). */
@@ -310,6 +316,75 @@ export default function Service(p: Props) {
     setEditSong(null);
   }
 
+  // ---------- export / import ----------
+
+  async function exportService(bundle: boolean) {
+    if (!agenda) return;
+    const { file, media } = buildServiceFile(agenda, lib, p.theme, bundle);
+    const ext = bundle ? "hspbundle" : "hspservice";
+    const path = await saveDialog({
+      title: bundle ? "Export a bundle for another computer" : "Export for this computer",
+      defaultPath: agenda.name.replace(/[\\/:*?"<>|]/g, "-") + "." + ext,
+      filters: [{ name: bundle ? "Agent HSP bundle" : "Agent HSP service", extensions: [ext] }],
+    });
+    if (!path) return;
+    try {
+      await invoke("export_service", { path, manifest: JSON.stringify(file), media, bundle });
+      toast.success(
+        bundle
+          ? "Bundle saved with " + file.songs.length + " song" + (file.songs.length === 1 ? "" : "s") + (media.length ? " and the background" : "") + "."
+          : "Service saved. It opens on this computer."
+      );
+    } catch (e) {
+      toast.error("Export failed: " + String(e));
+    }
+  }
+
+  async function applyLook(t: NonNullable<ServiceFile["theme"]>) {
+    const look: OutputTheme & { bgMedia?: string } = { ...t };
+    if (look.bgMedia) {
+      try {
+        const src = convertFileSrc(await invoke<string>("media_path", { rel: look.bgMedia }));
+        if (look.bgKind === "video") look.video = src;
+        else look.image = src;
+      } catch (e) {
+        toast.error(String(e) + ". Keeping the current background.");
+        look.bgKind = p.theme.bgKind;
+        look.image = p.theme.image;
+        look.video = p.theme.video;
+      }
+    }
+    delete look.bgMedia;
+    p.setTheme(look);
+    toast.success("Applied the service's look.");
+  }
+
+  async function importService() {
+    const path = await openDialog({
+      title: "Import a service",
+      multiple: false,
+      filters: [{ name: "Agent HSP service or bundle", extensions: ["hspservice", "hspbundle"] }],
+    });
+    if (!path || Array.isArray(path)) return;
+    try {
+      const f = parseServiceFile(await invoke<string>("import_service", { path }));
+      const r = mergeServiceFile(lib, f);
+      p.setLibrary(r.library);
+      setLive(null);
+      setSelId(null);
+      const msg = "Imported " + f.agenda.name + " (" + f.agenda.items.length + " items" + (f.songs.length ? ", " + f.songs.length + " songs" : "") + ").";
+      if (r.missing.length) {
+        toast.warning(msg + " Songs not on this computer: " + r.missing.join(", ") + ". Use a bundle to bring them.");
+      } else if (f.theme) {
+        toast.success(msg, { action: { label: "Use its look", onClick: () => void applyLook(f.theme!) }, duration: 12000 });
+      } else {
+        toast.success(msg);
+      }
+    } catch (e) {
+      toast.error("Import failed: " + String(e instanceof Error ? e.message : e));
+    }
+  }
+
   // ---------- render ----------
 
   const thumb = (sl: ItemSlide | null, label?: ReactNode) => (
@@ -332,6 +407,7 @@ export default function Service(p: Props) {
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => createAgenda()}><Plus /> New service</Button>
             {last && <Button variant="secondary" onClick={() => createAgenda(last)}><Copy /> Copy “{last.name}”</Button>}
+            <Button variant="outline" onClick={() => void importService()}><FolderInput /> Import a service…</Button>
           </div>
           {lib.agendas.length > 0 && <AgendaPicker lib={lib} update={update} />}
         </div>
@@ -348,7 +424,30 @@ export default function Service(p: Props) {
       <div className="flex min-h-0 flex-col rounded-lg border bg-card">
         <div className="flex flex-col gap-2 border-b p-3">
           <Input className="font-semibold" value={agenda.name} onChange={(e) => updateAgenda((a) => ({ ...a, name: e.target.value }))} />
-          <AgendaPicker lib={lib} update={update} onNew={() => createAgenda()} onCopy={() => createAgenda(agenda)} />
+          <div className="flex gap-1.5">
+          <div className="min-w-0 flex-1">
+            <AgendaPicker lib={lib} update={update} onNew={() => createAgenda()} onCopy={() => createAgenda(agenda)} />
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8" title="Export or import a service">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void exportService(false)}>
+                <Download /> Export for this computer
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void exportService(true)}>
+                <Package /> Export bundle for another computer
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void importService()}>
+                <FolderInput /> Import a service…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col gap-1 p-2">

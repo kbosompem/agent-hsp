@@ -1582,6 +1582,7 @@ export default function App() {
               live={liveScreen}
               liveControls={coverButtons}
               theme={outTheme}
+              setTheme={setOutTheme}
               showSlide={showItemSlide}
               scriptureSlides={scriptureSlides}
               onEnterItem={enterItem}

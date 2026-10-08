@@ -3,6 +3,7 @@ pub mod audio;
 pub mod segmenter;
 pub mod session;
 pub mod deepgram;
+pub mod bundle;
 #[cfg(feature = "nemotron")]
 pub mod nemotron;
 
@@ -254,6 +255,7 @@ fn migrate_old_app_data(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(ListenState::new())
         .manage(Mutex::new(LiveLookup::new()))
         .setup(|app| {
@@ -281,6 +283,9 @@ pub fn run() {
             load_library,
             save_library,
             fetch_background,
+            bundle::export_service,
+            bundle::import_service,
+            bundle::media_path,
             deepgram::set_deepgram_key,
             deepgram::has_deepgram_key,
             audio::list_audio_inputs,

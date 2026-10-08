@@ -18,6 +18,9 @@ preso-core = { path = "../crates/preso-core" }
 cpal = "0.15"
 whisper-rs = "0.13"
 ureq = "2"
+tauri-plugin-dialog = "2"
+# Service bundles (.hspbundle) are zip files.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 # Deepgram live speech-to-text (websocket over rustls).
 tungstenite = { version = "0.24", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 # Nemotron streaming speech model via sherpa-onnx (optional; needs the native

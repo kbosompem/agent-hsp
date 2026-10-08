@@ -28,3 +28,27 @@ eq(vp.map((s) => [s.title, s.sections.map((x) => x.text)]), [["Offering Time", [
 eq(songSlides(vp[0]).length, 2, "videopsalm verses stay one slide each");
 eq(parseVideoPsalmJson('{Text:"Book",Songs:[{Verses:[{Text:"a"}],Text:"S1"},{Verses:[{Text:"b"}],Text:"S2"}]}').map((s) => s.title), ["S1", "S2"], "videopsalm songbook");
 console.log(fail ? fail + " failed" : "videopsalm passed");
+
+// Service files: export for this computer vs bundle, and merging on import.
+import { buildServiceFile, mergeServiceFile, parseServiceFile } from "../src/lib/serviceFile";
+{
+  const lib0 = { version: 1 as const, songs: [{ id: "s1", title: "Way Maker", sections: [{ tag: "V1", text: "a" }], order: [] }, { id: "s2", title: "Amazing Grace", sections: [{ tag: "V1", text: "b" }], order: [] }], agendas: [] as any[], currentAgendaId: null };
+  const agenda = { id: "a1", name: "Sunday", date: "2026-10-11", items: [{ id: "i1", kind: "song" as const, title: "Way Maker", songId: "s1" }, { id: "i2", kind: "scripture" as const, title: "Reading", reference: "John 3:16" }] };
+  const theme: any = { bgKind: "video", gradient: "", image: "", video: "asset://x/y.mp4", overlay: 0.4, textColor: "#fff", accent: "#ff0", font: "serif", bgId: "pexels-video-1" };
+  const local = buildServiceFile(agenda, lib0, theme, false);
+  eq([local.file.kind, local.file.songs.length, local.media, local.file.theme?.video, local.file.theme?.bgMedia], ["local", 0, ["backgrounds/pexels-video-1.mp4"], "", "backgrounds/pexels-video-1.mp4"], "local export");
+  const bundle = buildServiceFile(agenda, lib0, theme, true);
+  eq(bundle.file.songs.map((s) => s.title), ["Way Maker"], "bundle carries its songs");
+  // Another computer: has a different "Way Maker"? match by title; empty library gets the song added.
+  const other = { version: 1 as const, songs: [] as any[], agendas: [] as any[], currentAgendaId: null };
+  const m = mergeServiceFile(other, parseServiceFile(JSON.stringify(bundle.file)));
+  eq([m.library.songs.length, m.missing, m.library.agendas[0].name, m.library.currentAgendaId === m.agendaId], [1, [], "Sunday", true], "bundle import adds songs");
+  const m2 = mergeServiceFile(m.library, parseServiceFile(JSON.stringify(bundle.file)));
+  eq([m2.library.songs.length, m2.library.agendas[0].name], [1, "Sunday (imported)"], "no duplicate songs; name kept unique");
+  const m3 = mergeServiceFile(other, parseServiceFile(JSON.stringify(local.file)));
+  eq(m3.missing, ["Way Maker"], "local file on another computer reports missing songs");
+  let threw = false;
+  try { parseServiceFile('{"hello":1}'); } catch { threw = true; }
+  eq(threw, true, "rejects other JSON");
+  console.log(fail ? fail + " failed" : "service files passed");
+}
