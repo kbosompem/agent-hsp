@@ -98,11 +98,54 @@ pub struct RawBook {
     pub chapters: Vec<Vec<String>>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Default)]
 pub struct Translation {
     pub id: String,
+    /// Full name: "New Living Translation".
     pub name: String,
     pub books: Vec<RawBook>,
+    /// Short name shown after a verse: "NLT".
+    #[serde(default)]
+    pub abbrev: String,
+    /// Edition or year: "2004, second edition 2015".
+    #[serde(default)]
+    pub edition: String,
+    /// The publisher's copyright notice.
+    #[serde(default)]
+    pub copyright: String,
+}
+
+/// What the Bibles page shows and edits about a translation.
+#[derive(Clone, Serialize)]
+pub struct TranslationMeta {
+    pub id: String,
+    pub name: String,
+    pub abbrev: String,
+    pub edition: String,
+    pub copyright: String,
+    /// Shipped with the app (details fixed) rather than imported.
+    pub bundled: bool,
+}
+
+const BUNDLED: [(&str, &str, &str, &str); 7] = [
+    ("kjv", "KJV", "1769 Oxford edition", "Public domain (Crown copyright in the UK)."),
+    ("asv", "ASV", "1901", "Public domain."),
+    ("web", "WEB", "World English Bible, eBible.org", "Public domain."),
+    ("bbe", "BBE", "1965", "Public domain."),
+    ("bsb", "BSB", "2016, 2020 text", "Public domain (CC0) since 2023. Berean Standard Bible, BSB Publishing, LLC."),
+    ("lsv", "LSV", "2020", "Copyright 2020 Covenant Press. CC BY-SA 4.0."),
+    ("fbv", "FBV", "2018", "Copyright 2018 Dr. Jonathan Gallagher. CC BY-SA 4.0."),
+];
+
+/// A short name for an imported translation: the id when it is short ("nlt"
+/// -> "NLT"), else the initials of the name.
+fn default_abbrev(id: &str, name: &str) -> String {
+    let id = id.trim_end_matches("-imported");
+    if (2..=6).contains(&id.len()) {
+        return id.to_uppercase();
+    }
+    let a: String = name.split_whitespace().filter_map(|w| w.chars().next()).filter(|c| c.is_alphanumeric()).collect();
+    if a.is_empty() { name.to_string() } else { a.to_uppercase() }
 }
 
 #[derive(Clone)]
@@ -182,7 +225,9 @@ impl Engine {
             .and_then(|x| x.as_str())
             .unwrap_or(fallback_name)
             .to_string();
-        Some(Translation { id, name, books })
+        let get = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let (abbrev, edition, copyright) = (get("abbrev"), get("edition"), get("copyright"));
+        Some(Translation { id, name, books, abbrev, edition, copyright })
     }
 
     fn base() -> Vec<Translation> {
@@ -254,6 +299,55 @@ impl Engine {
             translations: RwLock::new(translations),
             aliases,
         }
+    }
+
+    /// Every translation with its details, for the Bibles page.
+    pub fn translation_meta(&self) -> Vec<TranslationMeta> {
+        self.translations
+            .read()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                let fixed = BUNDLED.iter().find(|b| b.0 == t.id);
+                TranslationMeta {
+                    id: t.id.clone(),
+                    name: t.name.clone(),
+                    abbrev: if !t.abbrev.is_empty() { t.abbrev.clone() } else { fixed.map(|b| b.1.to_string()).unwrap_or_else(|| default_abbrev(&t.id, &t.name)) },
+                    edition: if !t.edition.is_empty() { t.edition.clone() } else { fixed.map(|b| b.2.to_string()).unwrap_or_default() },
+                    copyright: if !t.copyright.is_empty() { t.copyright.clone() } else { fixed.map(|b| b.3.to_string()).unwrap_or_default() },
+                    bundled: fixed.is_some(),
+                }
+            })
+            .collect()
+    }
+
+    /// Change an imported translation's details. Returns its JSON (to save
+    /// to disk), or None for a bundled or unknown translation.
+    pub fn set_translation_meta(&self, id: &str, name: &str, abbrev: &str, edition: &str, copyright: &str) -> Option<String> {
+        if BUNDLED.iter().any(|b| b.0 == id) {
+            return None;
+        }
+        let mut trs = self.translations.write().unwrap();
+        let t = trs.iter_mut().find(|t| t.id == id)?;
+        let clip = |s: &str, n: usize| s.trim().chars().take(n).collect::<String>();
+        if !name.trim().is_empty() {
+            t.name = clip(name, 80);
+        }
+        t.abbrev = clip(abbrev, 12);
+        t.edition = clip(edition, 120);
+        t.copyright = clip(copyright, 600);
+        serde_json::to_string(t).ok()
+    }
+
+    /// Forget an imported translation. False for bundled ones.
+    pub fn remove_translation(&self, id: &str) -> bool {
+        if BUNDLED.iter().any(|b| b.0 == id) {
+            return false;
+        }
+        let mut trs = self.translations.write().unwrap();
+        let before = trs.len();
+        trs.retain(|t| t.id != id);
+        trs.len() != before
     }
 
     pub fn list_translations(&self) -> Vec<(String, String)> {
@@ -480,6 +574,7 @@ impl Engine {
             id: id,
             name: name,
             books: final_books,
+            ..Default::default()
         })
     }
 
@@ -893,7 +988,7 @@ fn parse_json_bible(content: &str, id: &str, name: &str) -> Option<Translation> 
         .enumerate()
         .map(|(i, chapters)| RawBook { name: BOOK_NAMES[i].to_string(), chapters })
         .collect();
-    Some(Translation { id: id.to_string(), name, books })
+    Some(Translation { id: id.to_string(), name, books, ..Default::default() })
 }
 
 const BOOK_NAMES: [&str; 66] = [
@@ -1607,6 +1702,29 @@ mod tests {
     #[test]
     fn chapter_only() {
         assert_eq!(refs("Turn to Psalms twenty three"), vec!["Psalm 23"]);
+    }
+
+    #[test]
+    fn translation_details_bundled_fixed_imported_editable() {
+        let meta = engine().translation_meta();
+        let kjv = meta.iter().find(|m| m.id == "kjv").unwrap();
+        assert_eq!((kjv.abbrev.as_str(), kjv.bundled), ("KJV", true));
+        assert!(engine().set_translation_meta("kjv", "x", "x", "", "").is_none());
+        assert!(!engine().remove_translation("kjv"));
+        assert_eq!(default_abbrev("nlt", "NLT"), "NLT");
+        assert_eq!(default_abbrev("newlivingtranslation", "New Living Translation"), "NLT");
+        // An import keeps its details through save and load.
+        let mut padded = serde_json::json!({});
+        for b in &BOOK_NAMES[39..] {
+            padded[*b] = serde_json::json!({"1":{"1":"x"}});
+        }
+        let t = Engine::parse_translation_any(&padded.to_string(), "Bible_NLT").unwrap();
+        let json = serde_json::to_string(&t).unwrap();
+        let (id, _) = engine().add_translation_json(&json).unwrap();
+        let saved = engine().set_translation_meta(&id, "New Living Translation", "NLT", "2004, second edition 2015", "Tyndale House").unwrap();
+        let back = Engine::parse_translation(&saved, "x", "x").unwrap();
+        assert_eq!((back.name.as_str(), back.abbrev.as_str(), back.edition.as_str()), ("New Living Translation", "NLT", "2004, second edition 2015"));
+        assert!(engine().remove_translation(&id));
     }
 
     #[test]

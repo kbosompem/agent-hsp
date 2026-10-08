@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
-  BookOpen, Check, Copy, FolderOpen, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
+  BookOpen, Check, Copy, FolderOpen, Pencil, Trash2, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
   MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -58,7 +58,7 @@ type VerseHit = {
   } | null;
 };
 
-type TranslationInfo = { id: string; name: string };
+type TranslationInfo = { id: string; name: string; abbrev: string; edition: string; copyright: string; bundled: boolean };
 
 
 type Card = {
@@ -207,6 +207,23 @@ export default function App() {
       return "fit";
     }
   });
+  const [trLabel, setTrLabel] = useState<"abbrev" | "name">(() => {
+    try {
+      return localStorage.getItem("hsp-translation-label") === "name" ? "name" : "abbrev";
+    } catch {
+      return "abbrev";
+    }
+  });
+  const trLabelRef = useRef(trLabel);
+  trLabelRef.current = trLabel;
+  useEffect(() => {
+    try {
+      localStorage.setItem("hsp-translation-label", trLabel);
+    } catch {
+      /* ignore */
+    }
+  }, [trLabel]);
+  const [editTr, setEditTr] = useState<TranslationInfo | null>(null);
   const perSlideRef = useRef(perSlide);
   perSlideRef.current = perSlide;
   useEffect(() => {
@@ -371,7 +388,7 @@ export default function App() {
       if (groups.length === 1) h = groups[0];
     }
     seqRef.current = null;
-    const s = await invoke<Slide>("show_verse", { hit: h });
+    const s = await invoke<Slide>("show_verse", { hit: forScreen(h) });
     setSlide(s);
     slideRef.current = s;
     lastVerse.current = h;
@@ -398,7 +415,7 @@ export default function App() {
       skipSeg: partialRef.current.seg,
       skipCount: contentWords(partialRef.current.text).length,
     };
-    const s = await invoke<Slide>("show_verse", { hit: h });
+    const s = await invoke<Slide>("show_verse", { hit: forScreen(h) });
     setSlide(s);
     slideRef.current = s;
     lastVerse.current = h;
@@ -514,6 +531,13 @@ export default function App() {
     beforeCover.current = null;
     await showVerse(c.hit, c.trigger);
     sync();
+  }
+
+  /** The verse as the room sees it: the translation by short name ("NLT") or full name, per the Look page. */
+  function forScreen(h: VerseHit): VerseHit {
+    const t = translationsRef.current.find((x) => x.name === h.translation || x.id === h.translation);
+    if (!t) return h;
+    return { ...h, translation: trLabelRef.current === "abbrev" && t.abbrev ? t.abbrev : t.name };
   }
 
   /** Tell the parser which chapter is on screen, however it got there. */
@@ -895,7 +919,7 @@ export default function App() {
     let s: Slide;
     if (it.hit) {
       const h = it.hit as VerseHit;
-      s = await invoke<Slide>("show_verse", { hit: h });
+      s = await invoke<Slide>("show_verse", { hit: forScreen(h) });
       lastVerse.current = h;
       openPassage(h);
     openPassage(h);
@@ -1616,8 +1640,36 @@ export default function App() {
                         />
                       </label>
                     </Button>
-                    <span className="text-sm text-muted-foreground">Loaded: {translations.map((t) => t.name).join(", ")}</span>
+                    <span className="text-sm text-muted-foreground">{translations.length} translations loaded.</span>
                   </div>
+                </Panel>
+                <Panel title="Your translations">
+                  <div className="divide-y rounded-md border">
+                    {translations.map((t) => (
+                      <div key={t.id} className="flex items-start gap-3 p-3">
+                        <Badge variant="outline" className="mt-0.5 w-14 justify-center font-mono">{t.abbrev || t.id.toUpperCase()}</Badge>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium">
+                            {t.name}
+                            {t.edition && <span className="font-normal text-muted-foreground"> · {t.edition}</span>}
+                          </div>
+                          <div className="line-clamp-2 text-xs text-muted-foreground">
+                            {t.copyright || (t.bundled ? "" : "No copyright notice yet. Add the publisher's notice with Edit.")}
+                          </div>
+                        </div>
+                        {t.bundled ? (
+                          <Badge variant="secondary">Bundled</Badge>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => setEditTr({ ...t })}>
+                            <Pencil /> Edit
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Slides show the short name after the reference (JOHN 3:16 · NLT), as most publishers ask. Switch to full names on the Look page.
+                  </p>
                 </Panel>
                 <Panel title="Songs and lyrics">
                   <p className="text-sm text-muted-foreground">
@@ -1671,6 +1723,12 @@ export default function App() {
                       </Section>
                       <Section label={"Text size · " + textPct + "%"}>
                     <Slider min={60} max={220} step={5} value={[textPct]} onValueChange={(v) => setOutTheme({ ...outTheme, textScale: v[0] / 100 })} />
+                      </Section>
+                      <Section label="Translation on slides">
+                        <ToggleGroup type="single" variant="outline" value={trLabel} onValueChange={(v) => v && setTrLabel(v as "abbrev" | "name")}>
+                          <ToggleGroupItem value="abbrev" className="px-3">Short (NLT)</ToggleGroupItem>
+                          <ToggleGroupItem value="name" className="px-3">Full name</ToggleGroupItem>
+                        </ToggleGroup>
                       </Section>
                       <Section label="Verses per slide">
                         <ToggleGroup
@@ -1854,7 +1912,7 @@ export default function App() {
                         <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {translations.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                            <SelectItem key={t.id} value={t.id}>{t.abbrev && t.abbrev !== t.name ? t.abbrev + " · " + t.name : t.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1895,6 +1953,70 @@ export default function App() {
           )}
         </main>
 
+        <Dialog open={!!editTr} onOpenChange={(o) => !o && setEditTr(null)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Translation details</DialogTitle>
+              <DialogDescription>How this translation is named on slides and in the Bibles list.</DialogDescription>
+            </DialogHeader>
+            {editTr && (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-[120px_1fr] items-center gap-2">
+                  <Label>Short name</Label>
+                  <Input value={editTr.abbrev} placeholder="NLT" onChange={(e) => setEditTr({ ...editTr, abbrev: e.target.value })} />
+                  <Label>Full name</Label>
+                  <Input value={editTr.name} placeholder="New Living Translation" onChange={(e) => setEditTr({ ...editTr, name: e.target.value })} />
+                  <Label>Edition</Label>
+                  <Input value={editTr.edition} placeholder="2004, second edition 2015" onChange={(e) => setEditTr({ ...editTr, edition: e.target.value })} />
+                </div>
+                <Label>Copyright notice</Label>
+                <Textarea
+                  rows={4}
+                  value={editTr.copyright}
+                  placeholder="Holy Bible, New Living Translation, copyright © 1996, 2004, 2015 by Tyndale House Foundation. Used by permission of Tyndale House Publishers."
+                  onChange={(e) => setEditTr({ ...editTr, copyright: e.target.value })}
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <Button
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={() =>
+                      void invoke("remove_translation", { id: editTr.id })
+                        .then(() => {
+                          toast.success("Removed " + editTr.name);
+                          if (trIdRef.current === editTr.id) changeTr("kjv");
+                          setEditTr(null);
+                          void refreshTranslations();
+                        })
+                        .catch((e) => toast.error(String(e)))
+                    }
+                  >
+                    <Trash2 /> Remove translation
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      void invoke("update_translation_info", {
+                        id: editTr.id,
+                        name: editTr.name,
+                        abbrev: editTr.abbrev,
+                        edition: editTr.edition,
+                        copyright: editTr.copyright,
+                      })
+                        .then(() => {
+                          toast.success("Saved " + (editTr.abbrev || editTr.name));
+                          setEditTr(null);
+                          void refreshTranslations();
+                        })
+                        .catch((e) => toast.error(String(e)))
+                    }
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
         <Dialog open={!!continuePrompt} onOpenChange={(o) => !o && setContinuePrompt(null)}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>

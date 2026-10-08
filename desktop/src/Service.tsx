@@ -60,7 +60,7 @@ type Props = {
   /** Verses per slide from the Look page, the default for readings. */
   perSlide: PerSlide;
   /** Loaded translations, and the one the Live page uses. */
-  translations: { id: string; name: string }[];
+  translations: { id: string; name: string; abbrev?: string }[];
   translation: string;
   /** Called when the operator goes live on an item (App sets Hold, starts the sermon). */
   onEnterItem: (item: AgendaItem) => void;
@@ -558,7 +558,7 @@ export default function Service(p: Props) {
                         Same as Live ({p.translations.find((t) => t.id === p.translation)?.name ?? p.translation})
                       </SelectItem>
                       {p.translations.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        <SelectItem key={t.id} value={t.id}>{t.abbrev && t.abbrev !== t.name ? t.abbrev + " · " + t.name : t.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

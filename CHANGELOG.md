@@ -10,6 +10,7 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Translation details: every Bible has a short name (NLT), full name, edition and copyright notice. The bundled ones are filled in; imported ones are edited on the Bibles page (Edit), saved with the translation, and can be removed. Slides show the short name after the reference by default ("JOHN 3:16 · NLT"); the Look page switches to full names. Dropdowns show "NLT · New Living Translation".
 - Verse ranges on one slide: "Verses per slide" on the Look page (As many as fit, 1, 2 or 3) and per reading on the Service page. "As many as fit" puts short ranges like John 3:16-17 together (up to 4 verses, about 350 characters) with small verse numbers, and splits long passages; following the reading moves on after the last verse on the slide.
 - Each scripture reading in a service has its own translation picker (default: the Live page's translation), saved with the reading.
 - Console themes from tweakcn are saved under "Your themes" in Settings, named from the theme or by you, shown with colour dots, selectable and removable.

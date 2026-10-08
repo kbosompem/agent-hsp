@@ -79,13 +79,56 @@ struct TranslationInfo {
     name: String,
 }
 
+/// Every translation with its short name, edition and copyright notice.
 #[tauri::command]
-fn list_translations() -> Vec<TranslationInfo> {
-    engine()
-        .list_translations()
-        .into_iter()
-        .map(|(id, name)| TranslationInfo { id, name })
-        .collect()
+fn list_translations() -> Vec<preso_core::TranslationMeta> {
+    engine().translation_meta()
+}
+
+fn translations_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("translations");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Ids of imported translations are plain names ("nlt"); anything else is
+/// refused before it becomes a file name.
+fn safe_tr_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.len() > 40 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("bad translation id".into());
+    }
+    Ok(())
+}
+
+/// Edit an imported translation's details and save them with it.
+#[tauri::command]
+fn update_translation_info(
+    app: tauri::AppHandle,
+    id: String,
+    name: String,
+    abbrev: String,
+    edition: String,
+    copyright: String,
+) -> Result<(), String> {
+    safe_tr_id(&id)?;
+    let json = engine()
+        .set_translation_meta(&id, &name, &abbrev, &edition, &copyright)
+        .ok_or("The bundled translations cannot be edited.")?;
+    let path = translations_dir(&app)?.join(format!("{}.json", id));
+    let tmp = path.with_extension("part");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// Remove an imported translation from the app and from disk.
+#[tauri::command]
+fn remove_translation(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    safe_tr_id(&id)?;
+    if !engine().remove_translation(&id) {
+        return Err("The bundled translations cannot be removed.".into());
+    }
+    let _ = std::fs::remove_file(translations_dir(&app)?.join(format!("{}.json", id)));
+    Ok(())
 }
 
 #[tauri::command]
@@ -277,6 +320,8 @@ pub fn run() {
             verse_at,
             verse_range,
             list_translations,
+            update_translation_info,
+            remove_translation,
             import_translation,
             open_url,
             show_verse,
