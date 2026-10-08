@@ -57,3 +57,17 @@ import { buildServiceFile, mergeServiceFile, parseServiceFile, themeMedia } from
   eq([themeMedia({ ...base, bgFile: "user-abc.jpg" }), themeMedia({ ...base, bgFile: "../library.json" }), themeMedia({ ...base, bgFile: ".hidden" })], ["backgrounds/user-abc.jpg", null, null], "themeMedia only plain names");
   console.log(fail ? fail + " failed" : "media names passed");
 }
+
+// Verses per slide.
+import { groupVerses, combine, slideHas } from "../src/lib/verses";
+{
+  const v = (n: number, len = 100) => ({ label: "John 3:" + n, text: "x".repeat(len), translation: "KJV", reference: { book: 42, chapter: 3, verse: n, end_verse: null } });
+  const two = groupVerses([v(16), v(17)], "fit");
+  eq([two.length, two[0].label, two[0].reference?.end_verse, two[0].text.startsWith("¹⁶")], [1, "John 3:16-17", 17, true], "John 3:16-17 on one slide");
+  eq(groupVerses([v(1), v(2), v(3), v(4), v(5)], "fit").map((h) => h.label), ["John 3:1-3", "John 3:4-5"], "fit splits by length");
+  eq(groupVerses([v(1, 400), v(2)], "fit").map((h) => h.label), ["John 3:1", "John 3:2"], "a long verse stands alone");
+  eq(groupVerses([v(1), v(2), v(3)], 1).length, 3, "one per slide");
+  eq(groupVerses([v(1), v(2), v(3)], 2).map((h) => h.label), ["John 3:1-2", "John 3:3"], "two per slide");
+  eq([slideHas(combine([v(16), v(17)]), 42, 3, 17), slideHas(combine([v(16), v(17)]), 42, 3, 18)], [true, false], "slideHas");
+  console.log(fail ? fail + " failed" : "verses per slide passed");
+}

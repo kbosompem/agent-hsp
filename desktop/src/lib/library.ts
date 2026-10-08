@@ -25,6 +25,8 @@ export type AgendaItem = {
   reference?: string;
   /** scripture: translation id ("kjv", "bsb"); empty uses the Live page's choice. */
   translation?: string;
+  /** scripture: verses per slide ("fit", "1".."3"); empty uses the Look page setting. */
+  perSlide?: string;
   /** text: slides separated by a blank line. */
   body?: string;
 };

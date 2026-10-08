@@ -42,6 +42,7 @@ import {
   trimWords,
 } from "./lib/sermon";
 import Service, { ServiceNav } from "./Service";
+import { PerSlide, groupVerses, parsePerSlide, slideHas } from "./lib/verses";
 import { AgendaItem, ItemSlide, Library, emptyLibrary, parseLibrary } from "./lib/library";
 import { contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
@@ -198,6 +199,23 @@ export default function App() {
   const [mode, setMode] = useState<Mode>(savedMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(savedTheme);
   const [themeInput, setThemeInput] = useState("");
+  // How many verses of a range go on one slide ("fit": as many as stay readable).
+  const [perSlide, setPerSlide] = useState<PerSlide>(() => {
+    try {
+      return parsePerSlide(localStorage.getItem("hsp-verses-per-slide"));
+    } catch {
+      return "fit";
+    }
+  });
+  const perSlideRef = useRef(perSlide);
+  perSlideRef.current = perSlide;
+  useEffect(() => {
+    try {
+      localStorage.setItem("hsp-verses-per-slide", String(perSlide));
+    } catch {
+      /* ignore */
+    }
+  }, [perSlide]);
   const [themeName, setThemeName] = useState("");
   const [myThemes, setMyThemes] = useState<UiTheme[]>(() => {
     // A theme applied before themes were saved: keep it in the list.
@@ -321,15 +339,14 @@ export default function App() {
     addSermonNote(stRef.current, bullet);
   }
 
-  async function showVerse(h: VerseHit, trigger?: string) {
+  async function showVerse(hit: VerseHit, trigger?: string) {
+    let h = hit;
     undoRef.current = { before: slideRef.current, label: h.label, at: Date.now() };
     const ref = h.reference;
     // A single verse inside the range on screen: jump there and keep following.
     const seqr = seqRef.current;
     if (seqr && ref && ref.verse && !ref.end_verse) {
-      const at = seqr.slides.findIndex(
-        (s) => s.reference && s.reference.book === ref.book && s.reference.chapter === ref.chapter && s.reference.verse === ref.verse
-      );
+      const at = seqr.slides.findIndex((s) => slideHas(s, ref.book, ref.chapter, ref.verse!));
       if (at >= 0) {
         await showSeqSlide(at);
         setMicStatus("Following the reading: " + seqr.slides[at].label + " (" + (at + 1) + " of " + seqr.slides.length + ")");
@@ -344,11 +361,14 @@ export default function App() {
         to: ref.end_verse,
         translation: trIdRef.current,
       });
-      if (slides.length > 1) {
-        seqRef.current = { slides: slides, idx: 0 };
+      const groups = groupVerses(slides, perSlideRef.current) as VerseHit[];
+      if (groups.length > 1) {
+        seqRef.current = { slides: groups, idx: 0 };
         await showSeqSlide(0);
         return;
       }
+      // The whole range fits on one slide.
+      if (groups.length === 1) h = groups[0];
     }
     seqRef.current = null;
     const s = await invoke<Slide>("show_verse", { hit: h });
@@ -887,7 +907,7 @@ export default function App() {
     slideRef.current = s;
   }
 
-  async function scriptureSlides(reference: string, translation?: string): Promise<ItemSlide[]> {
+  async function scriptureSlides(reference: string, translation?: string, per?: PerSlide): Promise<ItemSlide[]> {
     const tr = translation || trIdRef.current;
     const found = await invoke<VerseHit[]>("lookup", { input: reference, translation: tr });
     const h = found.find((x) => x.reference);
@@ -908,7 +928,8 @@ export default function App() {
         hits.push(x);
       }
     }
-    return hits.map((x) => ({ kind: "verse", title: x.label, body: x.text, sub: x.translation, label: x.label, hit: x }));
+    const groups = groupVerses(hits, per ?? perSlideRef.current) as VerseHit[];
+    return groups.map((x) => ({ kind: "verse", title: x.label, body: x.text, sub: x.translation, label: x.label, hit: x }));
   }
 
   // Going live on an agenda item. Only a sermon lets the AI change the screen.
@@ -1342,11 +1363,12 @@ export default function App() {
         book: first.book,
         chapter: first.chapter,
         from: first.verse,
-        to: last.verse,
+        to: last.end_verse ?? last.verse,
         translation: id,
       });
-      if (slides.length && !superseded()) {
-        seqRef.current = { slides, idx: Math.min(seqr.idx, slides.length - 1) };
+      const groups = groupVerses(slides, perSlideRef.current) as VerseHit[];
+      if (groups.length && !superseded()) {
+        seqRef.current = { slides: groups, idx: Math.min(seqr.idx, groups.length - 1) };
         await showSeqSlide(seqRef.current.idx);
       }
       return;
@@ -1551,6 +1573,7 @@ export default function App() {
               scriptureSlides={scriptureSlides}
               translations={translations}
               translation={trId}
+              perSlide={perSlide}
               onEnterItem={enterItem}
               registerNav={(n) => {
                 navRef.current = n;
@@ -1648,6 +1671,22 @@ export default function App() {
                       </Section>
                       <Section label={"Text size · " + textPct + "%"}>
                     <Slider min={60} max={220} step={5} value={[textPct]} onValueChange={(v) => setOutTheme({ ...outTheme, textScale: v[0] / 100 })} />
+                      </Section>
+                      <Section label="Verses per slide">
+                        <ToggleGroup
+                          type="single"
+                          variant="outline"
+                          value={String(perSlide)}
+                          onValueChange={(v) => v && setPerSlide(parsePerSlide(v))}
+                        >
+                          <ToggleGroupItem value="fit" className="px-3">As many as fit</ToggleGroupItem>
+                          <ToggleGroupItem value="1" className="px-3">1</ToggleGroupItem>
+                          <ToggleGroupItem value="2" className="px-3">2</ToggleGroupItem>
+                          <ToggleGroupItem value="3" className="px-3">3</ToggleGroupItem>
+                        </ToggleGroup>
+                        <p className="text-xs text-muted-foreground">
+                          For ranges like John 3:16-17. "As many as fit" keeps short ranges on one slide and splits long passages.
+                        </p>
                       </Section>
                       <Section label="Lettering">
                     <div className="flex flex-wrap gap-2">

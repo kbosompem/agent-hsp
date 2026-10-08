@@ -9,7 +9,7 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 3. Open Settings (the sliders button, top right):
    - Speech model: "Nemotron" on a Mac (fastest; works offline). Press Load and wait for "ready". "Deepgram" also works if you have a key and good internet; `small.en` is the fallback.
    - Audio input: the sound desk feed (USB from the mixer) if you have one, else the laptop microphone.
-4. On the Look page, pick a background and set the church name. Pick backgrounds while you have internet; they download once and then work offline.
+4. On the Look page, pick a background, set the church name and choose "Verses per slide" (As many as fit puts John 3:16-17 on one slide). Pick backgrounds while you have internet; they download once and then work offline.
 5. On the Service page, import songs (VideoPsalm `.vpagd` or songbook `.json`, OpenLyrics, OpenSong or plain text) and build the order of service. Use Duplicate to start from last week.
 
 6. To move a service to the church laptop: on the Service page, open the ⋯ menu next to the service name and choose "Export bundle for another computer". On the other laptop choose "Import a service…". The bundle carries the songs, the look and the background. "Export for this computer" is a smaller file for backups on the same laptop.

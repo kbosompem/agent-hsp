@@ -35,6 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import SlideView, { OutputTheme } from "./SlideView";
+import { PerSlide, parsePerSlide } from "./lib/verses";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -55,7 +56,9 @@ type Props = {
   /** Put one slide on the projector. */
   showSlide: (s: ItemSlide) => Promise<void>;
   /** Verse slides for a scripture item ("John 3:16-18") in a translation (default: the Live page's). */
-  scriptureSlides: (reference: string, translation?: string) => Promise<ItemSlide[]>;
+  scriptureSlides: (reference: string, translation?: string, per?: PerSlide) => Promise<ItemSlide[]>;
+  /** Verses per slide from the Look page, the default for readings. */
+  perSlide: PerSlide;
   /** Loaded translations, and the one the Live page uses. */
   translations: { id: string; name: string }[];
   translation: string;
@@ -140,7 +143,7 @@ export default function Service(p: Props) {
       stop = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agenda, lib.songs, p.translation]);
+  }, [agenda, lib.songs, p.translation, p.perSlide]);
 
   async function itemSlides(it: AgendaItem): Promise<ItemSlide[]> {
     switch (it.kind) {
@@ -149,7 +152,9 @@ export default function Service(p: Props) {
         return s ? songSlides(s) : [];
       }
       case "scripture":
-        return it.reference ? await p.scriptureSlides(it.reference, it.translation || undefined).catch(() => []) : [];
+        return it.reference
+          ? await p.scriptureSlides(it.reference, it.translation || undefined, it.perSlide ? parsePerSlide(it.perSlide) : undefined).catch(() => [])
+          : [];
       case "text":
         return textSlides(it);
       case "logo":
@@ -532,6 +537,18 @@ export default function Service(p: Props) {
               {sel.kind === "scripture" && (
                 <div className="flex gap-2">
                   <Input className="flex-1" placeholder="Reference, e.g. John 3:16-18 or Psalm 23" value={sel.reference || ""} onChange={(e) => updateItem(sel.id, { reference: e.target.value })} />
+                  <Select value={sel.perSlide || "__default"} onValueChange={(v) => updateItem(sel.id, { perSlide: v === "__default" ? undefined : v })}>
+                    <SelectTrigger className="w-44" title="Verses per slide for this reading">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default">Per slide: default ({p.perSlide === "fit" ? "fit" : p.perSlide})</SelectItem>
+                      <SelectItem value="fit">As many as fit</SelectItem>
+                      <SelectItem value="1">1 verse per slide</SelectItem>
+                      <SelectItem value="2">2 verses per slide</SelectItem>
+                      <SelectItem value="3">3 verses per slide</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Select value={sel.translation || "__live"} onValueChange={(v) => updateItem(sel.id, { translation: v === "__live" ? undefined : v })}>
                     <SelectTrigger className="w-64" title="Translation for this reading">
                       <SelectValue />
