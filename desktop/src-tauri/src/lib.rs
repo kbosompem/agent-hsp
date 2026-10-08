@@ -104,7 +104,7 @@ fn import_translation(
         })
         .unwrap_or_else(|| "imported".to_string());
     let t = Engine::parse_translation_any(&content, &stem)
-        .ok_or("Could not read this Bible file. Supported: Zefania, OpenSong or OSIS XML, and JSON laid out by book, chapter and verse (for example {"Genesis": {"1": {"1": "..."}}}).")?;
+        .ok_or("Could not read this Bible file. Supported: Zefania, OpenSong or OSIS XML, and JSON laid out by book, chapter and verse (for example {\"Genesis\": {\"1\": {\"1\": \"...\"}}}).")?;
     let json = serde_json::to_string(&t).map_err(|e| e.to_string())?;
     let (id, name) = engine().add_translation_json(&json)?;
     let dir = app
