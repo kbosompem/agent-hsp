@@ -1075,19 +1075,7 @@ export default function App() {
   // Going live on an agenda item. Only a sermon lets the AI change the screen.
   function enterItem(it: AgendaItem) {
     setItemBg(it.bg ?? null);
-    // Audio: an audio item plays its track; any item may start (or stop) background audio.
-    const find = (id?: string) => mediaRef.current.find((m) => m.id === id);
-    if (it.kind === "audio") {
-      const m = find(it.mediaId);
-      if (m) audioRef.current?.play(m, { loop: !!it.bgLoop });
-    }
-    // A video has its own sound: fade background audio unless the item chose some.
-    if (it.kind === "video" && !it.bgAudioId) audioRef.current?.fadeOut(2);
-    if (it.bgAudioId === "__stop") audioRef.current?.fadeOut(3);
-    else if (it.bgAudioId) {
-      const m = find(it.bgAudioId);
-      if (m) audioRef.current?.play(m, { loop: it.bgLoop !== false });
-    }
+    itemAudio(it);
     if (it.kind === "sermon") {
       setHold(false);
       // Mid-service: continue this service's recording without asking.
@@ -1099,6 +1087,23 @@ export default function App() {
       setMicStatus("Sermon: listening, verses go on screen as they are named.");
     } else {
       setHold(true);
+    }
+  }
+
+  /** An item's sound: an audio item plays its track; any item may start (or stop) background audio.
+   *  Runs on going live, and again when the live item's audio is changed. */
+  function itemAudio(it: AgendaItem) {
+    const find = (id?: string) => mediaRef.current.find((m) => m.id === id);
+    if (it.kind === "audio") {
+      const m = find(it.mediaId);
+      if (m) audioRef.current?.play(m, { loop: !!it.bgLoop });
+    }
+    // A video has its own sound: fade background audio unless the item chose some.
+    if (it.kind === "video" && !it.bgAudioId) audioRef.current?.fadeOut(2);
+    if (it.bgAudioId === "__stop") audioRef.current?.fadeOut(3);
+    else if (it.bgAudioId) {
+      const m = find(it.bgAudioId);
+      if (m) audioRef.current?.play(m, { loop: it.bgLoop !== false });
     }
   }
 
@@ -1755,6 +1760,7 @@ export default function App() {
               perSlide={perSlide}
               media={media}
               onEnterItem={enterItem}
+              onItemAudio={itemAudio}
               registerNav={(n) => {
                 navRef.current = n;
               }}

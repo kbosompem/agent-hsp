@@ -71,6 +71,8 @@ type Props = {
   translation: string;
   /** Called when the operator goes live on an item (App sets Hold, starts the sermon). */
   onEnterItem: (item: AgendaItem) => void;
+  /** Start or stop an item's audio (the live item's audio was changed). */
+  onItemAudio: (item: AgendaItem) => void;
   registerNav: (nav: ServiceNav | null) => void;
   setStatus: (s: string) => void;
 };
@@ -144,6 +146,16 @@ export default function Service(p: Props) {
   }
   function updateItem(id: string, patch: Partial<AgendaItem>) {
     updateAgenda((a) => ({ ...a, items: a.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
+    // Choosing audio for the item on screen takes effect now, not at the next go-live.
+    if (live?.itemId === id && ("bgAudioId" in patch || "mediaId" in patch)) {
+      const it = agenda?.items.find((i) => i.id === id);
+      if (it) p.onItemAudio({ ...it, ...patch });
+    }
+  }
+  /** A song item; a song with its backing track downloaded plays it (once) when it goes live. */
+  function songItem(s: Song): Partial<AgendaItem> {
+    const track = s.trackUrl ? p.media.find((m) => m.source_url === s.trackUrl) : undefined;
+    return { title: s.title, songId: s.id, ...(track ? { bgAudioId: track.id, bgLoop: false } : {}) };
   }
 
   // Slides for each item; scripture is looked up through Rust.
@@ -793,7 +805,7 @@ export default function Service(p: Props) {
                       className="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
                       title="Double-click to add to the service and go live"
                       onDoubleClick={() => {
-                        const id = addItem("song", { title: s.title, songId: s.id });
+                        const id = addItem("song", songItem(s));
                         if (id) pendingLive.current = id;
                       }}
                     >
@@ -802,7 +814,7 @@ export default function Service(p: Props) {
                       <Button size="icon" variant="ghost" className="size-7 opacity-0 group-hover:opacity-100" title="Edit lyrics" onClick={() => setEditSong({ id: s.id, text: songToText(s) })}>
                         <Pencil />
                       </Button>
-                      <Button size="sm" variant="secondary" className="h-7" onClick={() => addItem("song", { title: s.title, songId: s.id })}>
+                      <Button size="sm" variant="secondary" className="h-7" onClick={() => addItem("song", songItem(s))}>
                         <Plus /> Add
                       </Button>
                     </div>
