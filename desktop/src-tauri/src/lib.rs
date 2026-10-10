@@ -6,6 +6,7 @@ pub mod deepgram;
 pub mod bundle;
 pub mod backgrounds;
 pub mod media;
+pub mod shemen;
 #[cfg(feature = "nemotron")]
 pub mod nemotron;
 
@@ -360,6 +361,10 @@ pub fn run() {
             media::youtube_search,
             media::youtube_download,
             media::media_tools,
+            shemen::shemen_catalog,
+            shemen::load_songbook,
+            shemen::import_songbook,
+            shemen::fetch_audio,
             backgrounds::import_user_backgrounds,
             backgrounds::delete_user_background,
             deepgram::set_deepgram_key,

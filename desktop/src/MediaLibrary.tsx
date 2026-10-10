@@ -1,18 +1,22 @@
 // Media page: the library's five folders, files added from the computer, and
-// YouTube search and download (yt-dlp, fetched by the app on first use).
+// on the right YouTube search and download (yt-dlp, fetched by the app on
+// first use), ShemenMusic and the church songbook (SongCatalog).
 
 import { useEffect, useMemo, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Download, Film, Loader2, Music, Pencil, Play, Plus, Search, Trash2, Upload, Clapperboard } from "lucide-react";
+import { BookOpen, Download, Film, Loader2, Music, Pencil, Play, Plus, Search, Trash2, Upload, Clapperboard } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { MediaFolder, MediaItem, fmtTime } from "@/lib/media";
+import { Song } from "@/lib/library";
+import SongCatalog from "./SongCatalog";
 
 type YtResult = { id: string; title: string; channel: string; duration_s: number | null; thumbnail: string };
 
@@ -26,9 +30,21 @@ type Props = {
   /** Downloads in progress (kept by App so they survive leaving this page). */
   progress: Record<string, number>;
   setProgress: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  /** The song library, for ShemenMusic and songbook "Get song". */
+  songs: Song[];
+  onAddSongs: (songs: Song[]) => void;
 };
 
-export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, onShowVideo, onAddToService, progress, setProgress }: Props) {
+type Source = "youtube" | "shemen" | "songbook";
+
+export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, onShowVideo, onAddToService, progress, setProgress, songs, onAddSongs }: Props) {
+  const [source, setSource] = useState<Source>(() => {
+    try {
+      return (localStorage.getItem("media-source") as Source) || "youtube";
+    } catch {
+      return "youtube";
+    }
+  });
   const [folder, setFolder] = useState<string>("all");
   const [q, setQ] = useState("");
   const [yt, setYt] = useState<YtResult[]>([]);
@@ -119,7 +135,7 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 p-3">
             {shown.length === 0 && (
               <p className="col-span-full p-2 text-sm text-muted-foreground">
-                Nothing here yet. Search YouTube on the right, or add files from this computer.
+                Nothing here yet. Search YouTube or ShemenMusic on the right, or add files from this computer.
               </p>
             )}
             {shown.map((m) => (
@@ -185,12 +201,32 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
         </ScrollArea>
       </div>
 
-      {/* YouTube */}
+      {/* Sources: YouTube, ShemenMusic, songbook */}
       <div className="flex min-h-0 flex-col rounded-lg border bg-card">
-        <div className="flex flex-col gap-2 border-b p-3">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Clapperboard className="size-4 text-red-500" /> YouTube
-          </div>
+        <div className="p-3 pb-2">
+          <Tabs
+            value={source}
+            onValueChange={(v) => {
+              setSource(v as Source);
+              try {
+                localStorage.setItem("media-source", v);
+              } catch {
+                /* remembered only when storage works */
+              }
+            }}
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="youtube"><Clapperboard className="text-red-500" /> YouTube</TabsTrigger>
+              <TabsTrigger value="shemen"><Music /> ShemenMusic</TabsTrigger>
+              <TabsTrigger value="songbook"><BookOpen /> Songbook</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+        {source !== "youtube" ? (
+          <SongCatalog key={source} source={source} media={media} songs={songs} folders={folders} onAddSongs={onAddSongs} progress={progress} setProgress={setProgress} />
+        ) : (
+        <>
+        <div className="flex flex-col gap-2 border-b p-3 pt-0">
           <form
             className="flex gap-2"
             onSubmit={(e) => {
@@ -251,6 +287,8 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
             })}
           </div>
         </ScrollArea>
+        </>
+        )}
       </div>
     </div>
   );

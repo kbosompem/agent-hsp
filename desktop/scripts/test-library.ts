@@ -71,3 +71,35 @@ import { groupVerses, combine, slideHas } from "../src/lib/verses";
   eq([slideHas(combine([v(16), v(17)]), 42, 3, 17), slideHas(combine([v(16), v(17)]), 42, 3, 18)], [true, false], "slideHas");
   console.log(fail ? fail + " failed" : "verses per slide passed");
 }
+
+// Song sheets with repeated headings (ShemenMusic, songbooks) and catalogs.
+import { parseSongSheet, songToText } from "../src/lib/library";
+import { shemenCatalog, catalogToSong, cleanTitle, htmlToText } from "../src/lib/catalog";
+const sh = parseSongSheet("CHORUS\nI wanna be strong\n\nVERSE 1\nRising up\n\nCHORUS\nDon't you wanna be strong\n\nVERSE 2\nHey brother\n\nCHORUS\n", "Strong Christian");
+eq(sh.sections.map((x) => x.tag), ["C", "V1", "C.2", "V2"], "sheet: changed chorus becomes C.2");
+eq(sh.order, ["C", "V1", "C.2", "V2", "C.2"], "sheet: bare CHORUS repeats the latest");
+eq(songSlides(sh).map((x) => x.label), ["Chorus", "Verse 1", "Chorus", "Verse 2", "Chorus"], "sheet: slide labels");
+const bare = parseSongSheet("Verse:\nalpha\n\nChorus:\nbeta\n\nVerse:\ngamma\n\nSAXOPHONE INTERLUDE\n\nChorus:\nbeta\n", "X");
+eq(parseSongSheet("Chorus:\nb\nc\n", "X").sections, [{ tag: "C", text: "b\nc" }], "sheet: one-letter lines are lyrics");
+eq(bare.sections.map((x) => x.tag), ["V1", "C", "V2"], "sheet: bare Verse: numbered in turn");
+eq(bare.order, ["V1", "C", "V2", "C"], "sheet: identical chorus reused, interlude skipped");
+const back = parseSongSheet(songToText({ ...sh, source: "shemen:1" }));
+eq([back.title, back.sections, back.order], [sh.title, sh.sections, sh.order], "songToText round-trips through the editor");
+eq(parseSongSheet("Line one\nLine two\n\nLine three", "T").sections.map((x) => x.text), ["Line one\nLine two", "Line three"], "sheet without headings keeps every line");
+eq(htmlToText('<pre class="x">CHORUS<br>We&#8217;re here<br> <br>VERSE 1<br>a &amp; b<br></pre>'), "CHORUS\nWe’re here\n\nVERSE 1\na & b", "html to text");
+eq(cleanTitle("Strong Christian 91"), "Strong Christian", "hymn number dropped");
+const cat = shemenCatalog([{ id: 7, title: "We Want To Bask", url: "https://x/a.mp3", lyrics_html: "<pre><code>WE WANT TO BASK \n\nCHORUS\nWe worship you\n</code></pre>" }]);
+eq(cat[0].lyrics, "CHORUS\nWe worship you", "repeated title line dropped");
+eq(catalogToSong(cat[0]).source, "shemen:7", "song remembers its source");
+console.log(fail ? fail + " failed" : "song sheets passed");
+const dir = parseSongSheet("VERSE 1\none\n\nPRE CHORUS\ntwo\n\nCHORUS\nthree\n\nMODULATION\n\nREPEAT CHORUS\n\nVAMP\nfour", "T");
+eq([dir.sections.map((x) => x.tag), dir.order], [["V1", "P", "C", "E"], ["V1", "P", "C", "C", "E"]], "sheet: pre chorus, directions, repeat, vamp");
+eq(htmlToText("<p>a</p>\n<p>b</p>\n<p>&nbsp;</p>\n<p>c</p>"), "a\nb\n\nc", "one paragraph per line");
+console.log(fail ? fail + " failed" : "sheet headings passed");
+import { searchCatalog } from "../src/lib/catalog";
+const items = [{ key: "a", title: "Be Nice", lyrics: "a strong christian" }, { key: "b", title: "Strong Christian 91", lyrics: "" }];
+eq(searchCatalog(items, "strong christian").map((c) => c.key), ["b", "a"], "title matches first");
+console.log(fail ? fail + " failed" : "catalog search passed");
+const odd = { id: "x", title: "T", sections: [{ tag: "V1", text: "a" }, { tag: "O1", text: "other" }], order: ["V1", "O1"] };
+eq(songToText(odd), "T\n\n[Verse 1]\na\n\n[O 1]\nother\n", "library songs keep the old editor format");
+console.log(fail ? fail + " failed" : "editor format passed");

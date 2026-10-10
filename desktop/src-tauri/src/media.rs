@@ -1,5 +1,6 @@
 // The media library: audio and video for services, in five folders, added
-// from the computer or downloaded from YouTube with yt-dlp.
+// from the computer, downloaded from YouTube with yt-dlp, or fetched from
+// ShemenMusic and songbook links (shemen.rs).
 //
 //   <app data>/media/<folder>/<id>.<ext>
 //   <app data>/media/index.json      [{id, folder, kind, title, file, ...}]
@@ -44,6 +45,9 @@ pub struct MediaItem {
     pub youtube_id: Option<String>,
     #[serde(default)]
     pub channel: Option<String>,
+    /// The web address it was downloaded from (ShemenMusic, a songbook link).
+    #[serde(default)]
+    pub source_url: Option<String>,
     #[serde(default)]
     pub added: u64,
     /// Absolute path, filled in when listed.
@@ -51,21 +55,21 @@ pub struct MediaItem {
     pub path: String,
 }
 
-static INDEX_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static INDEX_LOCK: Mutex<()> = Mutex::new(());
 /// One yt-dlp install at a time; a second search waits for the first.
 static INSTALL_LOCK: Mutex<()> = Mutex::new(());
 
-fn media_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn media_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let d = app.path().app_data_dir().map_err(|e| e.to_string())?.join("media");
     std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
     Ok(d)
 }
 
-fn folder_ok(f: &str) -> Result<(), String> {
+pub(crate) fn folder_ok(f: &str) -> Result<(), String> {
     FOLDERS.iter().any(|x| x.0 == f).then_some(()).ok_or_else(|| "unknown folder".to_string())
 }
 
-fn load(d: &Path) -> Vec<MediaItem> {
+pub(crate) fn load(d: &Path) -> Vec<MediaItem> {
     std::fs::read_to_string(d.join("index.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
@@ -85,15 +89,15 @@ fn with_paths(d: &Path, list: Vec<MediaItem>) -> Vec<MediaItem> {
         .collect()
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     format!("{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0))
 }
 
-fn add(d: &Path, item: MediaItem) -> Result<Vec<MediaItem>, String> {
+pub(crate) fn add(d: &Path, item: MediaItem) -> Result<Vec<MediaItem>, String> {
     let _g = INDEX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut list = load(d);
     list.push(item);
@@ -149,7 +153,7 @@ pub fn import_media(app: AppHandle, paths: Vec<String>, folder: String) -> Resul
         let title = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| file.clone());
         list = add(
             &d,
-            MediaItem { id, folder: folder.clone(), kind: kind.into(), title, file, duration_s: None, youtube_id: None, channel: None, added: now(), path: String::new() },
+            MediaItem { id, folder: folder.clone(), kind: kind.into(), title, file, duration_s: None, youtube_id: None, channel: None, source_url: None, added: now(), path: String::new() },
         )?;
     }
     if list.is_empty() {
@@ -384,6 +388,7 @@ pub fn youtube_download(app: AppHandle, video_id: String, folder: String, title:
                     duration_s: None,
                     youtube_id: Some(video_id.clone()),
                     channel: (!channel.is_empty()).then(|| channel.clone()),
+                    source_url: None,
                     added: now(),
                     path: String::new(),
                 },

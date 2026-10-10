@@ -46,7 +46,7 @@ import {
 } from "./lib/sermon";
 import Service, { ServiceNav } from "./Service";
 import { PerSlide, groupVerses, parsePerSlide, slideHas } from "./lib/verses";
-import { AgendaItem, ItemBackground, ItemSlide, Library, emptyLibrary, parseLibrary } from "./lib/library";
+import { AgendaItem, ItemBackground, ItemSlide, Library, Song, emptyLibrary, parseLibrary } from "./lib/library";
 import { contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
 type VerseHit = {
@@ -931,7 +931,8 @@ export default function App() {
           return n;
         });
         if (e.payload.ok) {
-          toast.success("Downloaded to the media library.");
+          // ShemenMusic and songbook tracks (keyed by address) show their progress in the list instead.
+          if (!e.payload.id.startsWith("http")) toast.success("Downloaded to the media library.");
           void invoke<MediaItem[]>("list_media").then(setMedia);
         } else {
           toast.error("Download failed: " + (e.payload.error || "unknown error"));
@@ -983,6 +984,14 @@ export default function App() {
     return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slide]);
+
+  /** Add songs from ShemenMusic or the songbook, skipping any already added from the same place. */
+  function addSongs(songs: Song[]) {
+    setLibraryState((l) => {
+      const have = new Set(l.songs.map((s) => s.source).filter(Boolean));
+      return { ...l, songs: [...l.songs, ...songs.filter((s) => !s.source || !have.has(s.source))] };
+    });
+  }
 
   /** Add a media item to the open service. */
   function addMediaToService(m: MediaItem) {
@@ -1761,6 +1770,8 @@ export default function App() {
               onAddToService={addMediaToService}
               progress={ytProgress}
               setProgress={setYtProgress}
+              songs={library.songs}
+              onAddSongs={addSongs}
             />
           ) : view === "downloads" ? (
             <ScrollArea className="h-full">

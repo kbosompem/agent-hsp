@@ -10,6 +10,8 @@ export type MediaItem = {
   duration_s?: number | null;
   youtube_id?: string | null;
   channel?: string | null;
+  /** Web address it was downloaded from (ShemenMusic, a songbook link). */
+  source_url?: string | null;
   added: number;
   /** Absolute path on this computer. */
   path: string;

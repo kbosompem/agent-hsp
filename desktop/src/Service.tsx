@@ -14,6 +14,7 @@ import {
   newAgenda,
   newId,
   parsePlainSong,
+  parseSongSheet,
   parseSongFile,
   songSlides,
   songToText,
@@ -342,14 +343,16 @@ export default function Service(p: Props) {
 
   function saveSong() {
     if (!editSong) return;
-    const parsed = parsePlainSong(editSong.text);
+    // ShemenMusic and songbook songs were written out in singing order (songToText); read them back the same way.
+    const fromCatalog = !!(editSong.id && lib.songs.find((s) => s.id === editSong.id)?.source);
+    const parsed = fromCatalog ? parseSongSheet(editSong.text) : parsePlainSong(editSong.text);
     if (!parsed.sections.length) {
       p.setStatus("A song needs at least one section of lyrics.");
       return;
     }
     if (editSong.id) {
       const id = editSong.id;
-      update((l) => ({ ...l, songs: l.songs.map((s) => (s.id === id ? { ...s, title: parsed.title, sections: parsed.sections } : s)) }));
+      update((l) => ({ ...l, songs: l.songs.map((s) => (s.id === id ? { ...s, title: parsed.title, sections: parsed.sections, ...(fromCatalog ? { order: parsed.order } : {}) } : s)) }));
     } else {
       update((l) => ({ ...l, songs: [...l.songs, parsed] }));
     }
@@ -604,13 +607,23 @@ export default function Service(p: Props) {
               {sel.kind === "text" && (
                 <Textarea rows={5} placeholder="One slide per paragraph. Leave a blank line between slides." value={sel.body || ""} onChange={(e) => updateItem(sel.id, { body: e.target.value })} />
               )}
-              {sel.kind === "song" && sel.songId && songsById.get(sel.songId) && (
-                <div>
-                  <Button size="sm" variant="outline" onClick={() => setEditSong({ id: sel.songId!, text: songToText(songsById.get(sel.songId!)!) })}>
-                    <Pencil /> Edit lyrics
-                  </Button>
-                </div>
-              )}
+              {sel.kind === "song" && sel.songId && songsById.get(sel.songId) && (() => {
+                const song = songsById.get(sel.songId!)!;
+                const track = song.trackUrl ? p.media.find((m) => m.source_url === song.trackUrl) : undefined;
+                return (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setEditSong({ id: sel.songId!, text: songToText(song) })}>
+                      <Pencil /> Edit lyrics
+                    </Button>
+                    {track && sel.bgAudioId !== track.id && (
+                      <Button size="sm" variant="outline" title="Play the song's backing track when it goes live" onClick={() => updateItem(sel.id, { bgAudioId: track.id, bgLoop: false })}>
+                        <AudioLines /> Play its backing track
+                      </Button>
+                    )}
+                    {song.trackUrl && !track && <span className="text-xs text-muted-foreground">Its backing track is not downloaded yet (Media page).</span>}
+                  </div>
+                );
+              })()}
               {(sel.kind === "video" || sel.kind === "audio") && (
                 <Select
                   value={sel.mediaId || undefined}

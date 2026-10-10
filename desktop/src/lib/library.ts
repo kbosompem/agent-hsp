@@ -12,6 +12,10 @@ export type Song = {
   order: string[];
   /** Each section is already one slide (VideoPsalm imports); never split it. */
   keepSlides?: boolean;
+  /** Where it came from, e.g. "shemen:5247" or "songbook:Arise", so it is not added twice. */
+  source?: string;
+  /** Web address of its backing track; the media item with this source_url is the track. */
+  trackUrl?: string;
 };
 
 export type AgendaKind = "song" | "scripture" | "text" | "logo" | "blank" | "sermon" | "video" | "audio";
@@ -108,7 +112,7 @@ export function sectionTag(line: string): string | null {
 }
 
 export function tagName(tag: string): string {
-  const m = tag.match(/^([A-Z])(\d*)$/);
+  const m = tag.match(/^([A-Z])(\d*)(?:\.\d+)?$/);
   if (!m) return tag;
   const names: Record<string, string> = { V: "Verse", C: "Chorus", P: "Pre-chorus", B: "Bridge", E: "Ending", I: "Intro" };
   return (names[m[1]] || m[1]) + (m[2] ? " " + m[2] : "");
@@ -156,6 +160,96 @@ export function parsePlainSong(text: string, fallbackTitle = "Untitled song"): S
   }
   flush();
   return { id: newId(), title, sections, order: [] };
+}
+
+/** "Saxophone interlude", "Modulation": a direction with nothing to sing. */
+const INSTRUMENTAL = /^(?:[a-z]+\s+)?(?:interlude|interdule|nterlude|i n t e r l u d e|instrumental|solo|break|music|modulation|fade|repeat|repeat till end)$/i;
+/** Sheet headings beyond sectionTag's: "Pre chorus", "Vamp", "Repeat chorus". */
+function sheetHeading(t: string): string | null {
+  if (/^verse$/i.test(t)) return "V";
+  if (/^pre[\s-]*chorus$/i.test(t)) return "P";
+  if (/^(?:vamp|coda|chant|choral|tag)$/i.test(t)) return "E";
+  const rep = t.match(/^repeat\s+(.+)$/i) || t.match(/^(.+?)\s*\((?:reprise|repeat)\)$/i);
+  if (rep) {
+    const tag = sectionTag(rep[1]);
+    return tag ? "=" + tag : null;
+  }
+  return null;
+}
+
+/**
+ * A song sheet with headings that repeat: "CHORUS" with no lines under it
+ * means sing the chorus again, and a heading repeated with different words
+ * becomes a new section (C2). Headings may be bare ("Verse:", numbered in
+ * turn). Builds the singing order. Sheets without headings fall back to
+ * parsePlainSong.
+ */
+export function parseSongSheet(text: string, title?: string): Song {
+  let lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const heading = (l: string): string | null => {
+    const t = l.trim().replace(/^\[|\]$/g, "").replace(/:$/, "").trim();
+    // Bare "C" or "V2" shorthand is for typed songs; on a sheet it is a lyric.
+    if (/^[a-z]\d*$/i.test(t)) return null;
+    return sheetHeading(t) ?? sectionTag(l);
+  };
+  if (title == null) {
+    // No title given: the first line is the title unless it is a heading.
+    const i = lines.findIndex((l) => l.trim());
+    title = i >= 0 && !heading(lines[i]) ? lines[i].trim() : "Untitled song";
+    if (i >= 0 && !heading(lines[i])) lines = lines.slice(i + 1);
+  }
+  // parsePlainSong reads its first line as the title, so give it the title line too.
+  if (!lines.some((l) => heading(l))) return { ...parsePlainSong(title + "\n" + lines.join("\n"), title), title };
+  const sections: SongSection[] = [];
+  const order: string[] = [];
+  let verses = 0;
+  let cur: { tag: string; lines: string[] } | null = null;
+  const flush = () => {
+    if (!cur) return;
+    const body = trimBlank(cur.lines).join("\n");
+    const base = cur.tag;
+    cur = null;
+    const same = sections.filter((s) => s.tag === base || s.tag.replace(/\.\d+$/, "") === base);
+    if (!body) {
+      // A repeat: sing the latest section with this heading again.
+      if (same.length) order.push(same[same.length - 1].tag);
+      return;
+    }
+    const match = same.find((s) => s.text === body);
+    if (match) return void order.push(match.tag);
+    const tag = same.length ? base + "." + (same.length + 1) : base;
+    sections.push({ tag, text: body });
+    order.push(tag);
+  };
+  for (const l of lines) {
+    let tag = heading(l);
+    if (tag?.startsWith("=")) {
+      // "Repeat chorus": sing it again, like a bare heading.
+      flush();
+      cur = { tag: tag.slice(1), lines: [] };
+      flush();
+      continue;
+    }
+    if (tag) {
+      flush();
+      // "Verse" with no number takes the next one; "Verse 2" sets the count.
+      if (tag === "V") tag = "V" + ++verses;
+      else if (/^V\d+$/.test(tag)) verses = Math.max(verses, Number(tag.slice(1)));
+      cur = { tag, lines: [] };
+      continue;
+    }
+    if (INSTRUMENTAL.test(l.trim())) {
+      flush();
+      continue;
+    }
+    if (!cur) {
+      if (!l.trim()) continue;
+      cur = { tag: "V" + ++verses, lines: [] };
+    }
+    cur.lines.push(l.trim());
+  }
+  flush();
+  return { id: newId(), title, sections, order };
 }
 
 function trimBlank(ls: string[]): string[] {
@@ -244,9 +338,28 @@ export function parseSongFile(name: string, content: string): Song[] {
     .filter((s) => s.sections.length > 0);
 }
 
-/** Song as editable plain text (title, then tagged sections). */
+/**
+ * Song as editable plain text. For ShemenMusic and songbook songs: title, then sections in singing order. A repeat
+ * of the latest section with that heading is the heading alone (parseSongSheet
+ * reads it back as "sing it again").
+ */
 export function songToText(s: Song): string {
-  return [s.title, "", ...s.sections.map((x) => "[" + tagName(x.tag) + "]\n" + x.text + "\n")].join("\n").trim() + "\n";
+  // Songs typed or imported from song files keep the plain editor format
+  // (sections as written); only ShemenMusic and songbook songs use singing order.
+  if (!s.source) return [s.title, "", ...s.sections.map((x) => "[" + tagName(x.tag) + "]\n" + x.text + "\n")].join("\n").trim() + "\n";
+  const byTag = new Map(s.sections.map((x) => [x.tag, x]));
+  const order = s.order.filter((t) => byTag.has(t));
+  const seq = order.length ? order : s.sections.map((x) => x.tag);
+  const latest = new Map<string, string>();
+  const out = [s.title, ""];
+  for (const tag of seq) {
+    const name = tagName(tag);
+    const sec = byTag.get(tag)!;
+    if (latest.get(name) === tag) out.push("[" + name + "]", "");
+    else out.push("[" + name + "]", sec.text, "");
+    latest.set(name, tag);
+  }
+  return out.join("\n").trim() + "\n";
 }
 
 // ---------- Slides ----------
