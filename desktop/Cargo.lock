@@ -23,11 +23,13 @@ dependencies = [
 name = "agent-hsp"
 version = "0.1.0"
 dependencies = [
+ "bzip2 0.4.4",
  "cpal",
  "preso-core",
  "serde",
  "serde_json",
  "sherpa-onnx",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

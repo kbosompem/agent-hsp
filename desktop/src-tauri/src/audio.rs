@@ -64,10 +64,17 @@ pub fn download_model(app: AppHandle, model: String) {
                     let _ = app.emit("model-ready", &model);
                 }
                 Err(e) => {
-                    let _ = app.emit("model-progress", json!({ "status": format!("download failed: {}", e) }));
+                    crate::log::error(&format!("Nemotron download failed: {}", e));
+                    let _ = app.emit("model-progress", json!({ "status": "error", "error": format!("download failed: {}", e) }));
                 }
             }
         });
+        return;
+    }
+    #[cfg(not(feature = "nemotron"))]
+    if model.starts_with("nemotron") {
+        crate::log::error("Nemotron chosen, but this build does not include it");
+        let _ = app.emit("model-progress", json!({ "status": "error", "error": "This build does not include the Nemotron engine. Choose a Whisper model." }));
         return;
     }
     std::thread::spawn(move || {
@@ -127,6 +134,7 @@ pub fn download_model(app: AppHandle, model: String) {
                     }
                 }
                 if failed || std::fs::rename(&tmp, &path).is_err() {
+                    crate::log::error(&format!("whisper model {} download failed", model));
                     let _ = app.emit(
                         "model-progress",
                         json!({ "status": "error", "error": "download failed" }),
@@ -136,6 +144,7 @@ pub fn download_model(app: AppHandle, model: String) {
                 }
             }
             Err(e) => {
+                crate::log::error(&format!("whisper model {} download failed: {}", model, e));
                 let _ = app.emit(
                     "model-progress",
                     json!({ "status": "error", "error": e.to_string() }),
@@ -504,7 +513,7 @@ fn spawn_segmenter(app: AppHandle, shared: Arc<ListenState>, gen: usize, cfg: Se
                         r
                     }
                     Err(e) => {
-                        eprintln!("whisper failed on samples {}..{}: {}", start, end, e);
+                        crate::log::error(&format!("whisper failed on samples {}..{}: {}", start, end, e));
                         let _ = app.emit("stt-health", SttHealth { lag_s, ms: 0, error: Some(e) });
                         return;
                     }
@@ -574,6 +583,12 @@ pub fn list_audio_inputs() -> Vec<String> {
     host.input_devices()
         .map(|ds| ds.filter_map(|d| d.name().ok()).collect())
         .unwrap_or_default()
+}
+
+/// Which speech engines this build has, so the console offers only those.
+#[tauri::command]
+pub fn speech_engines() -> serde_json::Value {
+    json!({ "nemotron": cfg!(feature = "nemotron") })
 }
 
 #[tauri::command]
@@ -683,7 +698,15 @@ fn start_nemotron(
         match cache.as_ref() {
             Some((m, r)) if *m == model => r.clone(),
             _ => {
-                let r = std::sync::Arc::new(crate::nemotron::create_recognizer(&dir)?);
+                // Logged before and after: if the native library crashes the
+                // app, the last line of the log says where.
+                crate::log::info(&format!("Loading Nemotron from {}", dir.display()));
+                let r = crate::nemotron::create_recognizer(&dir).map_err(|e| {
+                    crate::log::error(&format!("Nemotron load failed: {}", e));
+                    e
+                })?;
+                crate::log::info("Nemotron loaded");
+                let r = std::sync::Arc::new(r);
                 *cache = Some((model.clone(), r.clone()));
                 r
             }

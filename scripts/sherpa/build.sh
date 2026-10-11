@@ -10,7 +10,14 @@
 #
 # Output: desktop/vendor/sherpa-onnx/lib (not in git). The app's
 # .cargo/config.toml points SHERPA_ONNX_LIB_DIR there.
+#
+# On Windows (Git Bash, as in CI) the libraries use the DLL C runtime (/MD),
+# the same one Rust and whisper link against; sherpa's default /MT would not link.
 set -e
+EXTRA=""
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) EXTRA="-DSHERPA_ONNX_USE_STATIC_CRT=OFF" ;;
+esac
 COMMIT=99ddefa
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT="$ROOT/desktop/vendor/sherpa-onnx"
@@ -35,8 +42,9 @@ cmake \
   -DSHERPA_ONNX_ENABLE_JNI=OFF \
   -DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF \
   -DSHERPA_ONNX_ENABLE_C_API=ON \
+  $EXTRA \
   ..
-cmake --build . --config Release -j 8
+cmake --build . --config Release --parallel 8
 cmake --install . --config Release
 echo "sherpa-onnx $COMMIT installed to $OUT"
 ls "$OUT/lib"

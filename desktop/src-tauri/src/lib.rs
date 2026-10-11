@@ -7,6 +7,7 @@ pub mod bundle;
 pub mod backgrounds;
 pub mod media;
 pub mod shemen;
+pub mod log;
 #[cfg(feature = "nemotron")]
 pub mod nemotron;
 
@@ -323,6 +324,7 @@ pub fn run() {
         .manage(Mutex::new(LiveLookup::new()))
         .setup(|app| {
             migrate_old_app_data(app.handle());
+            log::init(app.handle());
             let dir = app
                 .path()
                 .app_data_dir()
@@ -374,7 +376,11 @@ pub fn run() {
             audio::start_listening,
             audio::stop_listening,
             audio::last_session,
-            audio::open_session_folder
+            audio::open_session_folder,
+            audio::speech_engines,
+            media::install_ytdlp,
+            log::log_event,
+            log::open_log_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

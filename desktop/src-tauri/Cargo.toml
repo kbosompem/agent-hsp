@@ -27,9 +27,12 @@ tungstenite = { version = "0.24", default-features = false, features = ["handsha
 # libraries from scripts/sherpa/build.sh). Pinned to main for streaming
 # hotword support, which is newer than the v1.13.8 release.
 sherpa-onnx = { git = "https://github.com/k2-fsa/sherpa-onnx", rev = "99ddefaa92129858b80a71a426903dd4215c83fa", optional = true }
+# Unpacking the Nemotron model download (.tar.bz2) without a system tar.
+tar = { version = "0.4", optional = true }
+bzip2 = { version = "0.4", optional = true }
 
 [features]
-nemotron = ["dep:sherpa-onnx"]
+nemotron = ["dep:sherpa-onnx", "dep:tar", "dep:bzip2"]
 
 # GPU inference on Apple Silicon. Windows stays on CPU.
 [target.'cfg(target_os = "macos")'.dependencies]

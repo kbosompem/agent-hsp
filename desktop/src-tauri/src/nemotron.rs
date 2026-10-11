@@ -318,17 +318,17 @@ pub fn download(app: &AppHandle, model: &str, models_dir: &Path) -> Result<PathB
     }
     drop(f);
     let _ = app.emit("model-progress", serde_json::json!({ "status": "unpacking" }));
-    let ok = std::process::Command::new("tar")
-        .arg("-xjf")
-        .arg(&archive)
-        .arg("-C")
-        .arg(models_dir)
-        .status()
-        .map_err(|e| e.to_string())?
-        .success();
+    // Unpacked in-process: Windows has no bzip2-capable tar on every machine,
+    // and a console window would flash for it.
+    let unpacked = std::fs::File::open(&archive)
+        .map_err(|e| e.to_string())
+        .and_then(|f| tar::Archive::new(bzip2::read::BzDecoder::new(std::io::BufReader::new(f))).unpack(models_dir).map_err(|e| e.to_string()));
     let _ = std::fs::remove_file(&archive);
-    if !ok || !model_ready(&dir) {
-        return Err("Could not unpack the Nemotron model.".into());
+    if let Err(e) = unpacked {
+        return Err(format!("Could not unpack the Nemotron model: {}", e));
+    }
+    if !model_ready(&dir) {
+        return Err("Could not unpack the Nemotron model: files missing after unpacking.".into());
     }
     Ok(dir)
 }

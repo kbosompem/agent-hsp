@@ -39,12 +39,23 @@ jobs:
         run: |
           npm ci
           node build.js
+      # Native libraries for the Nemotron speech engine (sherpa-onnx), built
+      # from the pinned commit in scripts/sherpa/build.sh. Slow, so cached.
+      - id: sherpa-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: desktop/vendor/sherpa-onnx
+          key: sherpa-${{ runner.os }}-${{ hashFiles('scripts/sherpa/build.sh') }}
+      - name: Build sherpa-onnx
+        if: steps.sherpa-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: scripts/sherpa/build.sh
       - name: Install frontend deps
         working-directory: desktop
         run: npm install
-      - name: Build app (macOS dmg / Windows installer)
+      - name: Build app with Nemotron (macOS dmg / Windows installer)
         working-directory: desktop
-        run: npm run tauri build
+        run: npm run tauri build -- --features nemotron
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -330,6 +330,9 @@ pub fn youtube_download(app: AppHandle, video_id: String, folder: String, title:
     let kind = FOLDERS.iter().find(|f| f.0 == folder).map(|f| f.2).unwrap_or("video");
     std::thread::spawn(move || {
         let done = |ok: bool, error: Option<String>| {
+            if let Some(e) = &error {
+                crate::log::error(&format!("YouTube download failed ({}): {}", video_id, e));
+            }
             let _ = app.emit("media-done", serde_json::json!({ "id": video_id, "ok": ok, "error": error }));
         };
         let run = || -> Result<(), String> {
@@ -404,6 +407,18 @@ pub fn youtube_download(app: AppHandle, video_id: String, folder: String, title:
 }
 
 /// Whether HD video downloads are possible (ffmpeg found).
+/// Get yt-dlp now (first-run setup) instead of on the first YouTube search.
+#[tauri::command]
+pub async fn install_ytdlp(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || ytdlp(&app).map(|_| ()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            crate::log::error(&format!("yt-dlp install failed: {}", e));
+            e
+        })
+}
+
 #[tauri::command]
 pub fn media_tools(app: AppHandle) -> serde_json::Value {
     serde_json::json!({ "ffmpeg": ffmpeg(&app).is_some() })

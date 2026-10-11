@@ -214,6 +214,9 @@ pub fn fetch_audio(app: AppHandle, key: String, url: String, folder: String, tit
             Ok(())
         };
         let r = run();
+        if let Err(e) = &r {
+            crate::log::error(&format!("track download failed ({}): {}", url, e));
+        }
         let _ = app.emit("media-done", serde_json::json!({ "id": key, "ok": r.is_ok(), "error": r.err() }));
     });
     Ok(())
