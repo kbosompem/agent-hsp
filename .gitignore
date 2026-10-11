@@ -11,3 +11,6 @@ __pycache__/
 
 # Native sherpa-onnx build for the nemotron feature (scripts/sherpa/build.sh)
 desktop/vendor/
+
+# Microsoft C++ runtime copied in by CI for the Windows installer
+desktop/src-tauri/vcrt/

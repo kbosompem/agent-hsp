@@ -50,6 +50,21 @@ jobs:
         if: steps.sherpa-cache.outputs.cache-hit != 'true'
         shell: bash
         run: scripts/sherpa/build.sh
+      # Ship the Microsoft C++ runtime next to agent-hsp.exe (Microsoft allows
+      # this app-local copy). Nemotron's libraries need a newer runtime than
+      # many laptops have, and without it the app does not start at all.
+      # tauri.windows.conf.json lists these files.
+      - name: Copy C++ runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
+          Write-Host "C++ runtime from $($crt.FullName)"
+          New-Item -ItemType Directory -Force desktop/src-tauri/vcrt | Out-Null
+          foreach ($f in "msvcp140.dll","msvcp140_1.dll","msvcp140_2.dll","vcruntime140.dll","vcruntime140_1.dll") {
+            Copy-Item (Join-Path $crt.FullName $f) desktop/src-tauri/vcrt/
+          }
       - name: Install frontend deps
         working-directory: desktop
         run: npm install
