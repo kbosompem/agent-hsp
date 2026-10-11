@@ -28,6 +28,8 @@ import Backgrounds from "./Backgrounds";
 import CornerSettings from "./CornerSettings";
 import AudioPlayer, { AudioControl } from "./AudioPlayer";
 import MediaLibrary from "./MediaLibrary";
+import Setup from "./Setup";
+import { logEvent } from "./lib/log";
 import { MediaFolder, MediaItem } from "./lib/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -245,6 +247,17 @@ export default function App() {
     return list;
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  // Speech engines compiled into this build (Nemotron is optional).
+  const [engines, setEngines] = useState({ nemotron: true });
+  useEffect(() => {
+    invoke<{ nemotron: boolean }>("speech_engines")
+      .then((e) => {
+        setEngines(e);
+        if (!e.nemotron) setModel((m) => (m.startsWith("nemotron") ? (/Mac/i.test(navigator.userAgent) ? "small.en" : "base.en") : m));
+      })
+      .catch((e) => logEvent("error", "speech_engines: " + String(e)));
+  }, []);
   const [dgKey, setDgKey] = useState("");
   const [dgKeySaved, setDgKeySaved] = useState(false);
   const [dgReplacing, setDgReplacing] = useState(false);
@@ -865,12 +878,18 @@ export default function App() {
         const p = e.payload;
         if (p.status === "progress" && p.total) {
           setModelStatus("downloading " + Math.round(p.loaded / 1048576) + " / " + Math.round(p.total / 1048576) + " MB");
+        } else if (p.status === "error") {
+          setModelStatus("error: " + (p.error || "download failed"));
+          logEvent("error", "model: " + (p.error || "download failed"));
         } else if (p.status) {
           setModelStatus(p.status);
         }
       }),
       listen<string>("model-ready", (e) => setModelStatus("ready · " + e.payload + " (native)")),
-      listen<string>("listen-status", (e) => setMicStatus(e.payload)),
+      listen<string>("listen-status", (e) => {
+        setMicStatus(e.payload);
+        logEvent("info", "listen: " + e.payload);
+      }),
       listen<string>("session-dir", (e) => {
         if (sessionRef.current) sessionRef.current.dir = e.payload;
       }),
@@ -1010,8 +1029,18 @@ export default function App() {
   useEffect(() => {
     invoke<string>("load_library")
       .then((j) => {
-        setLibraryState(parseLibrary(j));
+        const lib = parseLibrary(j);
+        setLibraryState(lib);
         libLoaded.current = true;
+        // First run: offer the downloads. An existing install (it has songs) is marked done quietly.
+        try {
+          if (!localStorage.getItem("hsp-setup-done")) {
+            if (!lib.songs.length) setSetupOpen(true);
+            else localStorage.setItem("hsp-setup-done", "1");
+          }
+        } catch {
+          /* ignore */
+        }
       })
       .catch((e) => {
         // Never overwrite a library we could not read.
@@ -2218,6 +2247,21 @@ export default function App() {
             </div>
           </DialogContent>
         </Dialog>
+        <Setup
+          open={setupOpen}
+          onClose={() => {
+            setSetupOpen(false);
+            try {
+              localStorage.setItem("hsp-setup-done", "1");
+            } catch {
+              /* ignore */
+            }
+          }}
+          nemotron={engines.nemotron}
+          whisperModel={/Mac/i.test(navigator.userAgent) ? "small.en" : "base.en"}
+          onAddSongs={addSongs}
+          onModel={setModel}
+        />
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
@@ -2232,14 +2276,14 @@ export default function App() {
                     <SelectContent>
                       <SelectGroup>
                         <SelectLabel>Best · verses in about a second</SelectLabel>
-                        <SelectItem value="nemotron-160">Nemotron · on this computer, free, offline</SelectItem>
+                        {engines.nemotron && <SelectItem value="nemotron-160">Nemotron · on this computer, free, offline</SelectItem>}
                         <SelectItem value="deepgram">Deepgram · online, paid, needs good internet</SelectItem>
                       </SelectGroup>
                       <SelectSeparator />
                       <SelectGroup>
                         <SelectLabel>Better · 2 to 3 seconds</SelectLabel>
                         <SelectItem value="small.en">Whisper small · most accurate Whisper</SelectItem>
-                        <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>
+                        {engines.nemotron && <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>}
                       </SelectGroup>
                       <SelectSeparator />
                       <SelectGroup>
@@ -2329,6 +2373,19 @@ export default function App() {
                 <p className="text-xs text-muted-foreground">
                   Every time you press Listen, the service is recorded. Stop saves the recording (audio.m4a), transcript.txt and summary.md in
                   a folder named by date and time.
+                </p>
+              </Section>
+              <Section label="Setup and problems">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" onClick={() => { setSettingsOpen(false); setSetupOpen(true); }}>
+                    <Download /> Run setup again
+                  </Button>
+                  <Button variant="outline" onClick={() => void invoke("open_log_folder").catch((e) => toast.error(String(e)))}>
+                    <FolderOpen /> Open log folder
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Errors are written to agent-hsp.log in the log folder. Send that file when reporting a problem.
                 </p>
               </Section>
               <Section label="Console look">

@@ -1,11 +1,13 @@
-// Book / chapter / verse pickers for a scripture reading. Writes the same
+// Quick verse selection for a scripture reading, laid out like VideoPsalm:
+// books | chapters | verses side by side. Click a book, then a chapter, then
+// click or drag across verse numbers (shift-click extends). Writes the same
 // reference text ("John 3:16-17") the reading already stores, so typing a
 // reference still works and the two stay in step.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 type BookShape = { name: string; chapters: number[] };
 
@@ -47,6 +49,11 @@ export default function ScripturePicker({ value, onChange, translation }: { valu
   const from = parts?.from ?? null;
   const to = parts?.to ?? null;
 
+  const [nt, setNt] = useState(book >= 39);
+  useEffect(() => {
+    if (book >= 0) setNt(book >= 39);
+  }, [book]);
+
   const set = (b: number, c: number, f: number | null, t: number | null) => {
     if (b < 0) return;
     const cc = Math.min(Math.max(1, c), books[b].chapters.length || 1);
@@ -56,54 +63,116 @@ export default function ScripturePicker({ value, onChange, translation }: { valu
     onChange(formatRef(books[b].name, cc, ff, tt));
   };
 
+  // Verse drag: [anchor, current] while the button is held; written on release
+  // so a live reading is not re-rendered for every verse crossed.
+  const [drag, setDrag] = useState<[number, number] | null>(null);
+  const dragRef = useRef(drag);
+  dragRef.current = drag;
+  useEffect(() => {
+    const up = () => {
+      const d = dragRef.current;
+      if (!d) return;
+      setDrag(null);
+      const lo = Math.min(d[0], d[1]);
+      const hi = Math.max(d[0], d[1]);
+      set(book, chapter, lo, hi);
+    };
+    window.addEventListener("pointerup", up);
+    return () => window.removeEventListener("pointerup", up);
+  });
+  const lo = drag ? Math.min(drag[0], drag[1]) : from;
+  const hi = drag ? Math.max(drag[0], drag[1]) : from ? to ?? from : null;
+
+  // Keep the chosen book in view without scrolling the page itself.
+  const bookList = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = bookList.current;
+    const el = list?.querySelector<HTMLElement>("[data-on]");
+    if (list && el && (el.offsetTop < list.scrollTop || el.offsetTop + el.offsetHeight > list.scrollTop + list.clientHeight)) {
+      list.scrollTop = el.offsetTop - list.clientHeight / 2;
+    }
+  }, [book, nt, books]);
+
+  const cell = "h-7 rounded-sm text-xs tabular-nums select-none";
+  const shown = nt ? books.slice(39).map((b, i) => [b, i + 39] as const) : books.slice(0, 39).map((b, i) => [b, i] as const);
+
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2">
-        <Select value={book >= 0 ? String(book) : undefined} onValueChange={(v) => set(parseInt(v, 10), 1, null, null)}>
-          <SelectTrigger className="w-full"><SelectValue placeholder="Book" /></SelectTrigger>
-          <SelectContent className="max-h-80">
-            <SelectGroup>
-              <SelectLabel>Old Testament</SelectLabel>
-              {books.slice(0, 39).map((b, i) => (
-                <SelectItem key={b.name} value={String(i)} disabled={!b.chapters.length}>{b.name}</SelectItem>
-              ))}
-            </SelectGroup>
-            <SelectSeparator />
-            <SelectGroup>
-              <SelectLabel>New Testament</SelectLabel>
-              {books.slice(39).map((b, i) => (
-                <SelectItem key={b.name} value={String(i + 39)} disabled={!b.chapters.length}>{b.name}</SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <Select value={chapter ? String(chapter) : undefined} disabled={book < 0} onValueChange={(v) => set(book, parseInt(v, 10), null, null)}>
-          <SelectTrigger className="w-full"><SelectValue placeholder="Chapter" /></SelectTrigger>
-          <SelectContent className="max-h-80">
-            {chapters.map((_, i) => (
-              <SelectItem key={i} value={String(i + 1)}>Chapter {i + 1}</SelectItem>
+      <div className="grid h-56 grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.2fr)] overflow-hidden rounded-md border text-sm">
+        <div className="flex min-h-0 flex-col border-r">
+          <div className="grid grid-cols-2 border-b text-xs">
+            {["Old Testament", "New Testament"].map((t, i) => (
+              <button
+                key={t}
+                type="button"
+                className={cn("px-1 py-1", nt === (i === 1) ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
+                onClick={() => setNt(i === 1)}
+              >
+                {t}
+              </button>
             ))}
-          </SelectContent>
-        </Select>
-        <Select value={from ? String(from) : "all"} disabled={!verses} onValueChange={(v) => set(book, chapter, v === "all" ? null : parseInt(v, 10), to)}>
-          <SelectTrigger className="w-full"><SelectValue placeholder="From verse" /></SelectTrigger>
-          <SelectContent className="max-h-80">
-            <SelectItem value="all">Whole chapter</SelectItem>
-            {Array.from({ length: verses }, (_, i) => (
-              <SelectItem key={i} value={String(i + 1)}>From verse {i + 1}</SelectItem>
+          </div>
+          <div ref={bookList} className="relative min-h-0 flex-1 overflow-y-auto p-1">
+            {shown.map(([b, i]) => (
+              <button
+                key={b.name}
+                type="button"
+                data-on={i === book ? "" : undefined}
+                disabled={!b.chapters.length}
+                className={cn("block w-full truncate rounded-sm px-2 py-0.5 text-left disabled:opacity-40", i === book ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
+                onClick={() => set(i, 1, null, null)}
+              >
+                {b.name}
+              </button>
             ))}
-          </SelectContent>
-        </Select>
-        <Select value={to ? String(to) : "one"} disabled={!from} onValueChange={(v) => set(book, chapter, from, v === "one" ? null : parseInt(v, 10))}>
-          <SelectTrigger className="w-full"><SelectValue placeholder="To verse" /></SelectTrigger>
-          <SelectContent className="max-h-80">
-            <SelectItem value="one">Just that verse</SelectItem>
-            {from &&
-              Array.from({ length: Math.max(0, verses - from) }, (_, i) => (
-                <SelectItem key={i} value={String(from + i + 1)}>To verse {from + i + 1}</SelectItem>
+          </div>
+        </div>
+        <div className="min-h-0 overflow-y-auto border-r p-1">
+          {chapters.length ? (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-0.5">
+              {chapters.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  title={"Whole chapter " + (i + 1)}
+                  className={cn(cell, i + 1 === chapter ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
+                  onClick={() => set(book, i + 1, null, null)}
+                >
+                  {i + 1}
+                </button>
               ))}
-          </SelectContent>
-        </Select>
+            </div>
+          ) : (
+            <p className="p-1 text-xs text-muted-foreground">Pick a book.</p>
+          )}
+        </div>
+        <div className="min-h-0 overflow-y-auto p-1">
+          {verses ? (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-0.5" title="Click a verse, or drag across verses. Shift-click extends.">
+              {Array.from({ length: verses }, (_, i) => {
+                const v = i + 1;
+                const on = lo != null && hi != null && v >= lo && v <= hi;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    className={cn(cell, on ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
+                      e.preventDefault();
+                      setDrag([e.shiftKey && from ? from : v, v]);
+                    }}
+                    onPointerEnter={() => setDrag((d) => (d ? [d[0], v] : d))}
+                  >
+                    {v}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="p-1 text-xs text-muted-foreground">{chapters.length ? "Pick a chapter." : ""}</p>
+          )}
+        </div>
       </div>
       <Input placeholder="…or type it, e.g. John 3:16-18 or Psalm 23" value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
