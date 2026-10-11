@@ -10,6 +10,11 @@ Work on the `streaming-latency` branch, not yet merged to `main`.
 
 ### Added
 
+- Error log: errors from the app and its screens go to `agent-hsp.log` in the app's data folder. Settings has "Open log folder".
+- First-run setup offers each download as an optional checkbox: Nemotron, Whisper, yt-dlp, ShemenMusic songs, ShemenMusic backing tracks. It can be run again from Settings.
+- Verse picker in VideoPsalm style: all 66 books, chapters and verses visible at once. Click a book, click a chapter, then click or drag across verses.
+- The Windows build includes Nemotron. CI builds sherpa-onnx with the DLL C runtime and caches it.
+
 - ShemenMusic and Songbook tabs beside YouTube on the Media page. ShemenMusic lists the songs on shemenmusic.com (the church's music repository) with their backing tracks and lyrics; search titles and lyrics, preview, and "Get" puts the lyrics in the song library (verses, choruses and repeats in singing order) and downloads the track. Songbook opens a songbook file (JSON of songs, lyrics and track links, e.g. made from a PDF songbook; MediaFire links are followed to the file) and "Get all" loads it. Tracks download one at a time and are never fetched twice. Adding a song whose backing track is downloaded sets it to play once when the song goes live ("Play its backing track" on the Service page does the same for songs already in a service). Changing the background audio of the item on screen takes effect at once.
 - Scripture readings have Book, Chapter, From verse and To verse pickers (typing a reference still works). Any service item can have its own background (photo or motion, from the same choices as the Look page) while it is live. Double-click a song to add it and go live; double-click media to play or show it.
 - Media library (Media page) with five folders: General video, Song video (no lyrics), Song audio, Instrumental audio, Instrumental with lyrics. Add files from the computer, or search YouTube in the app and download into a folder (yt-dlp, fetched on first use and kept up to date; HD video when ffmpeg is installed, H.264 preferred). Live streams are left out of results. A notice reminds churches to download only what they have the right to use.
