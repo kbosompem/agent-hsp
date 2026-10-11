@@ -64,6 +64,7 @@ pub fn write(level: &str, msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{} {:5} {}", stamp(), level, msg.replace('\n', "\n    "));
     }
+    drop(guard);
     if cfg!(debug_assertions) {
         eprintln!("{} {}", level, msg);
     }

@@ -46,10 +46,12 @@ function getModel(model: string, progress: (note: string) => void): Promise<void
         else if (p.status === "progress" && p.total) progress(Math.round(p.loaded / 1048576) + " / " + Math.round(p.total / 1048576) + " MB");
         else if (p.status === "unpacking") progress("unpacking…");
       }),
-    ]).then((fns) => {
-      off.push(...fns);
-      invoke("ensure_model", { model }).catch((e) => done(String(e)));
-    });
+    ])
+      .then((fns) => {
+        off.push(...fns);
+        return invoke("ensure_model", { model });
+      })
+      .catch((e) => done(String(e)));
   });
 }
 
@@ -75,12 +77,12 @@ export default function Setup({ open, onClose, nemotron, whisperModel, onAddSong
       setState({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, nemotron]);
 
   const set = (id: Task, s: State) => setState((m) => ({ ...m, [id]: s }));
 
   async function step(id: Task, work: (note: (n: string) => void) => Promise<string | void>) {
-    if (!picked[id]) return;
+    if (!picked[id] || !tasks.some((t) => t.id === id)) return;
     set(id, { status: "working" });
     try {
       const note = await work((n) => set(id, { status: "working", note: n }));
@@ -95,13 +97,15 @@ export default function Setup({ open, onClose, nemotron, whisperModel, onAddSong
   async function run() {
     setRunning(true);
     const models = (async () => {
+      let haveNemotron = false;
       await step("nemotron", async (note) => {
         await getModel(NEMOTRON, note);
+        haveNemotron = true;
         onModel(NEMOTRON);
       });
       await step("whisper", async (note) => {
         await getModel(whisperModel, note);
-        if (!picked.nemotron) onModel(whisperModel);
+        if (!haveNemotron) onModel(whisperModel);
       });
     })();
     const ytdlp = step("ytdlp", () => invoke("install_ytdlp"));

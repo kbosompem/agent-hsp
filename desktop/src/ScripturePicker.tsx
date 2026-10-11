@@ -77,8 +77,15 @@ export default function ScripturePicker({ value, onChange, translation }: { valu
       const hi = Math.max(d[0], d[1]);
       set(book, chapter, lo, hi);
     };
+    const cancel = () => setDrag(null);
     window.addEventListener("pointerup", up);
-    return () => window.removeEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+    };
   });
   const lo = drag ? Math.min(drag[0], drag[1]) : from;
   const hi = drag ? Math.max(drag[0], drag[1]) : from ? to ?? from : null;
