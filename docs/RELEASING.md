@@ -60,7 +60,12 @@ Pushing the tag starts `.github/workflows/release.yml`:
 2. Two jobs build the installers with `tauri-apps/tauri-action`:
    - macOS (`macos-latest`, Apple Silicon): `.dmg`
    - Windows (`windows-latest`): NSIS `.exe` installer
-3. The installers are attached to a **draft** GitHub Release named "Agent HSP vX.Y.Z".
+3. The installers are attached to a **draft** GitHub Release named "Agent HSP vX.Y.Z", twice: once with the version in the file name, and once under a fixed name (`Agent-HSP-macOS.dmg`, `Agent-HSP-Windows-setup.exe`).
+
+The fixed names give links that always point at the newest published release. The Anagkazo website (anagkazo.app) uses them:
+
+- https://github.com/kbosompem/agent-hsp/releases/latest/download/Agent-HSP-macOS.dmg
+- https://github.com/kbosompem/agent-hsp/releases/latest/download/Agent-HSP-Windows-setup.exe
 
 Nothing is public until you publish the draft.
 
@@ -82,4 +87,3 @@ Nothing is public until you publish the draft.
 - **Intel Macs.** `macos-latest` builds for Apple Silicon only. A universal build needs `--target universal-apple-darwin` and both Rust targets installed.
 - **Auto-update.** Not set up. Users download each new version by hand.
 - **Tests in CI.** Neither workflow runs `cargo test` or `tsc` yet. Adding them to `build.yml` is a good first contribution.
-- **No v0.1.0 tag.** The first version (see `CHANGELOG.md`) was never tagged. Tag commit `6caceca` as `v0.1.0` if you want the compare links to work.

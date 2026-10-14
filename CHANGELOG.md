@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
-Work on the `streaming-latency` branch, not yet merged to `main`.
+## [0.2.0] - 2026-10-14
 
 ### Added
 
@@ -122,5 +122,6 @@ First version, released as "AMC Preso".
 - Light and dark console themes.
 - GitHub Actions workflow that builds macOS and Windows installers on every push to `main`.
 
-[Unreleased]: https://github.com/kbosompem/agent-hsp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kbosompem/agent-hsp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kbosompem/agent-hsp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kbosompem/agent-hsp/releases/tag/v0.1.0
