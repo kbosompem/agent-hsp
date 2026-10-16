@@ -1,0 +1,14 @@
+{"version":1,"currentAgendaId":"sun","songs":[
+{"id":"s1","title":"Holy, Holy, Holy","author":"Reginald Heber","order":[],"sections":[{"tag":"V1","text":"Holy, holy, holy! Lord God Almighty!\nEarly in the morning our song shall rise to Thee;\nHoly, holy, holy, merciful and mighty!\nGod in three Persons, blessed Trinity!"},{"tag":"V2","text":"Holy, holy, holy! All the saints adore Thee,\nCasting down their golden crowns around the glassy sea;\nCherubim and seraphim falling down before Thee,\nWho wert, and art, and evermore shalt be."}]},
+{"id":"s2","title":"Blessed Assurance","author":"Fanny Crosby","order":["V1","C","V2","C"],"sections":[{"tag":"V1","text":"Blessed assurance, Jesus is mine!\nO what a foretaste of glory divine!\nHeir of salvation, purchase of God,\nBorn of His Spirit, washed in His blood."},{"tag":"C","text":"This is my story, this is my song,\nPraising my Savior all the day long;\nThis is my story, this is my song,\nPraising my Savior all the day long."},{"tag":"V2","text":"Perfect submission, perfect delight,\nVisions of rapture now burst on my sight;\nAngels descending bring from above\nEchoes of mercy, whispers of love."}]},
+{"id":"s3","title":"It Is Well with My Soul","author":"Horatio Spafford","order":["V1","C"],"sections":[{"tag":"V1","text":"When peace like a river attendeth my way,\nWhen sorrows like sea billows roll;\nWhatever my lot, Thou hast taught me to say,\nIt is well, it is well with my soul."},{"tag":"C","text":"It is well with my soul,\nIt is well, it is well with my soul."}]}
+],"agendas":[{"id":"sun","name":"Sunday 1st Gathering","date":"2026-10-18","items":[
+{"id":"a1","kind":"logo","title":"Welcome"},
+{"id":"a2","kind":"song","title":"Holy, Holy, Holy","songId":"s1"},
+{"id":"a3","kind":"song","title":"Blessed Assurance","songId":"s2"},
+{"id":"a4","kind":"text","title":"Announcements","body":"Midweek service\nWednesday 7 pm\n\nBaptism class\nSaturday 10 am"},
+{"id":"a5","kind":"scripture","title":"Scripture reading","reference":"John 3:16-18"},
+{"id":"a6","kind":"sermon","title":"Amazing Love"},
+{"id":"a7","kind":"song","title":"It Is Well with My Soul","songId":"s3"},
+{"id":"a8","kind":"blank","title":"Close"}
+]}]}
