@@ -64,6 +64,14 @@ export function logVerse(st: SermonState, label: string, verseText: string, trig
   addNote(st, label + " — " + trimWords(verseText, 12));
 }
 
+/** Take back the last logVerse() of a verse that was swapped out as misheard. */
+export function unlogVerse(st: SermonState, label: string) {
+  const i = st.verseLog.map((e) => e.label).lastIndexOf(label);
+  if (i >= 0) st.verseLog.splice(i, 1);
+  const n = st.notes.map((b) => b.startsWith(label + " — ")).lastIndexOf(true);
+  if (n >= 0) st.notes.splice(n, 1);
+}
+
 /** Pick up "the title of my message is…" and "point number one…". Returns status messages. */
 export function extractSermonStructure(st: SermonState, text: string): string[] {
   const msgs: string[] = [];

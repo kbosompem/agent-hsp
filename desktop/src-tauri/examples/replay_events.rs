@@ -2,21 +2,30 @@
 // (e.g. Deepgram's live websocket) through the parser with the same rules as
 // the latency harness: partials are tail-settled, only chapter:verse hits
 // count, and a partial hit must repeat in the next partial of the same
-// segment; a final hit counts at once and commits context.
+// segment (the console's rule for whisper; HYBRID=1 is its rule for
+// Deepgram and Nemotron);
+// a final hit counts at once and commits context.
 //
 //   cargo run --release --example replay_events -- events.json out.json
 //
 // events.json: {"clip": [a, b], "events": [{"t", "text", "final": bool, "seg"}]}
 // t is the moment the transcript arrived, on the recording clock.
 // ONE_PARTIAL=1 accepts a hit from a single partial.
+// HYBRID=1 does the same, and when a later partial of the segment, within
+// SWAP_S, no longer says the verse on screen and names a new one in the same
+// book, the new one replaces it: the replaced entry gets "swapped" (when it came down).
 
 use preso_core::LiveLookup;
 use std::collections::HashSet;
+
+/// How long after a partial puts a verse up a later partial may swap it.
+const SWAP_S: f64 = 1.5;
 
 fn drop_trailing_number(t: &str) -> String {
     const WORDS: &[&str] = &["zero","one","two","three","four","five","six","seven","eight","nine","ten",
         "eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen",
         "twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety","hundred"];
+    const TENS: &[&str] = &["twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety","hundred"];
     let trimmed = t.trim_end();
     let cut = trimmed.rfind(|c: char| c.is_whitespace()).map(|i| i + 1).unwrap_or(0);
     let last = trimmed[cut..].trim_end_matches(|c: char| ".,!?".contains(c));
@@ -24,7 +33,20 @@ fn drop_trailing_number(t: &str) -> String {
     let numeric = !last.is_empty()
         && (last.chars().all(|c| c.is_ascii_digit() || ":.-".contains(c)) && last.chars().any(|c| c.is_ascii_digit())
             || WORDS.contains(&last.to_lowercase().as_str()));
-    if numeric { trimmed[..cut].to_string() } else { t.to_string() }
+    if !numeric {
+        return t.to_string();
+    }
+    // "thirty two" is one number: drop the tens word before it too.
+    let mut rest = trimmed[..cut].trim_end();
+    loop {
+        let c = rest.rfind(|c: char| c.is_whitespace()).map(|i| i + 1).unwrap_or(0);
+        let w = rest[c..].trim_matches(|c: char| ",.:;-!?".contains(c)).to_lowercase();
+        if !TENS.contains(&w.as_str()) {
+            break;
+        }
+        rest = rest[..c].trim_end();
+    }
+    rest.to_string()
 }
 
 /// Same as settle_tail() in examples/latency.rs (mirror of settleTail() in App.tsx).
@@ -51,13 +73,18 @@ fn settle_tail(t: &str) -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let dump: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&args[1]).unwrap()).unwrap();
-    let one_partial = std::env::var("ONE_PARTIAL").is_ok();
+    let hybrid = std::env::var("HYBRID").is_ok();
+    let one_partial = hybrid || std::env::var("ONE_PARTIAL").is_ok();
     preso_core::init_engine(None);
     let mut live = LiveLookup::new();
     let mut shown: Vec<(f64, String)> = Vec::new();
     let mut shown_log: Vec<serde_json::Value> = Vec::new();
     let mut prev: HashSet<String> = HashSet::new();
     let mut prev_seg = -1i64;
+    // The verse on screen: shown_log index, its book, and its segment if a partial fired it.
+    let mut on_screen: Option<(usize, u32, Option<i64>)> = None;
+    // Verses swapped out in this segment: its partials may not bring them back.
+    let mut seg_out: HashSet<String> = HashSet::new();
     for e in dump["events"].as_array().unwrap() {
         let t = e["t"].as_f64().unwrap();
         let text = e["text"].as_str().unwrap();
@@ -73,22 +100,37 @@ fn main() {
         let accepted: Vec<String> = if partial {
             if s != prev_seg {
                 prev.clear();
+                seg_out.clear();
             }
-            let a = if one_partial { labels.iter().cloned().collect() } else { labels.intersection(&prev).cloned().collect() };
+            let a: Vec<String> = if one_partial { labels.iter().cloned().collect() } else { labels.intersection(&prev).cloned().collect() };
             prev = labels.clone();
             prev_seg = s;
-            a
+            a.into_iter().filter(|l| !seg_out.contains(l)).collect()
         } else {
             prev.clear();
             labels.iter().cloned().collect()
         };
         for l in accepted {
-            if !shown.iter().any(|(at, sl)| *sl == l && t - at < 180.0) {
-                let vt = hits.iter().find(|h| h.label == l).map(|h| h.text.clone()).unwrap_or_default();
-                shown_log.push(serde_json::json!({ "t": t, "label": l, "text": vt, "trigger": text,
-                                                   "via": if partial { "partial" } else { "final" } }));
-                shown.push((t, l));
+            if shown.iter().any(|(at, sl)| *sl == l && t - at < 180.0) {
+                continue;
             }
+            // A verse this segment's partials put up moments ago, which the
+            // words no longer say, was a mishearing: this one takes its place.
+            let book = hits.iter().find(|h| h.label == l).and_then(|h| h.reference.as_ref()).map_or(0, |r| r.book as u32);
+            if let (true, true, Some((i, ab, Some(fs)))) = (hybrid, partial, on_screen) {
+                let a = shown_log[i]["label"].as_str().unwrap().to_string();
+                let at = shown_log[i]["t"].as_f64().unwrap();
+                if fs == s && ab == book && t - at <= SWAP_S && !labels.contains(&a) {
+                    shown_log[i]["swapped"] = serde_json::json!(t);
+                    shown.retain(|(st, sl)| !(*sl == a && *st == at));
+                    seg_out.insert(a);
+                }
+            }
+            let vt = hits.iter().find(|h| h.label == l).map(|h| h.text.clone()).unwrap_or_default();
+            on_screen = Some((shown_log.len(), book, if partial { Some(s) } else { None }));
+            shown_log.push(serde_json::json!({ "t": t, "label": l, "text": vt, "trigger": text,
+                                               "via": if partial { "partial" } else { "final" } }));
+            shown.push((t, l));
         }
     }
     let out = serde_json::json!({ "clip": dump["clip"], "shown": shown_log });

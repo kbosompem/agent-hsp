@@ -44,8 +44,9 @@ The Rust side has two parts:
           v
  [console window]  App.tsx
    partial: follow the reading, settle the tail,
-            lookup_live(commit=false), fire only if the same
-            chapter:verse shows up in two partials in a row
+            lookup_live(commit=false), fire a chapter:verse
+            (Deepgram/Nemotron: first partial; Whisper: two in
+            a row); swap it if the next words change it
    final:   drop junk -> voice commands -> corrections
             -> sermon outline notes -> lookup_live(commit=true)
             -> quote matching (embeddings)
@@ -106,7 +107,7 @@ The theme travels separately. The console sends an `output-theme` event straight
 
 Much of the "when should the screen change" logic lives in the console, in TypeScript:
 
-- **Partials.** `settleTail` trims an unfinished end ("John 3 1" may become "John 3 16"). A verse only fires when the same label appears in two partials in a row.
+- **Partials.** `settleTail` trims an unfinished end ("John 3 1" may become "John 3 16"; "verse thirty two" is dropped whole, never leaving "thirty"). With Deepgram and Nemotron a verse fires from the first partial that has it. Whisper re-transcribes the whole sentence each time and invents references from half-heard audio, so there a verse fires only when the same label appears in two partials in a row. If a later partial within 1.5 seconds no longer says that verse and names another, the new one replaces it, and the misheard one leaves undo, history and the summary.
 - **Voice commands.** "next verse", "previous verse", "go back", "jump to verse 15", "show it again". Navigation words are ignored when the sentence also names a chapter or verse, so "go back to James chapter 3" shows James 3.
 - **Corrections.** Within 30 seconds of a verse, "sorry, chapter 3" or "I mean verse 5" changes the verse on screen.
 - **Following a reading** (`lib/voice.ts`). While a range such as Matthew 5:1-12 is up, the console moves to the next verse once the preacher has read past the current one. It compares stemmed content words, so it tolerates a different translation.

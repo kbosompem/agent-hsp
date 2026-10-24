@@ -6,7 +6,7 @@
   python3 scripts/stt-eval/stream_latency.py whisper <slug>...              # alt/whisper-stream-<slug>.json from examples/latency.rs --dump
 
 Deepgram events are replayed three ways with examples/replay_events.rs:
-partials + finals (two partials in a row, as the console does), one partial,
+partials + finals (two partials in a row, the console's rule for whisper), one partial,
 and finals only.
 """
 import json, os, subprocess, sys

@@ -2,8 +2,10 @@
 """Per-reference live delay for any engine's event log, under three rules,
 replayed through examples/replay_events.rs (no new transcription):
 
-  two partials : a chapter:verse must appear in two partials in a row of one segment (the app's rule)
+  two partials : a chapter:verse must appear in two partials in a row of one segment (the app's rule for whisper)
   one partial  : a single partial is enough
+  hybrid       : the app's rule for Deepgram and Nemotron: one partial, and a later partial that drops that verse for a new one swaps it
+                 (swapped verses are not counted wrong; "swapped" says how many, and for how long)
   finals only  : only endpoint finals count
 
   python3 scripts/stt-eval/live_delay.py <source> [<source> ...]
@@ -22,7 +24,7 @@ import score_alt as sa  # noqa: E402
 sr = sa.sr
 REPLAY = os.path.join(sr.ROOT, "desktop", "target", "release", "examples", "replay_events")
 SLUGS = ["20111129-can-do-man-2", "dhm-P64gA5d4SoQ"]
-RULES = {"two partials": {}, "one partial": {"ONE_PARTIAL": "1"}, "finals only": None}
+RULES = {"two partials": {}, "one partial": {"ONE_PARTIAL": "1"}, "hybrid": {"HYBRID": "1"}, "finals only": None}
 
 
 def pct(xs, p):
@@ -48,7 +50,7 @@ def load(source, slug):
 def run(source):
     out = {}
     for rule, env in RULES.items():
-        delays, found, scored, wrong, keyed = [], 0, 0, 0, {}
+        delays, found, scored, wrong, keyed, up = [], 0, 0, 0, {}, []
         for slug in SLUGS:
             d = load(source, slug)
             if env is None:
@@ -59,14 +61,18 @@ def run(source):
                 subprocess.run([REPLAY, i, o], check=True, capture_output=True, env={**os.environ, **(env or {})})
                 shown = json.load(open(o))["shown"]
             refs = [r for r in sa.refs_for(slug) if d["clip"][0] <= r["spoken_start_s"] and r["spoken_end_s"] <= d["clip"][1]]
+            swapped = {(s["label"], round(s["t"], 1)) for s in shown if "swapped" in s}
+            up += [s["swapped"] - s["t"] for s in shown if "swapped" in s]
             sc = sr.score(refs, shown)
+            sc["wrong"] = [w for w in sc["wrong"] if (w["label"], w["at"]) not in swapped]
             delays += [h["delay"] for h in sc["hits"]]
             keyed.update({(slug, h["at"]): h["delay"] for h in sc["hits"]})
             found += sc["found"]; scored += sc["scored"]; wrong += len(sc["wrong"])
         out[rule] = dict(median=pct(delays, .5), p90=pct(delays, .9), max=max(delays) if delays else float("nan"),
                          n=len(delays), found=found, scored=scored, wrong=wrong, keyed=keyed)
         print(f"{source:34} {rule:13} median {out[rule]['median']:5.2f}s  p90 {out[rule]['p90']:5.2f}s  "
-              f"max {out[rule]['max']:5.2f}s  (n={len(delays)})  found {found}/{scored}  wrong {wrong}", flush=True)
+              f"max {out[rule]['max']:5.2f}s  (n={len(delays)})  found {found}/{scored}  wrong {wrong}"
+              + (f"  swapped {len(up)} (up {pct(up, .5):.2f}s median, {max(up):.2f}s max)" if up else ""), flush=True)
     return out
 
 

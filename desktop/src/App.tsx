@@ -45,6 +45,7 @@ import {
   sermonTitle as titleFor,
   SummaryData,
   trimWords,
+  unlogVerse,
 } from "./lib/sermon";
 import Service, { ServiceNav } from "./Service";
 import { PerSlide, groupVerses, parsePerSlide, slideHas } from "./lib/verses";
@@ -74,6 +75,8 @@ type Card = {
   kind: "ref" | "quote";
   fireAt: number;
   status: "pending" | "done";
+  // A partial misheard this verse moments ago; this card takes its place.
+  replaces?: string;
 };
 
 type TrLine = { text: string; labels: string[] };
@@ -109,10 +112,12 @@ const REF_REPEAT_MS = 30000;
 // A quote match is not repeated within this window.
 const QUOTE_REPEAT_MS = 180000;
 
-// A spoken reference has already been confirmed by two partials in a row, so
-// it goes up at once. Quote matches are less certain and wait so the operator
-// can skip them.
+// A spoken reference goes up at once (speed matters more than the odd wrong
+// verse, which a later partial can swap out). Quote matches are less certain
+// and wait so the operator can skip them.
 const REF_FIRE_DELAY = 0;
+// How long after a partial puts a verse up a later partial may swap it.
+const SWAP_MS = 1500;
 // A verse taken down with "HSP" stays off the screen this long.
 const BLOCK_MS = 60000;
 const FIRE_DELAY = 600;
@@ -135,16 +140,23 @@ function isNumberWord(tail: string): boolean {
 }
 
 const RANGE_WORDS = new Set(["and", "to", "through", "thru", "until", "till"]);
+const TENS_WORDS = new Set(["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred"]);
 
 // Trim the unfinished end of a partial transcript. "John 3 1" may be "John 3 16"
 // half-spoken, and "Proverbs 3 verses 5 and" may be the start of "5 and 6".
-// Drops a trailing number, then any trailing "<number> <range word>".
+// Drops a trailing number ("thirty two" whole, never leaving "thirty"), then
+// any trailing "<number> <range word>".
 function settleTail(text: string): string {
   const words = text.trim().split(/\s+/);
   const bare = (w: string) => w.replace(/^[,.:;-]+/, "").replace(/[.,!?:;-]+$/, "").toLowerCase();
-  if (words.length && isNumberWord(words[words.length - 1])) words.pop();
+  const dropNumber = () => {
+    words.pop();
+    while (words.length && TENS_WORDS.has(bare(words[words.length - 1]))) words.pop();
+  };
+  if (words.length && isNumberWord(words[words.length - 1])) dropNumber();
   while (words.length >= 2 && RANGE_WORDS.has(bare(words[words.length - 1])) && isNumberWord(words[words.length - 2])) {
-    words.splice(-2, 2);
+    words.pop();
+    dropNumber();
   }
   return words.join(" ");
 }
@@ -193,6 +205,9 @@ export default function App() {
     }
     return /Mac/i.test(navigator.userAgent) ? "small.en" : "base.en";
   });
+  // Deepgram and Nemotron stream: their partials only grow (see onPartial).
+  const streamingRef = useRef(false);
+  streamingRef.current = model === "deepgram" || model.startsWith("nemotron");
   useEffect(() => {
     try {
       localStorage.setItem("hsp-model", model);
@@ -318,6 +333,9 @@ export default function App() {
   const verseShownAt = useRef(0);
   const seq = useRef(1);
   const shownRef = useRef<Record<string, number>>({});
+  // The last swap (misheard verse taken down for the one shown in its place),
+  // so a final that brings the misheard verse back swaps back.
+  const swapRef = useRef<{ from: string; to: string; at: number } | null>(null);
   const lastCmdAt = useRef(0);
   // Hold: the AI never changes the projector. Detected verses wait as cards
   // the operator can click. Blackout and Logo turn it on.
@@ -341,12 +359,14 @@ export default function App() {
   const diagRef = useRef("");
   const listeningRef = useRef(false);
   // Streaming partials: live text of the segment still being spoken, the
-  // labels the previous partial saw, and labels already fired from partials.
-  const partialRef = useRef<{ seg: number; text: string; labels: Set<string>; fired: string[] }>({
+  // labels the previous partial saw, labels already fired from partials, and
+  // labels swapped out as mishearings (its partials may not bring them back).
+  const partialRef = useRef<{ seg: number; text: string; labels: Set<string>; fired: string[]; out: Set<string> }>({
     seg: -1,
     text: "",
     labels: new Set(),
     fired: [],
+    out: new Set(),
   });
   const indexLoadedRef = useRef(false);
   const dirtyRef = useRef(false);
@@ -439,6 +459,23 @@ export default function App() {
       if (historyRef.current.length > 12) historyRef.current.shift();
     }
     logVerse(stRef.current, h.label, h.text, trigger);
+  }
+
+  /** A later partial heard the reference differently: put the new verse up in
+   *  place of the misheard one, which leaves undo, history and the summary. */
+  async function swapVerse(hit: VerseHit, replaced: string, trigger: string) {
+    const u = undoRef.current;
+    const shown = showVerse(hit, trigger);
+    // showVerse sets its undo entry before its first await.
+    const mine = undoRef.current;
+    if (u && u.label === replaced && mine) mine.before = u.before;
+    swapRef.current = { from: replaced, to: hit.label, at: Date.now() };
+    await shown;
+    const i = historyRef.current.map((x) => x.label).lastIndexOf(replaced);
+    if (i >= 0 && i < historyRef.current.length - 1) historyRef.current.splice(i, 1);
+    delete shownRef.current[replaced];
+    unlogVerse(stRef.current, replaced);
+    setMicStatus("Swapped " + replaced + " for " + hit.label);
   }
 
   async function showSeqSlide(idx: number) {
@@ -1189,7 +1226,12 @@ export default function App() {
       if (due.length) {
         due.forEach((c) => {
           c.status = "done";
-          void showVerse(c.hit, c.trigger);
+          const sw = swapRef.current;
+          if (c.replaces && lastVerse.current?.label === c.replaces) void swapVerse(c.hit, c.replaces, c.trigger);
+          // The final heard the swapped-out verse after all: swap back.
+          else if (sw && c.label === sw.from && lastVerse.current?.label === sw.to && Date.now() - sw.at < 10000)
+            void swapVerse(c.hit, sw.to, c.trigger);
+          else void showVerse(c.hit, c.trigger);
         });
         cardsRef.current = cardsRef.current.filter((c) => c.status !== "done");
         sync();
@@ -1301,7 +1343,7 @@ export default function App() {
     queueHits(found.filter((h) => !h.reference || h.reference.verse != null), line);
   }
 
-  function queueHits(found: VerseHit[], line: TrLine) {
+  function queueHits(found: VerseHit[], line: TrLine, replaces?: VerseHit) {
     const now = Date.now();
     for (const h of found) {
       const last = shownRef.current[h.label];
@@ -1321,7 +1363,9 @@ export default function App() {
         kind: "ref",
         fireAt: now + REF_FIRE_DELAY,
         status: "pending",
+        replaces: replaces && h.reference?.book === replaces.reference?.book ? replaces.label : undefined,
       });
+      if (replaces && h.reference?.book === replaces.reference?.book) replaces = undefined;
     }
     if (found.length) sync();
   }
@@ -1465,14 +1509,20 @@ export default function App() {
     return true;
   }
 
-  // A partial is the segment so far, re-transcribed every half second while
-  // the speaker is still talking. Only chapter:verse hits that appear in two
-  // partials in a row fire, so "John 3" on the way to "John 3:16" never shows.
-  // Commands and corrections wait for the final transcript.
+  // A partial is the segment so far, updated while the speaker is still
+  // talking. With Deepgram and Nemotron, which only extend what they heard, a
+  // chapter:verse hit fires from the first partial that has it (settleTail
+  // keeps "John 3 1" on the way to "John 3 16" from firing). Whisper
+  // re-transcribes the whole segment every half second and invents references
+  // from half-heard audio, so there a hit must appear in two partials in a row
+  // (on the latency fixtures one partial gave 57 wrong verses instead of 12).
+  // If a later partial, moments after, no longer says the verse on screen and
+  // names a new one in the same book, the new one replaces it. Commands and
+  // corrections wait for the final transcript.
   async function onPartial(text: string, ms: number, seg: number) {
     const p = partialRef.current;
     if (seg !== p.seg) {
-      partialRef.current = { seg, text: "", labels: new Set(), fired: [] };
+      partialRef.current = { seg, text: "", labels: new Set(), fired: [], out: new Set() };
     }
     const cleaned = cleanText(text);
     partialRef.current.text = cleaned;
@@ -1500,12 +1550,24 @@ export default function App() {
     }
     const cur = partialRef.current;
     if (cur.seg !== seg) return;
-    const withVerse = found.filter((h) => h.reference && h.reference.verse != null);
-    const stable = withVerse.filter((h) => cur.labels.has(h.label));
-    cur.labels = new Set(withVerse.map((h) => h.label));
-    if (!stable.length) return;
+    const said = new Set(found.filter((h) => h.reference && h.reference.verse != null).map((h) => h.label));
+    const before = cur.labels;
+    cur.labels = said;
+    const fresh = found.filter((h) => said.has(h.label) && !cur.out.has(h.label) && (streamingRef.current || before.has(h.label)));
+    if (!fresh.length) return;
+    // Only within one book: "verse thirty" becoming "verse thirty two" is a
+    // mishearing; a new book is a new reference (or context that moved).
+    const live = slideRef.current?.kind === "verse" ? lastVerse.current : null;
+    const replaces =
+      live && cur.fired.includes(live.label) && !said.has(live.label) && Date.now() - verseShownAt.current <= SWAP_MS
+        ? live
+        : undefined;
     const line: TrLine = { text: cleaned, labels: [] };
-    queueHits(stable, line);
+    queueHits(fresh, line, replaces);
+    if (replaces && cardsRef.current.some((c) => c.replaces === replaces.label && c.status === "pending")) {
+      cur.out.add(replaces.label);
+      cur.fired = cur.fired.filter((l) => l !== replaces.label);
+    }
     for (const lb of line.labels) if (!cur.fired.includes(lb)) cur.fired.push(lb);
   }
 
@@ -1586,7 +1648,7 @@ export default function App() {
     f.words.push(...finalWords);
     followReading("", -2);
     const firedFromPartials = partialRef.current.fired;
-    partialRef.current = { seg: -1, text: "", labels: new Set(), fired: [] };
+    partialRef.current = { seg: -1, text: "", labels: new Set(), fired: [], out: new Set() };
     if (!text.trim()) {
       sync();
       return;

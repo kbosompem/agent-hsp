@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+### Changed
+
+- With Deepgram and Nemotron, spoken references show from the first partial transcript instead of waiting for two in a row: about 1 second sooner with Deepgram (typical 1.6 s to 0.5 s on the recorded sermon clips). Whisper keeps the two-in-a-row check (without it, the latency fixtures showed 57 wrong verses instead of 12). If the next words change the reference within 1.5 seconds ("verse eleven" becoming "eleven, twelve"), the new verse replaces the first, which then stays out of undo, history and the summary.
+
+### Fixed
+
+- A spoken two-word number at the end of a partial ("verse thirty two") no longer shows verse 30 for a moment before the rest arrives.
+
 ## [0.2.0] - 2026-10-14
 
 ### Added

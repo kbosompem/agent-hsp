@@ -39,6 +39,7 @@ fn drop_trailing_number(t: &str) -> String {
     const WORDS: &[&str] = &["zero","one","two","three","four","five","six","seven","eight","nine","ten",
         "eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen",
         "twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety","hundred"];
+    const TENS: &[&str] = &["twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety","hundred"];
     let trimmed = t.trim_end();
     let cut = trimmed.rfind(|c: char| c.is_whitespace()).map(|i| i + 1).unwrap_or(0);
     let last = trimmed[cut..].trim_end_matches(|c: char| ".,!?".contains(c));
@@ -46,7 +47,20 @@ fn drop_trailing_number(t: &str) -> String {
     let numeric = !last.is_empty()
         && (last.chars().all(|c| c.is_ascii_digit() || ":.-".contains(c)) && last.chars().any(|c| c.is_ascii_digit())
             || WORDS.contains(&last.to_lowercase().as_str()));
-    if numeric { trimmed[..cut].to_string() } else { t.to_string() }
+    if !numeric {
+        return t.to_string();
+    }
+    // "thirty two" is one number: drop the tens word before it too.
+    let mut rest = trimmed[..cut].trim_end();
+    loop {
+        let c = rest.rfind(|c: char| c.is_whitespace()).map(|i| i + 1).unwrap_or(0);
+        let w = rest[c..].trim_matches(|c: char| ",.:;-!?".contains(c)).to_lowercase();
+        if !TENS.contains(&w.as_str()) {
+            break;
+        }
+        rest = rest[..c].trim_end();
+    }
+    rest.to_string()
 }
 
 /// Mirror of settleTail() in App.tsx.
@@ -145,7 +159,9 @@ fn main() {
     let mut prev: HashSet<String> = HashSet::new();
     let mut prev_seg = u64::MAX;
     // Experiment knobs: ONE_PARTIAL=1 accepts a chapter:verse hit from a single
-    // partial (tried 2026-10-06: about 0.5 s faster but 2.7x the wrong verses);
+    // partial, as the console does for Deepgram and Nemotron, not whisper
+    // (tried 2026-10-23 with small.en: about 0.8 s faster, 57 wrong verses
+    // instead of 12 on the fixtures);
     // FIRE_DELAY_S sets the console's delay before a spoken reference shows.
     let one_partial = std::env::var("ONE_PARTIAL").is_ok();
     let fire_delay: f64 = std::env::var("FIRE_DELAY_S").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
@@ -203,8 +219,8 @@ fn main() {
             let row = serde_json::json!({ "t": now, "text": text, "seg": s });
             if partial { partials_log.push(row) } else { finals_log.push(row) }
         }
-        // Same rule as the console: a partial hit must repeat in the next
-        // partial of the same segment; a final hit counts at once.
+        // Same rule as the console for whisper: a partial hit must repeat in
+        // the next partial of the same segment; a final hit counts at once.
         let accepted: Vec<String> = if partial {
             if s != prev_seg {
                 prev.clear();
