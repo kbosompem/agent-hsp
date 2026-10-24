@@ -37,3 +37,5 @@ nemotron = ["dep:sherpa-onnx", "dep:tar", "dep:bzip2"]
 # GPU inference on Apple Silicon. Windows stays on CPU.
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.13", features = ["metal"] }
+# The projector's WKWebView setting that keeps motion backgrounds playing (projector.rs).
+objc2 = "0.6"

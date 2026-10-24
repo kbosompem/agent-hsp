@@ -29,6 +29,7 @@ import CornerSettings from "./CornerSettings";
 import AudioPlayer, { AudioControl } from "./AudioPlayer";
 import MediaLibrary from "./MediaLibrary";
 import Setup from "./Setup";
+import ProjectorMenu from "./ProjectorMenu";
 import AiSettings, { LlmSettings } from "./AiSettings";
 import { AiLine, AiSummary, SUMMARY_SYSTEM, parseSummary, summaryMarkdown, summaryMessage, versesMarkdown } from "./lib/aisummary";
 import { logEvent } from "./lib/log";
@@ -331,7 +332,6 @@ export default function App() {
     if (!PRESETS.some((p) => p.name === cur.name) && !list.some((t) => t.name === cur.name)) return saveCustomTheme(cur).list;
     return list;
   });
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   // Speech engines compiled into this build (Nemotron is optional).
   const [engines, setEngines] = useState({ nemotron: true });
@@ -351,7 +351,7 @@ export default function App() {
     invoke<LlmSettings>("llm_settings").then(setLlm).catch(() => {});
   }, []);
   const [transcriptView, setTranscriptView] = useState<"processed" | "raw">("processed");
-  const [view, setView] = useState<"console" | "service" | "media" | "theme" | "downloads">("console");
+  const [view, setView] = useState<"console" | "service" | "media" | "theme" | "downloads" | "settings">("console");
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [mediaFolders, setMediaFolders] = useState<MediaFolder[]>([]);
   const audioRef = useRef<AudioControl>(null);
@@ -442,6 +442,8 @@ export default function App() {
   // Deepgram bills by the minute: every hour of listening asks "Still
   // listening?" and stops at the deadline (ms) unless someone answers.
   const [stillPrompt, setStillPrompt] = useState<number | null>(null);
+  // The projector window exists (it starts open; closing it is reported).
+  const [projectorOpen, setProjectorOpen] = useState(true);
   const stillRef = useRef<number | null>(null);
   stillRef.current = stillPrompt;
   const askedAtRef = useRef(0);
@@ -1129,8 +1131,13 @@ export default function App() {
       listen<string>("session-dir", (e) => {
         if (sessionRef.current) sessionRef.current.dir = e.payload;
       }),
+      listen("projector-closed", () => {
+        setProjectorOpen(false);
+        logEvent("info", "projector window closed");
+      }),
       // A reopened projector window asks for what it should be showing.
       listen("output-ready", () => {
+        setProjectorOpen(true);
         void emit("output-theme", liveThemeRef.current);
         const cur = slideRef.current;
         if (cur) void invoke("show_slide", { kind: cur.kind, title: cur.title, body: cur.body, sub: cur.sub });
@@ -1373,7 +1380,7 @@ export default function App() {
   }
 
   // Live keys. Ignored while typing in a field.
-  //   B blackout · L logo · H hold · Esc clear to logo · Right/Left next/previous verse
+  //   B blackout · L logo · H hold · P projector to the front · Esc clear to logo · Right/Left next/previous verse
   //   Enter shows the oldest waiting card
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e: KeyboardEvent) => {
@@ -1387,6 +1394,8 @@ export default function App() {
       if (slideRef.current?.kind !== "logo") void cover("logo");
     } else if (k === "u" || k === "U") {
       void undoLast();
+    } else if (k === "p" || k === "P") {
+      void invoke("projector_show").catch((err) => toast.error(String(err)));
     } else if (k === "h" || k === "H") {
       setHold(!holdRef.current);
       setMicStatus(holdRef.current ? "Hold is on: detected verses wait for you." : "Hold off: verses show as they are heard.");
@@ -2021,6 +2030,7 @@ export default function App() {
               <TabsTrigger value="media"><Clapperboard /> Media</TabsTrigger>
               <TabsTrigger value="theme"><Palette /> Look</TabsTrigger>
               <TabsTrigger value="downloads"><BookOpen /> Bibles</TabsTrigger>
+              <TabsTrigger value="settings"><Settings2 /> Settings</TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="flex-1" />
@@ -2046,9 +2056,7 @@ export default function App() {
               <div className="h-full rounded-full bg-live transition-[width] duration-150" style={{ width: micLevelPct + "%" }} />
             </div>
           </div>
-          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)} title="Speech model, audio input and console look">
-            <Settings2 />
-          </Button>
+          <ProjectorMenu open={projectorOpen} />
           <Button onClick={toggleListen} className={cn("w-28", listening && "bg-destructive text-white hover:bg-destructive/90")}>
             {listening ? <><Square /> Stop</> : <><Mic /> Listen</>}
           </Button>
@@ -2175,6 +2183,228 @@ export default function App() {
                     <LinkCard title="OpenLyrics" sub="Open song format and community files." onOpen={() => openLink("https://openlyrics.org/")} />
                   </div>
                 </Panel>
+              </div>
+            </ScrollArea>
+          ) : view === "settings" ? (
+            <ScrollArea className="h-full">
+              <div className="mx-auto grid max-w-6xl items-start gap-4 p-1 lg:grid-cols-2">
+                <div className="flex flex-col gap-4">
+                  <div className="rounded-lg border bg-card p-4">
+                  <Section label="App look (this console)">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="mode">Dark mode</Label>
+                      <Switch id="mode" checked={mode === "dark"} onCheckedChange={(c) => setMode(c ? "dark" : "light")} />
+                    </div>
+                    <div className="text-xs text-muted-foreground">Built in</div>
+                    <div className="flex flex-wrap gap-2">
+                      {PRESETS.map((p) => (
+                        <Button key={p.name} size="sm" variant={uiTheme?.name === p.name ? "default" : "outline"} onClick={() => setUiTheme(p)}>
+                          {p.name}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Your themes</div>
+                    <div className="flex flex-wrap gap-2">
+                      {myThemes.length === 0 && <span className="text-xs text-muted-foreground">None yet. Themes you add below are kept here.</span>}
+                      {myThemes.map((p) => (
+                        <div key={p.name} className="flex items-center">
+                          <Button
+                            size="sm"
+                            variant={uiTheme?.name === p.name ? "default" : "outline"}
+                            className="rounded-r-none"
+                            onClick={() => setUiTheme(p)}
+                          >
+                            <ThemeDots t={p} /> {p.name}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="rounded-l-none border-l-0 px-2"
+                            title={"Remove " + p.name}
+                            onClick={() => {
+                              setMyThemes(removeCustomTheme(p.name));
+                              if (uiTheme?.name === p.name) setUiTheme(PRESETS[0]);
+                            }}
+                          >
+                            <X />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <Textarea
+                      rows={3}
+                      value={themeInput}
+                      onChange={(e) => setThemeInput(e.target.value)}
+                      placeholder="Paste a tweakcn.com theme link, or the CSS from its Code panel"
+                      className="font-mono text-xs"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        className="h-8 flex-1 text-xs"
+                        placeholder="Name (optional)"
+                        value={themeName}
+                        onChange={(e) => setThemeName(e.target.value)}
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={!themeInput.trim()}
+                        onClick={() =>
+                          void loadTheme(themeInput)
+                            .then((t) => {
+                              const taken = PRESETS.map((p) => p.name);
+                              const wanted = themeName.trim() || (t.name && t.name !== "Custom" ? t.name : uniqueName("Custom", [...taken, ...myThemes.map((m) => m.name)]));
+                              const { theme, list } = saveCustomTheme({ ...t, name: wanted });
+                              setMyThemes(list);
+                              setUiTheme(theme);
+                              setThemeInput("");
+                              setThemeName("");
+                              toast.success("Saved and applied: " + theme.name);
+                            })
+                            .catch((e) => toast.error(String(e.message || e)))
+                        }
+                      >
+                        <Palette /> Save and apply
+                      </Button>
+                      <Button size="sm" variant="link" onClick={() => openLink("https://tweakcn.com/editor/theme")}>Open tweakcn</Button>
+                    </div>
+                  </Section>
+                  </div>
+                  <div className="rounded-lg border bg-card p-4">
+                  <Section label="Speech model">
+                    <div className="flex gap-2">
+                      <Select value={model} onValueChange={setModel}>
+                        <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Best · verses in about a second</SelectLabel>
+                            {engines.nemotron && <SelectItem value="nemotron-160">Nemotron · on this computer, free, offline</SelectItem>}
+                            <SelectItem value="deepgram">Deepgram · online, paid, needs good internet</SelectItem>
+                          </SelectGroup>
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel>Better · 2 to 3 seconds</SelectLabel>
+                            <SelectItem value="small.en">Whisper small · most accurate Whisper</SelectItem>
+                            {engines.nemotron && <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>}
+                          </SelectGroup>
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel>Good · older or slower computers</SelectLabel>
+                            <SelectItem value="base.en">Whisper base · balanced</SelectItem>
+                            <SelectItem value="tiny.en">Whisper tiny · lightest</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <Button variant="secondary" onClick={loadModel}><Download /> Load</Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {modelStatus || (model === "deepgram" ? "Online: nothing to download." : "Press Load once to download or check the model.")} · quote matching: {quoteStatus}
+                    </p>
+                    {model === "deepgram" && (
+                      <div className="flex flex-col gap-1.5">
+                        {dgKeySaved && !dgReplacing ? (
+                          <div className="flex items-center gap-2 rounded-md border border-live/40 bg-live/10 px-3 py-2 text-sm">
+                            <Check className="size-4 text-live" />
+                            <span className="flex-1">Deepgram key saved on this computer. Nothing more to do.</span>
+                            <Button size="sm" variant="ghost" onClick={() => setDgReplacing(true)}>Replace</Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                void invoke("set_deepgram_key", { key: "" }).then(() => {
+                                  setDgKeySaved(false);
+                                  toast.success("Deepgram key removed.");
+                                })
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <Input
+                              type="password"
+                              autoComplete="off"
+                              placeholder="Paste your Deepgram API key"
+                              value={dgKey}
+                              onChange={(e) => setDgKey(e.target.value)}
+                            />
+                            <Button
+                              variant="secondary"
+                              disabled={!dgKey.trim()}
+                              onClick={() =>
+                                void invoke("set_deepgram_key", { key: dgKey })
+                                  .then(() => {
+                                    setDgKey("");
+                                    setDgKeySaved(true);
+                                    setDgReplacing(false);
+                                    toast.success("Deepgram key saved on this computer.");
+                                  })
+                                  .catch((e) => toast.error(String(e)))
+                              }
+                            >
+                              Save key
+                            </Button>
+                            {dgReplacing && <Button variant="ghost" onClick={() => setDgReplacing(false)}>Cancel</Button>}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Sermon audio is sent to Deepgram while listening. About $0.50 per hour of listening.
+                        </p>
+                      </div>
+                    )}
+                  </Section>
+                  </div>
+                  <div className="rounded-lg border bg-card p-4">
+                  <Section label="Audio input">
+                    <Select value={micId || "__default"} onValueChange={(v) => setMicId(v === "__default" ? "" : v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__default">System default input</SelectItem>
+                        {mics.map((m) => (
+                          <SelectItem key={m} value={m}>{m}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Use the sound desk feed if you have one. Changes apply the next time you press Listen.</p>
+                  </Section>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <div className="rounded-lg border bg-card p-4">
+                  <Section label="AI summary">
+                    <AiSettings onChange={setLlm} />
+                  </Section>
+                  </div>
+                  <div className="rounded-lg border bg-card p-4">
+                  <Section label="Recordings">
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" onClick={() => void invoke("open_session_folder", { dir: null })}>
+                        <FolderOpen /> Open recordings folder
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Every time you press Listen, the service is recorded. Stop saves the recording (audio.m4a), transcript.txt, summary.md and
+                      verses.md in a folder named by date and time.
+                    </p>
+                  </Section>
+                  </div>
+                  <div className="rounded-lg border bg-card p-4">
+                  <Section label="Setup and problems">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="outline" onClick={() => setSetupOpen(true)}>
+                        <Download /> Run setup again
+                      </Button>
+                      <Button variant="outline" onClick={() => void invoke("open_log_folder").catch((e) => toast.error(String(e)))}>
+                        <FolderOpen /> Open log folder
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Errors are written to agent-hsp.log in the log folder. Send that file when reporting a problem.
+                    </p>
+                  </Section>
+                  </div>
+                </div>
               </div>
             </ScrollArea>
           ) : view === "theme" ? (
@@ -2578,217 +2808,6 @@ export default function App() {
           onAddSongs={addSongs}
           onModel={setModel}
         />
-        <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Settings</DialogTitle>
-              <DialogDescription>Speech model, AI summary, audio input and how the console looks.</DialogDescription>
-            </DialogHeader>
-            <div className="flex flex-col gap-5">
-              <Section label="Speech model">
-                <div className="flex gap-2">
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectLabel>Best · verses in about a second</SelectLabel>
-                        {engines.nemotron && <SelectItem value="nemotron-160">Nemotron · on this computer, free, offline</SelectItem>}
-                        <SelectItem value="deepgram">Deepgram · online, paid, needs good internet</SelectItem>
-                      </SelectGroup>
-                      <SelectSeparator />
-                      <SelectGroup>
-                        <SelectLabel>Better · 2 to 3 seconds</SelectLabel>
-                        <SelectItem value="small.en">Whisper small · most accurate Whisper</SelectItem>
-                        {engines.nemotron && <SelectItem value="nemotron-560">Nemotron light · for slower computers</SelectItem>}
-                      </SelectGroup>
-                      <SelectSeparator />
-                      <SelectGroup>
-                        <SelectLabel>Good · older or slower computers</SelectLabel>
-                        <SelectItem value="base.en">Whisper base · balanced</SelectItem>
-                        <SelectItem value="tiny.en">Whisper tiny · lightest</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <Button variant="secondary" onClick={loadModel}><Download /> Load</Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {modelStatus || (model === "deepgram" ? "Online: nothing to download." : "Press Load once to download or check the model.")} · quote matching: {quoteStatus}
-                </p>
-                {model === "deepgram" && (
-                  <div className="flex flex-col gap-1.5">
-                    {dgKeySaved && !dgReplacing ? (
-                      <div className="flex items-center gap-2 rounded-md border border-live/40 bg-live/10 px-3 py-2 text-sm">
-                        <Check className="size-4 text-live" />
-                        <span className="flex-1">Deepgram key saved on this computer. Nothing more to do.</span>
-                        <Button size="sm" variant="ghost" onClick={() => setDgReplacing(true)}>Replace</Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            void invoke("set_deepgram_key", { key: "" }).then(() => {
-                              setDgKeySaved(false);
-                              toast.success("Deepgram key removed.");
-                            })
-                          }
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <Input
-                          type="password"
-                          autoComplete="off"
-                          placeholder="Paste your Deepgram API key"
-                          value={dgKey}
-                          onChange={(e) => setDgKey(e.target.value)}
-                        />
-                        <Button
-                          variant="secondary"
-                          disabled={!dgKey.trim()}
-                          onClick={() =>
-                            void invoke("set_deepgram_key", { key: dgKey })
-                              .then(() => {
-                                setDgKey("");
-                                setDgKeySaved(true);
-                                setDgReplacing(false);
-                                toast.success("Deepgram key saved on this computer.");
-                              })
-                              .catch((e) => toast.error(String(e)))
-                          }
-                        >
-                          Save key
-                        </Button>
-                        {dgReplacing && <Button variant="ghost" onClick={() => setDgReplacing(false)}>Cancel</Button>}
-                      </div>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      Sermon audio is sent to Deepgram while listening. About $0.50 per hour of listening.
-                    </p>
-                  </div>
-                )}
-              </Section>
-              <Section label="AI summary">
-                <AiSettings onChange={setLlm} />
-              </Section>
-              <Section label="Audio input">
-                <Select value={micId || "__default"} onValueChange={(v) => setMicId(v === "__default" ? "" : v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__default">System default input</SelectItem>
-                    {mics.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Use the sound desk feed if you have one. Changes apply the next time you press Listen.</p>
-              </Section>
-              <Section label="Recordings">
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={() => void invoke("open_session_folder", { dir: null })}>
-                    <FolderOpen /> Open recordings folder
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Every time you press Listen, the service is recorded. Stop saves the recording (audio.m4a), transcript.txt, summary.md and
-                  verses.md in a folder named by date and time.
-                </p>
-              </Section>
-              <Section label="Setup and problems">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" onClick={() => { setSettingsOpen(false); setSetupOpen(true); }}>
-                    <Download /> Run setup again
-                  </Button>
-                  <Button variant="outline" onClick={() => void invoke("open_log_folder").catch((e) => toast.error(String(e)))}>
-                    <FolderOpen /> Open log folder
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Errors are written to agent-hsp.log in the log folder. Send that file when reporting a problem.
-                </p>
-              </Section>
-              <Section label="Console look">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="mode">Dark mode</Label>
-                  <Switch id="mode" checked={mode === "dark"} onCheckedChange={(c) => setMode(c ? "dark" : "light")} />
-                </div>
-                <div className="text-xs text-muted-foreground">Built in</div>
-                <div className="flex flex-wrap gap-2">
-                  {PRESETS.map((p) => (
-                    <Button key={p.name} size="sm" variant={uiTheme?.name === p.name ? "default" : "outline"} onClick={() => setUiTheme(p)}>
-                      {p.name}
-                    </Button>
-                  ))}
-                </div>
-                <div className="text-xs text-muted-foreground">Your themes</div>
-                <div className="flex flex-wrap gap-2">
-                  {myThemes.length === 0 && <span className="text-xs text-muted-foreground">None yet. Themes you add below are kept here.</span>}
-                  {myThemes.map((p) => (
-                    <div key={p.name} className="flex items-center">
-                      <Button
-                        size="sm"
-                        variant={uiTheme?.name === p.name ? "default" : "outline"}
-                        className="rounded-r-none"
-                        onClick={() => setUiTheme(p)}
-                      >
-                        <ThemeDots t={p} /> {p.name}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="rounded-l-none border-l-0 px-2"
-                        title={"Remove " + p.name}
-                        onClick={() => {
-                          setMyThemes(removeCustomTheme(p.name));
-                          if (uiTheme?.name === p.name) setUiTheme(PRESETS[0]);
-                        }}
-                      >
-                        <X />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-                <Textarea
-                  rows={3}
-                  value={themeInput}
-                  onChange={(e) => setThemeInput(e.target.value)}
-                  placeholder="Paste a tweakcn.com theme link, or the CSS from its Code panel"
-                  className="font-mono text-xs"
-                />
-                <div className="flex items-center gap-2">
-                  <Input
-                    className="h-8 flex-1 text-xs"
-                    placeholder="Name (optional)"
-                    value={themeName}
-                    onChange={(e) => setThemeName(e.target.value)}
-                  />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={!themeInput.trim()}
-                    onClick={() =>
-                      void loadTheme(themeInput)
-                        .then((t) => {
-                          const taken = PRESETS.map((p) => p.name);
-                          const wanted = themeName.trim() || (t.name && t.name !== "Custom" ? t.name : uniqueName("Custom", [...taken, ...myThemes.map((m) => m.name)]));
-                          const { theme, list } = saveCustomTheme({ ...t, name: wanted });
-                          setMyThemes(list);
-                          setUiTheme(theme);
-                          setThemeInput("");
-                          setThemeName("");
-                          toast.success("Saved and applied: " + theme.name);
-                        })
-                        .catch((e) => toast.error(String(e.message || e)))
-                    }
-                  >
-                    <Palette /> Save and apply
-                  </Button>
-                  <Button size="sm" variant="link" onClick={() => openLink("https://tweakcn.com/editor/theme")}>Open tweakcn</Button>
-                </div>
-              </Section>
-            </div>
-          </DialogContent>
-        </Dialog>
         <Toaster position="bottom-right" />
       </div>
     </TooltipProvider>

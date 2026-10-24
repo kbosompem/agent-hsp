@@ -4,6 +4,7 @@ pub mod segmenter;
 pub mod session;
 pub mod deepgram;
 pub mod llm;
+pub mod projector;
 pub mod bundle;
 pub mod backgrounds;
 pub mod media;
@@ -332,7 +333,15 @@ pub fn run() {
                 .map(|p| p.join("translations"))
                 .ok();
             preso_core::init_engine(dir.as_deref());
+            if let Some(w) = app.get_webview_window(projector::LABEL) {
+                projector::keep_playing(&w);
+            }
             Ok(())
+        })
+        .on_window_event(|w, e| {
+            if w.label() == projector::LABEL && matches!(e, tauri::WindowEvent::Destroyed) {
+                projector::on_closed(w.app_handle());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             lookup,
@@ -373,6 +382,14 @@ pub fn run() {
             deepgram::set_deepgram_key,
             deepgram::has_deepgram_key,
             llm::llm_settings,
+            projector::projector_show,
+            projector::projector_reopen,
+            projector::projector_close,
+            projector::list_displays,
+            projector::projector_to_display,
+            projector::identify_displays,
+            projector::projector_toggle_fill,
+            projector::projector_play,
             llm::set_llm_settings,
             llm::llm_complete,
             llm::save_session_file,

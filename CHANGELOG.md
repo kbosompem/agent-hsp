@@ -8,8 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ### Added
 
+- Projector menu in the console header (#29): bring the projector window to the front (P key), reload it, close it, fill a chosen display, "Which display is which?" (a big number on each display for four seconds) and "Bring back as a window on the main screen". The button turns red when the projector window is closed, and choosing it reopens the window with the current slide. Double-click fills the display without a separate macOS Space.
+- Settings is a page in the top bar (#27), with the console's own look (dark mode, built-in and tweakcn themes) first.
 - AI sermon summary. Settings has an "AI summary" section for any OpenAI- or Anthropic-compatible service: z.ai (GLM), Claude, OpenAI, or a model on this computer through Ollama or LM Studio, with presets, a saved key that never leaves the app's data folder, and "Save and test". While listening, the sermon's title, big idea and points with their verses appear under Sermon notes and update every minute and a half; "Summary now" and "Copy notes" use them. At Stop the session folder gets `summary.md` (a final pass over the whole sermon) and `verses.md` (only the verses shown) next to the recording and `transcript.txt`. On three recorded sermons with glm-5.3-flash, the final outlines matched the hand-written ones (for example all seven steps of "Seven Steps to the Can-Do Man"), each in about 10 seconds.
-
 - Deepgram no longer bills for an empty room. After 10 quiet seconds it stops sending audio (a KeepAlive holds the connection, which Deepgram does not charge for) and resumes, with the second before, when someone speaks. A steady hum such as a fan or air conditioning counts as quiet. After 5 quiet minutes the session stops and is saved. Every hour of Deepgram listening asks "Still listening?"; no answer within 5 minutes stops it. Replayed on the 9.6-hour session left running overnight on 2026-10-23, it would have stopped after 36 minutes, 29 of them billed; on three recorded sermons it never paused mid-sermon. `examples/spend_gate.rs` replays any recording this way.
 
 ### Changed
@@ -18,6 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ### Fixed
 
+- Motion backgrounds start by themselves (#28). Under macOS Low Power Mode WebKit refused to start any video without a click on the projector; the projector now asks the app to start it.
 - A spoken two-word number at the end of a partial ("verse thirty two") no longer shows verse 30 for a moment before the rest arrives.
 
 ## [0.2.0] - 2026-10-14

@@ -82,6 +82,14 @@ function Corners({ t }: { t: OutputTheme | null }) {
  * video, so muting and playback are done by hand. */
 const FADE_S = 1.0;
 
+/** Called when the browser refuses to start a background video (macOS Low
+ * Power Mode). The projector page sets it to ask the app for an "hsp-play"
+ * event, which arrives as a user action and may start video. */
+let onPlayBlocked: (() => void) | null = null;
+export function setPlayBlockedHandler(f: (() => void) | null) {
+  onPlayBlocked = f;
+}
+
 function LoopingVideo({ src }: { src: string }) {
   const a = useRef<HTMLVideoElement>(null);
   const b = useRef<HTMLVideoElement>(null);
@@ -99,7 +107,10 @@ function LoopingVideo({ src }: { src: string }) {
     v0.style.opacity = "1";
     v1.style.opacity = "0";
     v1.pause();
-    const play = (v: HTMLVideoElement) => void v.play().catch(() => {});
+    const play = (v: HTMLVideoElement) =>
+      void v.play().catch((e) => {
+        if (e?.name === "NotAllowedError") onPlayBlocked?.();
+      });
     play(v0);
     let fading = false;
     const tick = () => {
@@ -128,7 +139,20 @@ function LoopingVideo({ src }: { src: string }) {
       }
     };
     const t = window.setInterval(tick, 100);
-    return () => window.clearInterval(t);
+    // A user action: start the visible copy, and play-and-pause the other so
+    // the browser lets it start later for the crossfade.
+    const onPlay = () => {
+      const cur = front.current === 0 ? v0 : v1;
+      const next = front.current === 0 ? v1 : v0;
+      play(cur);
+      if (fading) play(next);
+      else if (next.paused) void next.play().then(() => next.pause()).catch(() => {});
+    };
+    window.addEventListener("hsp-play", onPlay);
+    return () => {
+      window.clearInterval(t);
+      window.removeEventListener("hsp-play", onPlay);
+    };
   }, [src]);
   const style: CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" };
   return (

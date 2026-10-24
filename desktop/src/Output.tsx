@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import SlideView, { OutputTheme, Slide } from "./SlideView";
+import SlideView, { OutputTheme, Slide, setPlayBlockedHandler } from "./SlideView";
+
+/** "Which display is which?": a big number on each display. */
+export function Identify({ n, name }: { n: string; name: string }) {
+  return (
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#111827", color: "#fbbf24", fontFamily: "system-ui, sans-serif", border: "6px solid #fbbf24", boxSizing: "border-box" }}>
+      <div style={{ fontSize: 160, fontWeight: 700, lineHeight: 1 }}>{n}</div>
+      <div style={{ fontSize: 20, color: "#e5e7eb", marginTop: 12 }}>{name}</div>
+    </div>
+  );
+}
 
 // The projector window: draws whatever slide the console sends.
 export default function Output() {
@@ -14,15 +25,21 @@ export default function Output() {
     ];
     // After a reload or crash, ask the console for the current slide and theme.
     Promise.all(subs).then(() => void emit("output-ready"));
-    const onDbl = () => {
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen();
-      }
-    };
+    // Fill the display without the page's own fullscreen, which on macOS
+    // moves the window into a separate Space where it gets lost.
+    const onDbl = () => void invoke("projector_toggle_fill").catch(() => {});
+    // A refused background video: ask the app to start it (see projector_play), at most every second.
+    let lastAsk = 0;
+    setPlayBlockedHandler(() => {
+      if (Date.now() - lastAsk < 1000) return;
+      lastAsk = Date.now();
+      void invoke("projector_play").catch(() => {});
+    });
     document.addEventListener("dblclick", onDbl);
     return () => {
       subs.forEach((u) => u.then((f) => f()));
       document.removeEventListener("dblclick", onDbl);
+      setPlayBlockedHandler(null);
     };
   }, []);
 

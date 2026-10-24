@@ -25,6 +25,7 @@ version = "0.2.0"
 dependencies = [
  "bzip2 0.4.4",
  "cpal",
+ "objc2",
  "preso-core",
  "serde",
  "serde_json",
