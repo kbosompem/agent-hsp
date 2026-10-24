@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# downloads.anagkazo.app (S3 + CloudFront, infra in count-amc
+# infra/anagkazo-web). The role only trusts this repo's v* tags.
+env:
+  AWS_ROLE: arn:aws:iam::050043285246:role/agent-hsp-release
+  DOWNLOADS_BUCKET: anagkazo-downloads-050043285246
+
 jobs:
   # The quote-matching index (about 47 MB) is not in git. Build it once,
   # cache it, and hand it to both installer builds.
@@ -42,6 +48,7 @@ jobs:
     needs: verse-index
     permissions:
       contents: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -49,10 +56,12 @@ jobs:
           - os: macos-latest
             args: --bundles dmg --features nemotron
             asset: Agent-HSP-macOS.dmg
+            type: application/x-apple-diskimage
             pattern: desktop/target/release/bundle/dmg/*.dmg
           - os: windows-latest
             args: --bundles nsis --features nemotron
             asset: Agent-HSP-Windows-setup.exe
+            type: application/vnd.microsoft.portable-executable
             pattern: desktop/target/release/bundle/nsis/*.exe
     runs-on: ${{ matrix.os }}
     steps:
@@ -125,3 +134,16 @@ jobs:
         run: |
           cp ${{ matrix.pattern }} "${{ matrix.asset }}"
           gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --clobber
+      # This version's folder on downloads.anagkazo.app. The site's "latest"
+      # links move only when the draft is published (publish-downloads.yml).
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: us-east-1
+      - name: Upload installer to downloads.anagkazo.app
+        shell: bash
+        run: |
+          aws s3 cp "${{ matrix.asset }}" "s3://$DOWNLOADS_BUCKET/agent-hsp/${{ github.ref_name }}/${{ matrix.asset }}" \
+            --content-type "${{ matrix.type }}" \
+            --content-disposition 'attachment; filename="${{ matrix.asset }}"' \
+            --cache-control "public, max-age=300"

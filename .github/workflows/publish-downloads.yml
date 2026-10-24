@@ -1,0 +1,51 @@
+name: publish-downloads
+
+# When a release is published, point downloads.anagkazo.app's "latest" links
+# (agent-hsp/latest/ and agent-hsp/latest.json, used by anagkazo.app/hsp.html)
+# at the installers release.yml uploaded to agent-hsp/<tag>/.
+# See docs/RELEASING.md.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ROLE: arn:aws:iam::050043285246:role/agent-hsp-release
+  DOWNLOADS_BUCKET: anagkazo-downloads-050043285246
+  DISTRIBUTION: E25MR8XQB2VVIA
+
+jobs:
+  latest:
+    if: startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: us-east-1
+      - name: Point latest at this release
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PUBLISHED: ${{ github.event.release.published_at }}
+        run: |
+          set -euo pipefail
+          base="s3://$DOWNLOADS_BUCKET/agent-hsp"
+          for f in "Agent-HSP-macOS.dmg application/x-apple-diskimage" \
+                   "Agent-HSP-Windows-setup.exe application/vnd.microsoft.portable-executable"; do
+            set -- $f
+            aws s3 cp "$base/$TAG/$1" "$base/latest/$1" \
+              --metadata-directive REPLACE \
+              --content-type "$2" \
+              --content-disposition "attachment; filename=\"$1\"" \
+              --cache-control "public, max-age=300"
+          done
+          url="https://downloads.anagkazo.app/agent-hsp/$TAG"
+          printf '{"version":"%s","released":"%s","macos":"%s/Agent-HSP-macOS.dmg","windows":"%s/Agent-HSP-Windows-setup.exe"}' \
+            "${TAG#v}" "${PUBLISHED%%T*}" "$url" "$url" > latest.json
+          aws s3 cp latest.json "$base/latest.json" --content-type application/json --cache-control "public, max-age=300"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
+            --paths "/agent-hsp/latest/*" "/agent-hsp/latest.json"

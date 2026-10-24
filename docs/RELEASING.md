@@ -61,13 +61,14 @@ Pushing the tag starts `.github/workflows/release.yml`:
    - macOS (`macos-latest`, Apple Silicon): `.dmg`
    - Windows (`windows-latest`): NSIS `.exe` installer
 3. The installers are attached to a **draft** GitHub Release named "Agent HSP vX.Y.Z", twice: once with the version in the file name, and once under a fixed name (`Agent-HSP-macOS.dmg`, `Agent-HSP-Windows-setup.exe`).
+4. The fixed-name installers are also uploaded to `downloads.anagkazo.app/agent-hsp/vX.Y.Z/` (S3 behind CloudFront; the infrastructure is in the count-amc repo, `infra/anagkazo-web`). The job signs in to AWS as the `agent-hsp-release` role, which only this repo's `v*` tags can use. No secrets are stored.
 
-The fixed names give links that always point at the newest published release. The Anagkazo website (anagkazo.app) uses them:
+The fixed names give links that always point at the newest published release:
 
 - https://github.com/kbosompem/agent-hsp/releases/latest/download/Agent-HSP-macOS.dmg
 - https://github.com/kbosompem/agent-hsp/releases/latest/download/Agent-HSP-Windows-setup.exe
 
-Nothing is public until you publish the draft.
+The Anagkazo website (https://anagkazo.app/hsp.html) links to `downloads.anagkazo.app/agent-hsp/latest/` instead. Nothing there changes until you publish the draft.
 
 ## 6. Publish
 
@@ -75,6 +76,8 @@ Nothing is public until you publish the draft.
 2. Check that both installers are attached.
 3. Paste the changelog section for this version into the description, above the signing note.
 4. Click **Publish release**.
+
+Publishing starts `.github/workflows/publish-downloads.yml`. It copies that version's installers to `downloads.anagkazo.app/agent-hsp/latest/`, rewrites `agent-hsp/latest.json` (version, date, links) and clears the CloudFront cache for both. A pre-release does not move the latest links.
 
 ## If something goes wrong
 
