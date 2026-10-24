@@ -146,7 +146,7 @@ function LoopingVideo({ src }: { src: string }) {
       const next = front.current === 0 ? v1 : v0;
       play(cur);
       if (fading) play(next);
-      else if (next.paused) void next.play().then(() => next.pause()).catch(() => {});
+      else if (next.paused) void next.play().then(() => !fading && next.pause()).catch(() => {});
     };
     window.addEventListener("hsp-play", onPlay);
     return () => {

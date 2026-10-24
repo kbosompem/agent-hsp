@@ -43,7 +43,7 @@ export default function ProjectorMenu({ open }: { open: boolean }) {
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Fill a display</DropdownMenuLabel>
         {displays.map((d) => (
-          <DropdownMenuItem key={d.index} onSelect={() => run("projector_to_display", { index: d.index, fill: true })}>
+          <DropdownMenuItem key={d.index} onSelect={() => run("projector_to_display", { index: d.index, name: d.name, fill: true })}>
             <span className="truncate">
               {d.index + 1}. {d.name} · {d.width}×{d.height}
               {d.primary ? " · main screen" : ""}
@@ -51,12 +51,12 @@ export default function ProjectorMenu({ open }: { open: boolean }) {
             {d.projector && <DropdownMenuShortcut>projector here</DropdownMenuShortcut>}
           </DropdownMenuItem>
         ))}
-        <DropdownMenuItem onSelect={() => run("identify_displays")}>Which display is which? (shows numbers)</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => run("identify_displays")}>Which display is which? (numbers for 4 s, never over a filled projector)</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
             const here = displays.find((d) => d.primary) ?? displays[0];
-            if (here) run("projector_to_display", { index: here.index, fill: false });
+            if (here) run("projector_to_display", { index: here.index, name: here.name, fill: false });
           }}
         >
           Bring back as a window on the main screen

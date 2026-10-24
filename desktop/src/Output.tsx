@@ -28,6 +28,14 @@ export default function Output() {
     // Fill the display without the page's own fullscreen, which on macOS
     // moves the window into a separate Space where it gets lost.
     const onDbl = () => void invoke("projector_toggle_fill").catch(() => {});
+    // The projector has no keys of its own: when it has the keyboard, the
+    // console's live keys (B, L, H, P, arrows) still work.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      void emit("projector-key", e.key);
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
     // A refused background video: ask the app to start it (see projector_play), at most every second.
     let lastAsk = 0;
     setPlayBlockedHandler(() => {
@@ -39,6 +47,7 @@ export default function Output() {
     return () => {
       subs.forEach((u) => u.then((f) => f()));
       document.removeEventListener("dblclick", onDbl);
+      document.removeEventListener("keydown", onKey);
       setPlayBlockedHandler(null);
     };
   }, []);

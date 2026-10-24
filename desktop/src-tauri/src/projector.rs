@@ -17,6 +17,8 @@ pub const LABEL: &str = "output";
 
 /// The projector fills its display.
 static FILLED: AtomicBool = AtomicBool::new(false);
+/// Presses of "Which display is which?", so an old timer leaves new windows alone.
+static IDENTIFY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn build(app: &AppHandle) -> Result<WebviewWindow, String> {
     WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("output.html".into()))
@@ -92,7 +94,16 @@ pub async fn projector_reopen(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn projector_close(app: AppHandle) {
     if let Some(w) = app.get_webview_window(LABEL) {
+        unfill(&w);
         let _ = w.close();
+    }
+}
+
+/// Leave simple fullscreen. It hides the Dock and menu bar app-wide and only
+/// leaving it brings them back: closing a filled window left them hidden.
+pub fn unfill(w: &WebviewWindow) {
+    if FILLED.swap(false, Ordering::SeqCst) {
+        let _ = w.set_simple_fullscreen(false);
     }
 }
 
@@ -135,8 +146,14 @@ pub fn list_displays(app: AppHandle) -> Result<Vec<Display>, String> {
 
 /// Put the projector on display `index`, filling it, or as a window on it.
 #[tauri::command]
-pub async fn projector_to_display(app: AppHandle, index: usize, fill: bool) -> Result<(), String> {
+pub async fn projector_to_display(app: AppHandle, index: usize, name: Option<String>, fill: bool) -> Result<(), String> {
     let all = displays(&app)?;
+    // The list may have changed since the menu opened (a display plugged in).
+    let by_name = |n: &String| all.iter().position(|m| m.name() == Some(n));
+    let index = match &name {
+        Some(n) if all.get(index).and_then(|m| m.name()) != Some(n) => by_name(n).ok_or("That display is no longer connected.")?,
+        _ => index,
+    };
     let m = all.get(index).ok_or("That display is no longer connected.")?;
     let w = window(&app)?;
     // Leave any fullscreen first, or the move is ignored.
@@ -151,6 +168,10 @@ pub async fn projector_to_display(app: AppHandle, index: usize, fill: bool) -> R
         // macOS moves the window to the display before it can fill it.
         std::thread::sleep(Duration::from_millis(150));
         w.set_simple_fullscreen(true).map_err(|e| e.to_string())?;
+        // Keys go to the console, not the projector it may now sit beside.
+        if let Some(c) = app.get_webview_window("console") {
+            let _ = c.set_focus();
+        }
     } else {
         let (mw, mh) = (m.size().width, m.size().height);
         let (ww, wh) = ((mw * 2 / 3).max(640), (mh * 2 / 3).max(360));
@@ -167,7 +188,7 @@ pub async fn projector_toggle_fill(app: AppHandle) -> Result<(), String> {
     let w = window(&app)?;
     let here = w.current_monitor().ok().flatten().ok_or("The projector is not on a display.")?;
     let index = displays(&app)?.iter().position(|m| same(m, &here)).unwrap_or(0);
-    projector_to_display(app, index, !FILLED.load(Ordering::SeqCst)).await
+    projector_to_display(app, index, None, !FILLED.load(Ordering::SeqCst)).await
 }
 
 /// The projector page could not start its motion background: under macOS
@@ -185,12 +206,17 @@ pub fn projector_play(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn identify_displays(app: AppHandle) -> Result<(), String> {
     let all = displays(&app)?;
+    let gen = IDENTIFY.fetch_add(1, Ordering::SeqCst) + 1;
+    // Never cover a projector that is showing the service.
+    let live = if FILLED.load(Ordering::SeqCst) { app.get_webview_window(LABEL).and_then(|w| w.current_monitor().ok().flatten()) } else { None };
     let mut labels = Vec::new();
     for (i, m) in all.iter().enumerate() {
-        let label = format!("identify-{}", i);
-        if let Some(old) = app.get_webview_window(&label) {
-            let _ = old.close();
+        if live.as_ref().map_or(false, |l| same(l, m)) {
             continue;
+        }
+        let label = format!("identify-{}", i);
+        if app.get_webview_window(&label).is_some() {
+            continue; // still showing from a moment ago
         }
         let s = m.scale_factor();
         let (w, h) = (420.0, 300.0);
@@ -214,6 +240,10 @@ pub async fn identify_displays(app: AppHandle) -> Result<(), String> {
     }
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(4));
+        // A newer press keeps its own windows.
+        if IDENTIFY.load(Ordering::SeqCst) != gen {
+            return;
+        }
         for l in labels {
             if let Some(w) = app.get_webview_window(&l) {
                 let _ = w.close();

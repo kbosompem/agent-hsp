@@ -1131,6 +1131,7 @@ export default function App() {
       listen<string>("session-dir", (e) => {
         if (sessionRef.current) sessionRef.current.dir = e.payload;
       }),
+      listen<string>("projector-key", (e) => keyRef.current(new KeyboardEvent("keydown", { key: e.payload }))),
       listen("projector-closed", () => {
         setProjectorOpen(false);
         logEvent("info", "projector window closed");

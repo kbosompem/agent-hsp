@@ -339,8 +339,16 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|w, e| {
-            if w.label() == projector::LABEL && matches!(e, tauri::WindowEvent::Destroyed) {
-                projector::on_closed(w.app_handle());
+            if w.label() == projector::LABEL {
+                match e {
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        if let Some(pw) = w.app_handle().get_webview_window(projector::LABEL) {
+                            projector::unfill(&pw);
+                        }
+                    }
+                    tauri::WindowEvent::Destroyed => projector::on_closed(w.app_handle()),
+                    _ => {}
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![

@@ -338,12 +338,27 @@ pub async fn youtube_preview_url(app: AppHandle, video_id: String) -> Result<YtP
     }
     tauri::async_runtime::spawn_blocking(move || {
         let exe = ytdlp(&app)?;
-        let out = Command::new(exe)
-            .args(["-J", "--no-warnings", "--ignore-config", "--no-playlist", "-f"])
+        let child = Command::new(exe)
+            .args(["-J", "--no-warnings", "--ignore-config", "--no-playlist", "--socket-timeout", "15", "-f"])
             .arg("bv*[height<=720][vcodec^=avc1][protocol=https]+ba[ext=m4a][protocol=https]/bv*[height<=720][protocol=https]+ba[protocol=https]")
             .arg(format!("https://www.youtube.com/watch?v={}", video_id))
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|e| e.to_string())?;
+        // A stuck yt-dlp must not leave the preview spinning forever.
+        let pid = child.id();
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let d2 = done.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(45));
+            if !d2.load(std::sync::atomic::Ordering::SeqCst) {
+                kill_pid(pid);
+            }
+        });
+        let out = child.wait_with_output().map_err(|e| e.to_string());
+        done.store(true, std::sync::atomic::Ordering::SeqCst);
+        let out = out?;
         if !out.status.success() {
             return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("preview failed").to_string());
         }
@@ -368,6 +383,13 @@ pub async fn youtube_preview_url(app: AppHandle, video_id: String) -> Result<YtP
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn kill_pid(pid: u32) {
+    #[cfg(unix)]
+    let _ = Command::new("kill").arg(pid.to_string()).status();
+    #[cfg(windows)]
+    let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
 }
 
 /// Download a YouTube video into a folder: video folders get MP4 up to

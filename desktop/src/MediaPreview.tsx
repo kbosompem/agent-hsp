@@ -41,6 +41,8 @@ function Player({ target }: { target: PreviewTarget }) {
   soundRef.current = sound;
   const v = useRef<HTMLVideoElement>(null);
   const a = useRef<HTMLAudioElement>(null);
+  // The separate picture and sound, to fall back on if HLS fails.
+  const separate = useRef<{ video: string; audio: string | null } | null>(null);
 
   useEffect(() => {
     if (target.kind !== "youtube") return;
@@ -48,9 +50,11 @@ function Player({ target }: { target: PreviewTarget }) {
       .then((p) => {
         // WebKit (macOS) plays HLS, picture and sound in one; it stalls on the
         // separate files, which WebView2 (Windows, no HLS) plays instead.
-        const hls = p.hls && document.createElement("video").canPlayType("application/vnd.apple.mpegurl");
-        if (hls) setSrc({ video: p.hls!, audio: null });
+        const webkit = !/Windows/i.test(navigator.userAgent);
+        separate.current = p.video ? { video: p.video, audio: p.audio } : null;
+        if (webkit && p.hls) setSrc({ video: p.hls, audio: null });
         else if (p.video) setSrc({ video: p.video, audio: p.audio });
+        else if (p.hls) setSrc({ video: p.hls, audio: null });
         else setError("this computer cannot play YouTube's stream for this video.");
       })
       .catch((e) => setError(String(e).replace(/^Error:\s*/, "")));
@@ -80,7 +84,7 @@ function Player({ target }: { target: PreviewTarget }) {
     vid.addEventListener("waiting", stop);
     vid.addEventListener("seeked", sync);
     vid.addEventListener("ratechange", rate);
-    const t = window.setInterval(() => !vid.paused && sync(), 1000);
+    const t = window.setInterval(() => soundRef.current && !vid.paused && sync(), 1000);
     return () => {
       vid.removeEventListener("playing", go);
       vid.removeEventListener("pause", stop);
@@ -118,6 +122,10 @@ function Player({ target }: { target: PreviewTarget }) {
             autoPlay
             muted
             playsInline
+            onError={() => {
+              const alt = separate.current;
+              if (alt && src.audio === null && src.video !== alt.video) setSrc(alt);
+            }}
             className="h-full w-full object-contain"
           />
         ) : (
