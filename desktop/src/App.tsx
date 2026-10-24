@@ -118,6 +118,10 @@ const QUOTE_REPEAT_MS = 180000;
 const REF_FIRE_DELAY = 0;
 // How long after a partial puts a verse up a later partial may swap it.
 const SWAP_MS = 1500;
+// With Deepgram, "Still listening?" comes up after this much listening, and
+// listening stops if no one answers within STILL_WAIT_MS.
+const STILL_EVERY_MS = 60 * 60 * 1000;
+const STILL_WAIT_MS = 5 * 60 * 1000;
 // A verse taken down with "HSP" stays off the screen this long.
 const BLOCK_MS = 60000;
 const FIRE_DELAY = 600;
@@ -159,6 +163,12 @@ function settleTail(text: string): string {
     dropNumber();
   }
   return words.join(" ");
+}
+
+/** 4:59 from milliseconds. */
+function clockLeft(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 }
 
 // What the operator needs to know about transcription right now.
@@ -355,6 +365,12 @@ export default function App() {
   const shownLogRef = useRef<{ at: number; label: string; translation: string; text: string }[]>([]);
   const sessionRef = useRef<{ dir: string; name: string; startedAt: number } | null>(null);
   const [continuePrompt, setContinuePrompt] = useState<{ dir: string; name: string; age_s: number; audio_s: number } | null>(null);
+  // Deepgram bills by the minute: every hour of listening asks "Still
+  // listening?" and stops at the deadline (ms) unless someone answers.
+  const [stillPrompt, setStillPrompt] = useState<number | null>(null);
+  const stillRef = useRef<number | null>(null);
+  stillRef.current = stillPrompt;
+  const askedAtRef = useRef(0);
   const lastTrAt = useRef(0);
   const diagRef = useRef("");
   const listeningRef = useRef(false);
@@ -797,19 +813,29 @@ export default function App() {
     return lines.join("\n") + "\n";
   }
 
+  /** Stop listening and save the session. `why` says it stopped by itself. */
+  async function stopListening(why?: string) {
+    if (!listeningRef.current) return;
+    listeningRef.current = false;
+    setListening(false);
+    setStillPrompt(null);
+    const dir = await invoke<string | null>("stop_listening", { summary: sessionSummary() }).catch(() => null);
+    const said = why ? why + " Stopped listening to save Deepgram charges." : "Stopped.";
+    if (dir) {
+      setMicStatus(said + " Saved the recording, transcript and summary.");
+      const open = { label: "Open folder", onClick: () => void invoke("open_session_folder", { dir }) };
+      if (why) toast.warning(said + " Press Listen to continue the same service.", { action: open, duration: Infinity });
+      else toast.success("Session saved: audio, transcript and summary", { action: open });
+    } else {
+      setMicStatus(said);
+    }
+  }
+  const stopRef = useRef(stopListening);
+  stopRef.current = stopListening;
+
   async function toggleListen() {
     if (listeningRef.current) {
-      listeningRef.current = false;
-      setListening(false);
-      const dir = await invoke<string | null>("stop_listening", { summary: sessionSummary() }).catch(() => null);
-      if (dir) {
-        setMicStatus("Stopped. Saved the recording, transcript and summary.");
-        toast.success("Session saved: audio, transcript and summary", {
-          action: { label: "Open folder", onClick: () => void invoke("open_session_folder", { dir }) },
-        });
-      } else {
-        setMicStatus("Stopped.");
-      }
+      await stopListening();
       return;
     }
     // A recent session: ask whether this is the same service.
@@ -845,6 +871,7 @@ export default function App() {
         continueSession: continueDir,
       });
       listeningRef.current = true;
+      askedAtRef.current = Date.now();
       if (!continueDir || !sessionRef.current) sessionRef.current = { dir: continueDir ?? "", name, startedAt: now0 };
       // Model loading happens inside start_listening; start the stall clock after it.
       healthRef.current.aliveAt = Date.now();
@@ -926,6 +953,11 @@ export default function App() {
       listen<string>("listen-status", (e) => {
         setMicStatus(e.payload);
         logEvent("info", "listen: " + e.payload);
+      }),
+      // Deepgram heard no one for five minutes.
+      listen<string>("idle-stop", (e) => {
+        logEvent("info", "listen: idle stop: " + e.payload);
+        void stopRef.current(e.payload);
       }),
       listen<string>("session-dir", (e) => {
         if (sessionRef.current) sessionRef.current.dir = e.payload;
@@ -1216,6 +1248,22 @@ export default function App() {
     const t = setInterval(() => setForce((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [listening]);
+
+  useEffect(() => {
+    if (!listening || model !== "deepgram") return;
+    const t = setInterval(() => {
+      const now = Date.now();
+      const deadline = stillRef.current;
+      if (deadline === null && now - askedAtRef.current >= STILL_EVERY_MS) setStillPrompt(now + STILL_WAIT_MS);
+      else if (deadline !== null && now >= deadline) void stopRef.current("No one answered \u201cStill listening?\u201d.");
+    }, 1000);
+    return () => clearInterval(t);
+  }, [listening, model]);
+
+  function keepListening() {
+    askedAtRef.current = Date.now();
+    setStillPrompt(null);
+  }
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -2283,6 +2331,26 @@ export default function App() {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+        <Dialog open={stillPrompt !== null} onOpenChange={(o) => !o && keepListening()}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Still listening?</DialogTitle>
+              <DialogDescription>
+                Deepgram charges for every minute it listens. Listening stops in{" "}
+                {stillPrompt !== null && clockLeft(stillPrompt - Date.now())} unless you keep it going. The recording so far is saved
+                either way.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-2">
+              <Button size="lg" onClick={keepListening}>
+                Keep listening
+              </Button>
+              <Button size="lg" variant="secondary" onClick={() => void stopListening()}>
+                Stop now
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
         <Dialog open={!!continuePrompt} onOpenChange={(o) => !o && setContinuePrompt(null)}>

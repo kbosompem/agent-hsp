@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+### Added
+
+- Deepgram no longer bills for an empty room. After 10 quiet seconds it stops sending audio (a KeepAlive holds the connection, which Deepgram does not charge for) and resumes, with the second before, when someone speaks. A steady hum such as a fan or air conditioning counts as quiet. After 5 quiet minutes the session stops and is saved. Every hour of Deepgram listening asks "Still listening?"; no answer within 5 minutes stops it. Replayed on the 9.6-hour session left running overnight on 2026-10-23, it would have stopped after 36 minutes, 29 of them billed; on three recorded sermons it never paused mid-sermon. `examples/spend_gate.rs` replays any recording this way.
+
 ### Changed
 
 - With Deepgram and Nemotron, spoken references show from the first partial transcript instead of waiting for two in a row: about 1 second sooner with Deepgram (typical 1.6 s to 0.5 s on the recorded sermon clips). Whisper keeps the two-in-a-row check (without it, the latency fixtures showed 57 wrong verses instead of 12). If the next words change the reference within 1.5 seconds ("verse eleven" becoming "eleven, twelve"), the new verse replaces the first, which then stays out of undo, history and the summary.

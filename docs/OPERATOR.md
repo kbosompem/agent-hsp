@@ -7,7 +7,7 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 1. Install the latest build. On a Mac, open the `.dmg`, drag Agent HSP to Applications, then open it once from Applications (right-click, Open, if macOS warns).
 2. Allow the microphone when macOS asks. If you missed the prompt: System Settings, Privacy & Security, Microphone, turn on Agent HSP.
 3. Open Settings (the sliders button, top right):
-   - Speech model: "Nemotron" on a Mac (fastest; works offline). Press Load and wait for "ready". "Deepgram" also works if you have a key and good internet; `small.en` is the fallback.
+   - Speech model: "Nemotron" on a Mac (fastest; works offline). Press Load and wait for "ready". "Deepgram" also works if you have a key and good internet; `small.en` is the fallback. Deepgram charges for every minute it hears, so it pauses after 10 quiet seconds (not billed; it picks up again when someone speaks), stops and saves the session after 5 quiet minutes, and asks "Still listening?" every hour (no answer in 5 minutes stops it). Press Listen and choose "Continue the same service" to carry on.
    - Audio input: the sound desk feed (USB from the mixer) if you have one, else the laptop microphone.
 4. On the Look page, pick a background, set the church name and choose "Verses per slide" (As many as fit puts John 3:16-17 on one slide). Pick backgrounds while you have internet; they download once and then work offline.
 5. On the Service page, import songs (VideoPsalm `.vpagd` or songbook `.json`, OpenLyrics, OpenSong or plain text) and build the order of service. Use Duplicate to start from last week.
