@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-24
+
 ### Added
 
 - Preview on the Media page (#26): click a YouTube result's picture to watch it in a wide player before downloading it, or the eye button on a library item. It plays on the console only, starts with the sound off (the console's sound may be going to the room), and offers Get, or Show on projector and Add to service. YouTube previews use yt-dlp's stream addresses: HLS on macOS (WebKit stalls on YouTube's separate picture files), separate picture and sound kept in step on Windows.
@@ -140,6 +142,7 @@ First version, released as "AMC Preso".
 - Light and dark console themes.
 - GitHub Actions workflow that builds macOS and Windows installers on every push to `main`.
 
-[Unreleased]: https://github.com/kbosompem/agent-hsp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kbosompem/agent-hsp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kbosompem/agent-hsp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kbosompem/agent-hsp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kbosompem/agent-hsp/releases/tag/v0.1.0
