@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { BookOpen, Download, Film, Loader2, Music, Pencil, Play, Plus, Search, Trash2, Upload, Clapperboard } from "lucide-react";
+import { BookOpen, Download, Eye, Film, Loader2, Music, Pencil, Play, Plus, Search, Trash2, Upload, Clapperboard } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { MediaFolder, MediaItem, fmtTime } from "@/lib/media";
 import { Song } from "@/lib/library";
 import SongCatalog from "./SongCatalog";
+import MediaPreview, { PreviewTarget } from "./MediaPreview";
 
 type YtResult = { id: string; title: string; channel: string; duration_s: number | null; thumbnail: string };
 
@@ -48,6 +49,8 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
   const [folder, setFolder] = useState<string>("all");
   const [q, setQ] = useState("");
   const [yt, setYt] = useState<YtResult[]>([]);
+  // The wide preview: a search result (with its result row) or a library item.
+  const [preview, setPreview] = useState<{ t: PreviewTarget; r?: YtResult; m?: MediaItem } | null>(null);
   const [searching, setSearching] = useState(false);
   const [target, setTarget] = useState<Record<string, string>>({});
   const [ffmpeg, setFfmpeg] = useState(true);
@@ -170,6 +173,20 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
                     </Button>
                     <Button
                       size="icon"
+                      variant="outline"
+                      className="size-7"
+                      title="Preview here (not on the projector)"
+                      onClick={() =>
+                        setPreview({
+                          t: { kind: "file", path: m.path, audio: m.kind === "audio", title: m.title, sub: folderName(m.folder) + (m.channel ? " · " + m.channel : "") },
+                          m,
+                        })
+                      }
+                    >
+                      <Eye />
+                    </Button>
+                    <Button
+                      size="icon"
                       variant="ghost"
                       className="ml-auto size-7"
                       title="Rename"
@@ -256,7 +273,14 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
               const dest = target[r.id] || (folder !== "all" ? folder : "general-video");
               return (
                 <div key={r.id} className="flex gap-2 rounded-md border p-2">
-                  <img src={r.thumbnail} alt="" className="aspect-video w-36 shrink-0 rounded object-cover" loading="lazy" />
+                  <button
+                    className="group relative aspect-video w-36 shrink-0 overflow-hidden rounded"
+                    title="Preview"
+                    onClick={() => setPreview({ t: { kind: "youtube", id: r.id, title: r.title, sub: r.channel + " · " + fmtTime(r.duration_s) }, r })}
+                  >
+                    <img src={r.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    <Play className="absolute inset-0 m-auto size-7 rounded-full bg-black/60 p-1.5 text-white opacity-80 transition-opacity group-hover:opacity-100" />
+                  </button>
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <div className="line-clamp-2 text-sm font-medium" title={r.title}>{r.title}</div>
                     <div className="truncate text-xs text-muted-foreground">
@@ -290,6 +314,35 @@ export default function MediaLibrary({ media, setMedia, folders, onPlayAudio, on
         </>
         )}
       </div>
+      <MediaPreview
+        target={preview?.t ?? null}
+        onClose={() => setPreview(null)}
+        actions={
+          preview?.r ? (
+            progress[preview.r.id] != null ? (
+              <span className="flex items-center gap-1 text-sm"><Loader2 className="size-4 animate-spin" /> Downloading {Math.round(progress[preview.r.id])}%</span>
+            ) : (
+              <Button onClick={() => preview.r && download(preview.r)}>
+                <Download /> Get into {folderName(target[preview.r.id] || (folder !== "all" ? folder : "general-video"))}
+              </Button>
+            )
+          ) : preview?.m ? (
+            <>
+              <Button variant="outline" onClick={() => preview.m && onAddToService(preview.m)}><Plus /> Add to service</Button>
+              <Button
+                onClick={() => {
+                  const m = preview.m!;
+                  setPreview(null);
+                  if (m.kind === "audio") onPlayAudio(m);
+                  else onShowVideo(m);
+                }}
+              >
+                <Play /> {preview.m.kind === "audio" ? "Play in the room" : "Show on projector"}
+              </Button>
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 }

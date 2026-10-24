@@ -371,6 +371,7 @@ pub fn run() {
             media::delete_media,
             media::rename_media,
             media::youtube_search,
+            media::youtube_preview_url,
             media::youtube_download,
             media::media_tools,
             shemen::shemen_catalog,

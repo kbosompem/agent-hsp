@@ -318,6 +318,58 @@ pub async fn youtube_search(app: AppHandle, query: String) -> Result<Vec<YtResul
     .map_err(|e| e.to_string())?
 }
 
+/// Stream addresses for previewing a search result before downloading it.
+/// `hls` is YouTube's HLS stream, picture and sound together, which WebKit
+/// (macOS) plays natively; the separate picture (H.264 up to 720p) and sound
+/// files are for WebView2 (Windows), which has no HLS and plays them, while
+/// WebKit stalls on them. YouTube's own embedded player refuses pages without
+/// a web address, which the app's pages lack.
+#[derive(Serialize)]
+pub struct YtPreview {
+    hls: Option<String>,
+    video: Option<String>,
+    audio: Option<String>,
+}
+
+#[tauri::command]
+pub async fn youtube_preview_url(app: AppHandle, video_id: String) -> Result<YtPreview, String> {
+    if video_id.len() != 11 || !video_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("bad video id".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let exe = ytdlp(&app)?;
+        let out = Command::new(exe)
+            .args(["-J", "--no-warnings", "--ignore-config", "--no-playlist", "-f"])
+            .arg("bv*[height<=720][vcodec^=avc1][protocol=https]+ba[ext=m4a][protocol=https]/bv*[height<=720][protocol=https]+ba[protocol=https]")
+            .arg(format!("https://www.youtube.com/watch?v={}", video_id))
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("preview failed").to_string());
+        }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
+        let hls = v["formats"]
+            .as_array()
+            .and_then(|fs| fs.iter().find_map(|f| f["manifest_url"].as_str().filter(|u| u.contains(".m3u8") || u.contains("hls"))))
+            .map(str::to_string);
+        let picked = v["requested_formats"].as_array().cloned().unwrap_or_default();
+        let url = |want_video: bool| {
+            picked
+                .iter()
+                .find(|f| (f["vcodec"].as_str().unwrap_or("none") != "none") == want_video)
+                .and_then(|f| f["url"].as_str())
+                .map(str::to_string)
+        };
+        let p = YtPreview { hls, video: url(true), audio: url(false) };
+        if p.hls.is_none() && p.video.is_none() {
+            return Err("YouTube gave no playable stream for this video.".into());
+        }
+        Ok(p)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Download a YouTube video into a folder: video folders get MP4 up to
 /// 1080p (720p-ish single file without ffmpeg), audio folders get M4A.
 /// Reports "media-progress" {id, percent, status} and "media-done" {id, ok, error}.
