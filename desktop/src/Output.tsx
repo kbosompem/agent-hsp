@@ -6,9 +6,11 @@ import SlideView, { OutputTheme, Slide, setPlayBlockedHandler } from "./SlideVie
 /** "Which display is which?": a big number on each display. */
 export function Identify({ n, name }: { n: string; name: string }) {
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#111827", color: "#fbbf24", fontFamily: "system-ui, sans-serif", border: "6px solid #fbbf24", boxSizing: "border-box" }}>
+    // It closes by itself after 4 s; a click on any display's number closes them all.
+    <div onClick={() => void invoke("identify_close").catch(() => {})} style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#111827", color: "#fbbf24", fontFamily: "system-ui, sans-serif", border: "6px solid #fbbf24", boxSizing: "border-box", cursor: "pointer" }}>
       <div style={{ fontSize: 160, fontWeight: 700, lineHeight: 1 }}>{n}</div>
       <div style={{ fontSize: 20, color: "#e5e7eb", marginTop: 12 }}>{name}</div>
+      <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 8 }}>Click to close</div>
     </div>
   );
 }

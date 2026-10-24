@@ -397,6 +397,7 @@ pub fn run() {
             projector::list_displays,
             projector::projector_to_display,
             projector::identify_displays,
+            projector::identify_close,
             projector::projector_toggle_fill,
             projector::projector_play,
             llm::set_llm_settings,

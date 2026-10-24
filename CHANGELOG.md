@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+### Fixed
+
+- "Which display is which?" no longer leaves a number stuck on screen. Pressing it twice within four seconds left the first press's number up for good, covering the console until the app restarted. A new press now replaces the numbers still showing, and a click on any display's number closes them all at once.
+- Displays are listed by the name macOS gives them ("Built-in Retina Display", "DELL U2720Q") instead of "Monitor #41038".
+
 ## [0.3.0] - 2026-10-24
 
 ### Added

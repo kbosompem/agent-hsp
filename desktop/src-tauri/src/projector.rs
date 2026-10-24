@@ -17,7 +17,7 @@ pub const LABEL: &str = "output";
 
 /// The projector fills its display.
 static FILLED: AtomicBool = AtomicBool::new(false);
-/// Presses of "Which display is which?", so an old timer leaves new windows alone.
+/// Presses of "Which display is which?": each press's windows get their own labels.
 static IDENTIFY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn build(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -126,16 +126,104 @@ fn displays(app: &AppHandle) -> Result<Vec<Monitor>, String> {
     app.available_monitors().map_err(|e| e.to_string())
 }
 
+/// What people call each display. On macOS the windowing library names them
+/// "Monitor #41038" (the display's model number); the system's own name
+/// ("Built-in Retina Display", "DELL U2720Q") comes from NSScreen, on the
+/// main thread.
+/// Call from an async command: waiting on the main thread from it would hang.
+fn display_names(app: &AppHandle, all: &[Monitor]) -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    let names = {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = app.run_on_main_thread(move || {
+            let _ = tx.send(screen_names());
+        });
+        rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default()
+    };
+    #[cfg(not(target_os = "macos"))]
+    let names: Vec<(u32, String)> = {
+        let _ = app;
+        Vec::new()
+    };
+    // Two displays of one model share a number: give each the next unused name.
+    let mut used = vec![false; names.len()];
+    all.iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let raw = m.name().cloned().unwrap_or_default();
+            let model = raw.strip_prefix("Monitor #").and_then(|n| n.parse::<u32>().ok());
+            match model {
+                Some(model) => match names.iter().enumerate().position(|(k, (n, _))| *n == model && !used[k]) {
+                    Some(k) => {
+                        used[k] = true;
+                        names[k].1.clone()
+                    }
+                    None => format!("Display {}", i + 1),
+                },
+                None if raw.is_empty() => format!("Display {}", i + 1),
+                None => raw,
+            }
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGDisplayModelNumber(display: u32) -> u32;
+}
+
+/// (model number, localized name) for each screen. Main thread only.
+#[cfg(target_os = "macos")]
+fn screen_names() -> Vec<(u32, String)> {
+    use objc2::runtime::{AnyClass, AnyObject, Bool};
+    use objc2::{msg_send, sel};
+    let mut out = Vec::new();
+    unsafe {
+        let (Some(screen), Some(string)) = (AnyClass::get(c"NSScreen"), AnyClass::get(c"NSString")) else {
+            return out;
+        };
+        let screens: *mut AnyObject = msg_send![screen, screens];
+        if screens.is_null() {
+            return out;
+        }
+        let key: *mut AnyObject = msg_send![string, stringWithUTF8String: c"NSScreenNumber".as_ptr()];
+        let count: usize = msg_send![screens, count];
+        for i in 0..count {
+            let s: *mut AnyObject = msg_send![screens, objectAtIndex: i];
+            let can: Bool = msg_send![s, respondsToSelector: sel!(localizedName)];
+            if !can.as_bool() {
+                continue;
+            }
+            let desc: *mut AnyObject = msg_send![s, deviceDescription];
+            let num: *mut AnyObject = msg_send![desc, objectForKey: key];
+            let name: *mut AnyObject = msg_send![s, localizedName];
+            if num.is_null() || name.is_null() {
+                continue;
+            }
+            let id: u32 = msg_send![num, unsignedIntValue];
+            let utf8: *const std::ffi::c_char = msg_send![name, UTF8String];
+            if !utf8.is_null() {
+                out.push((CGDisplayModelNumber(id), std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned()));
+            }
+        }
+    }
+    out
+}
+
 #[tauri::command]
-pub fn list_displays(app: AppHandle) -> Result<Vec<Display>, String> {
+pub async fn list_displays(app: AppHandle) -> Result<Vec<Display>, String> {
     let primary = app.primary_monitor().ok().flatten();
     let here = app.get_webview_window(LABEL).and_then(|w| w.current_monitor().ok().flatten());
-    Ok(displays(&app)?
+    let all = displays(&app)?;
+    let names = display_names(&app, &all);
+    Ok(all
         .iter()
+        .zip(names)
         .enumerate()
-        .map(|(i, m)| Display {
+        .map(|(i, (m, name))| Display {
             index: i,
-            name: m.name().cloned().unwrap_or_else(|| format!("Display {}", i + 1)),
+            name,
             width: m.size().width,
             height: m.size().height,
             primary: primary.as_ref().map_or(false, |p| same(p, m)),
@@ -206,29 +294,32 @@ pub fn projector_play(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn identify_displays(app: AppHandle) -> Result<(), String> {
     let all = displays(&app)?;
+    let names = display_names(&app, &all);
     let gen = IDENTIFY.fetch_add(1, Ordering::SeqCst) + 1;
+    // A second press replaces the numbers still showing from the first. (It
+    // used to skip them, and the first press's timer then left them alone, so
+    // they stayed on screen for good.)
+    identify_close(app.clone());
     // Never cover a projector that is showing the service.
     let live = if FILLED.load(Ordering::SeqCst) { app.get_webview_window(LABEL).and_then(|w| w.current_monitor().ok().flatten()) } else { None };
     let mut labels = Vec::new();
-    for (i, m) in all.iter().enumerate() {
+    for (i, (m, name)) in all.iter().zip(names).enumerate() {
         if live.as_ref().map_or(false, |l| same(l, m)) {
             continue;
         }
-        let label = format!("identify-{}", i);
-        if app.get_webview_window(&label).is_some() {
-            continue; // still showing from a moment ago
-        }
+        let label = format!("identify-{}-{}", gen, i);
         let s = m.scale_factor();
         let (w, h) = (420.0, 300.0);
         let x = m.position().x as f64 / s + (m.size().width as f64 / s - w) / 2.0;
         let y = m.position().y as f64 / s + (m.size().height as f64 / s - h) / 2.0;
-        let name = m.name().cloned().unwrap_or_default();
         let url = format!("output.html?identify={}&name={}", i + 1, urlencode(&name));
         if WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
             .title("Display")
             .decorations(false)
             .always_on_top(true)
             .focused(false)
+            // The click that closes it must reach the page, not just focus it.
+            .accept_first_mouse(true)
             .resizable(false)
             .inner_size(w, h)
             .position(x, y)
@@ -240,10 +331,6 @@ pub async fn identify_displays(app: AppHandle) -> Result<(), String> {
     }
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(4));
-        // A newer press keeps its own windows.
-        if IDENTIFY.load(Ordering::SeqCst) != gen {
-            return;
-        }
         for l in labels {
             if let Some(w) = app.get_webview_window(&l) {
                 let _ = w.close();
@@ -251,6 +338,17 @@ pub async fn identify_displays(app: AppHandle) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+/// Close every "which display is which?" number: a click on any one of them
+/// closes them all.
+#[tauri::command]
+pub fn identify_close(app: AppHandle) {
+    for (l, w) in app.webview_windows() {
+        if l.starts_with("identify-") {
+            let _ = w.close();
+        }
+    }
 }
 
 fn urlencode(s: &str) -> String {
