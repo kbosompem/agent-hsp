@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "agent-hsp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bzip2 0.4.4",
  "cpal",

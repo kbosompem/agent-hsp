@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-24
+
 ### Fixed
 
 - "Which display is which?" no longer leaves a number stuck on screen. Pressing it twice within four seconds left the first press's number up for good, covering the console until the app restarted. A new press now replaces the numbers still showing, and a click on any display's number closes them all at once.
@@ -147,7 +149,8 @@ First version, released as "AMC Preso".
 - Light and dark console themes.
 - GitHub Actions workflow that builds macOS and Windows installers on every push to `main`.
 
-[Unreleased]: https://github.com/kbosompem/agent-hsp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kbosompem/agent-hsp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/kbosompem/agent-hsp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kbosompem/agent-hsp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kbosompem/agent-hsp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kbosompem/agent-hsp/releases/tag/v0.1.0
