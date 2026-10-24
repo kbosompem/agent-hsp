@@ -1,8 +1,9 @@
 name: publish-downloads
 
 # When a release is published, point downloads.anagkazo.app's "latest" links
-# (agent-hsp/latest/ and agent-hsp/latest.json, used by anagkazo.app/hsp.html)
-# at the installers release.yml uploaded to agent-hsp/<tag>/.
+# (agent-hsp/latest/, agent-hsp/latest.json, and agent-hsp/latest.js, the same
+# data as a script, which anagkazo.app/hsp.html loads to show the version) at
+# the installers release.yml uploaded to agent-hsp/<tag>/.
 # See docs/RELEASING.md.
 
 on:
@@ -47,5 +48,8 @@ jobs:
           printf '{"version":"%s","released":"%s","macos":"%s/Agent-HSP-macOS.dmg","windows":"%s/Agent-HSP-Windows-setup.exe"}' \
             "${TAG#v}" "${PUBLISHED%%T*}" "$url" "$url" > latest.json
           aws s3 cp latest.json "$base/latest.json" --content-type application/json --cache-control "public, max-age=300"
+          # A page on another host can load a script without CORS headers.
+          printf 'window.agentHspLatest = %s;\n' "$(cat latest.json)" > latest.js
+          aws s3 cp latest.js "$base/latest.js" --content-type "application/javascript; charset=utf-8" --cache-control "public, max-age=300"
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
-            --paths "/agent-hsp/latest/*" "/agent-hsp/latest.json"
+            --paths "/agent-hsp/latest/*" "/agent-hsp/latest.json" "/agent-hsp/latest.js"

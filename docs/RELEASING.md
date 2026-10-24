@@ -77,7 +77,7 @@ The Anagkazo website (https://anagkazo.app/hsp.html) links to `downloads.anagkaz
 3. Paste the changelog section for this version into the description, above the signing note.
 4. Click **Publish release**.
 
-Publishing starts `.github/workflows/publish-downloads.yml`. It copies that version's installers to `downloads.anagkazo.app/agent-hsp/latest/`, rewrites `agent-hsp/latest.json` (version, date, links) and clears the CloudFront cache for both. A pre-release does not move the latest links.
+Publishing starts `.github/workflows/publish-downloads.yml`. It copies that version's installers to `downloads.anagkazo.app/agent-hsp/latest/`, rewrites `agent-hsp/latest.json` (version, date, links) and `agent-hsp/latest.js` (the same data as a script; the Anagkazo page loads it to show the version number) and clears the CloudFront cache for all of them. A pre-release does not move the latest links.
 
 ## If something goes wrong
 
