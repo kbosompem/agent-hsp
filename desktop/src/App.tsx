@@ -29,6 +29,8 @@ import CornerSettings from "./CornerSettings";
 import AudioPlayer, { AudioControl } from "./AudioPlayer";
 import MediaLibrary from "./MediaLibrary";
 import Setup from "./Setup";
+import AiSettings, { LlmSettings } from "./AiSettings";
+import { AiLine, AiSummary, SUMMARY_SYSTEM, parseSummary, summaryMarkdown, summaryMessage, versesMarkdown } from "./lib/aisummary";
 import { logEvent } from "./lib/log";
 import { MediaFolder, MediaItem } from "./lib/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
@@ -165,6 +167,64 @@ function settleTail(text: string): string {
   return words.join(" ");
 }
 
+/** The live AI summary under Sermon notes. */
+function AiNotes({
+  ai,
+  model,
+  listening,
+  onShow,
+  onRefresh,
+}: {
+  ai: { summary: AiSummary | null; at: number; busy: boolean; error: string };
+  model: string;
+  listening: boolean;
+  onShow: (label: string) => void;
+  onRefresh: () => void;
+}) {
+  const s = ai.summary;
+  const ago = ai.at ? Math.round((Date.now() - ai.at) / 60000) : -1;
+  const status = ai.busy
+    ? "Updating…"
+    : ai.error
+      ? "Last update failed: " + ai.error
+      : ago < 0
+        ? listening
+          ? "The first summary comes after a minute or two of preaching."
+          : "Starts when you press Listen."
+        : "Updated " + (ago < 1 ? "just now" : ago + " min ago") + " · " + model;
+  return (
+    <div className="flex flex-col gap-2">
+      {s?.title && <div className="text-sm font-semibold">{s.title}</div>}
+      {s?.big_idea && <div className="text-xs text-muted-foreground">{s.big_idea}</div>}
+      {s && s.points.length > 0 && (
+        <ol className="flex flex-col gap-2">
+          {s.points.map((p, i) => (
+            <li key={i} className="text-sm">
+              <div>{i + 1}. {p.point}</div>
+              {p.detail && <div className="pl-4 text-xs text-muted-foreground">{p.detail}</div>}
+              {p.verses.length > 0 && (
+                <div className="flex flex-wrap gap-1 pl-4 pt-1">
+                  {p.verses.map((v) => (
+                    <Button key={v} variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => onShow(v)} title="Show this verse">
+                      {v}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className={cn("text-xs", ai.error ? "text-destructive" : "text-muted-foreground")}>{status}</div>
+      {listening && (
+        <Button variant="ghost" size="sm" className="self-start" disabled={ai.busy} onClick={onRefresh}>
+          Update now
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** 4:59 from milliseconds. */
 function clockLeft(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -288,6 +348,7 @@ export default function App() {
   const [dgReplacing, setDgReplacing] = useState(false);
   useEffect(() => {
     invoke<boolean>("has_deepgram_key").then(setDgKeySaved).catch(() => setDgKeySaved(false));
+    invoke<LlmSettings>("llm_settings").then(setLlm).catch(() => {});
   }, []);
   const [transcriptView, setTranscriptView] = useState<"processed" | "raw">("processed");
   const [view, setView] = useState<"console" | "service" | "media" | "theme" | "downloads">("console");
@@ -364,6 +425,19 @@ export default function App() {
   // Every verse shown while listening, for the session summary.
   const shownLogRef = useRef<{ at: number; label: string; translation: string; text: string }[]>([]);
   const sessionRef = useRef<{ dir: string; name: string; startedAt: number } | null>(null);
+  // The AI summary: every final line of the service (the transcript list
+  // above keeps only the last 200), the latest summary, and its status.
+  const aiLinesRef = useRef<AiLine[]>([]);
+  const aiRef = useRef<{ summary: AiSummary | null; at: number; words: number; busy: boolean; error: string }>({
+    summary: null,
+    at: 0,
+    words: 0,
+    busy: false,
+    error: "",
+  });
+  const [llm, setLlm] = useState<LlmSettings | null>(null);
+  const llmRef = useRef<LlmSettings | null>(null);
+  llmRef.current = llm;
   const [continuePrompt, setContinuePrompt] = useState<{ dir: string; name: string; age_s: number; audio_s: number } | null>(null);
   // Deepgram bills by the minute: every hour of listening asks "Still
   // listening?" and stops at the deadline (ms) unless someone answers.
@@ -713,14 +787,16 @@ export default function App() {
   }
 
   async function emitSummary() {
-    const data = buildSummary();
+    const ai = aiRef.current.summary;
+    const data: SummaryData =
+      ai && ai.points.length ? { points: ai.points.slice(0, 4).map((p) => ({ text: p.point, verses: p.verses.slice(0, 4) })) } : buildSummary();
     if (!data.points.length) {
       setMicStatus("Nothing to summarize yet.");
       return;
     }
     const s = await invoke<Slide>("show_slide", {
       kind: "summary",
-      title: sermonTitle(),
+      title: ai?.title || sermonTitle(),
       body: JSON.stringify(data),
       sub: "live",
     });
@@ -783,8 +859,55 @@ export default function App() {
     return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "_" + p(d.getHours()) + "-" + p(d.getMinutes());
   }
 
+  /** Ask the AI for the summary of `lines` so far. Returns null on failure. */
+  async function aiSummarize(lines: AiLine[], verses: typeof shownLogRef.current, startedAt: number, final: boolean) {
+    const reply = await invoke<string>("llm_complete", {
+      system: SUMMARY_SYSTEM,
+      user: summaryMessage(lines, verses, startedAt, final),
+      maxTokens: 4000,
+      json: true,
+    });
+    const got = parseSummary(reply, verses.map((v) => v.label));
+    if (!got) throw new Error("The AI's reply was not a summary: " + reply.slice(0, 120));
+    return got;
+  }
+
+  /** Refresh the live summary (every 90 s while listening, or "Update now"). */
+  async function refreshAi() {
+    const a = aiRef.current;
+    if (a.busy || !llmRef.current?.enabled || !aiLinesRef.current.length) return;
+    a.busy = true;
+    sync();
+    const words = aiLinesRef.current.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
+    try {
+      const started = sessionRef.current?.startedAt ?? aiLinesRef.current[0].at;
+      const got = await aiSummarize(aiLinesRef.current, shownLogRef.current, started, false);
+      // A new service started while it was thinking: drop the answer.
+      if (aiRef.current !== a) return;
+      // An empty outline never replaces a real one.
+      if (got.points.length || !a.summary?.points.length) a.summary = got;
+      a.error = "";
+    } catch (e) {
+      a.error = String(e).replace(/^Error:\s*/, "");
+      logEvent("error", "ai summary: " + a.error);
+    } finally {
+      a.busy = false;
+      a.at = Date.now();
+      a.words = words;
+      sync();
+    }
+  }
+
+  /** The heading line of the session files: date and time, speech model. */
+  function sessionHeading(): string {
+    const started = sessionRef.current?.startedAt ?? Date.now();
+    return new Date(started).toLocaleString() + " · speech model: " + model;
+  }
+
   /** summary.md for the session folder, written at Stop. */
   function sessionSummary(): string {
+    const ai = aiRef.current.summary;
+    if (ai && ai.points.length) return summaryMarkdown(ai, sessionHeading(), llmRef.current?.model || "AI");
     const st = stRef.current;
     const started = sessionRef.current?.startedAt ?? Date.now();
     const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -820,6 +943,30 @@ export default function App() {
     setListening(false);
     setStillPrompt(null);
     const dir = await invoke<string | null>("stop_listening", { summary: sessionSummary() }).catch(() => null);
+    if (dir) {
+      const heading = sessionHeading();
+      const verses = shownLogRef.current.slice();
+      void invoke("save_session_file", { dir, name: "verses.md", content: versesMarkdown(verses, heading) }).catch((e) =>
+        logEvent("error", "verses.md: " + e)
+      );
+      // One last pass over the whole sermon for the saved summary.
+      const lines = aiLinesRef.current.slice();
+      if (llmRef.current?.enabled && lines.length) {
+        const by = llmRef.current.model;
+        const started = sessionRef.current?.startedAt ?? lines[0].at;
+        void aiSummarize(lines, verses, started, true)
+          .then((got) => {
+            // summary.md already has the live summary; keep it over an empty one.
+            if (!got.points.length) throw new Error("the AI found no sermon points");
+            return invoke("save_session_file", { dir, name: "summary.md", content: summaryMarkdown(got, heading, by) });
+          })
+          .then(() => toast.success("AI summary saved with the recording"))
+          .catch((e) => {
+            logEvent("error", "final ai summary: " + e);
+            toast.error("The final AI summary failed; summary.md has the last live one. " + String(e).replace(/^Error:\s*/, ""));
+          });
+      }
+    }
     const said = why ? why + " Stopped listening to save Deepgram charges." : "Stopped.";
     if (dir) {
       setMicStatus(said + " Saved the recording, transcript and summary.");
@@ -854,6 +1001,8 @@ export default function App() {
       // A new service: start its notes and verse list fresh.
       stRef.current = newSermonState();
       shownLogRef.current = [];
+      aiLinesRef.current = [];
+      aiRef.current = { summary: null, at: 0, words: 0, busy: false, error: "" };
       transcriptRef.current = [];
       rawRef.current = [];
     }
@@ -888,7 +1037,25 @@ export default function App() {
     await showVerse(h, "");
   }
 
+  /** Show a verse by its label, e.g. from the AI summary. */
+  async function showLabel(label: string) {
+    const known = historyRef.current.find((h) => h.label === label)?.hit;
+    const hit =
+      known ??
+      (await invoke<VerseHit[]>("lookup_live", { input: label, translation: trIdRef.current, commit: false }).catch(() => []))[0];
+    if (hit) await showVerse(hit, "");
+  }
+
   function copyNotes() {
+    const ai = aiRef.current.summary;
+    if (ai && ai.points.length) {
+      const md = summaryMarkdown(ai, sessionHeading(), llmRef.current?.model || "AI").replace(/\nFiles in this folder:.*\n$/, "\n");
+      navigator.clipboard
+        .writeText(md)
+        .then(() => setMicStatus("AI summary copied to clipboard."))
+        .catch(() => setMicStatus("Copy failed."));
+      return;
+    }
     const srm = stRef.current;
     let out = "";
     if (srm.title) out += "Title: " + srm.title + "\n\n";
@@ -1260,6 +1427,18 @@ export default function App() {
     return () => clearInterval(t);
   }, [listening, model]);
 
+  // The live AI summary: every 90 s, once at least 40 new words have come in.
+  useEffect(() => {
+    if (!listening || !llm?.enabled) return;
+    const t = setInterval(() => {
+      const a = aiRef.current;
+      const words = aiLinesRef.current.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
+      if (!a.busy && Date.now() - a.at >= 90000 && words - a.words >= 40) void refreshAi();
+    }, 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listening, llm?.enabled]);
+
   function keepListening() {
     askedAtRef.current = Date.now();
     setStillPrompt(null);
@@ -1425,6 +1604,7 @@ export default function App() {
     // Verses already fired from this segment's partials belong to this line.
     const line: TrLine = { text: cleaned, labels: carried.slice() };
     transcriptRef.current.push(line);
+    if (listeningRef.current) aiLinesRef.current.push({ at: Date.now(), text: cleaned });
     if (transcriptRef.current.length > 200) transcriptRef.current.shift();
     noteFromLine(stRef.current, cleaned);
     sync();
@@ -2246,16 +2426,22 @@ export default function App() {
                     </div>
                   </Section>
                   <Section label="Sermon notes">
-                    {stRef.current.title && <div className="text-sm font-semibold">{stRef.current.title}</div>}
-                    {stRef.current.points.map((p) => (
-                      <div key={p.num} className="text-sm">{p.num}. {p.text}</div>
-                    ))}
-                    {stRef.current.notes.length === 0 && <Empty>Key lines and verses collect here.</Empty>}
-                    <div className="flex flex-col gap-1">
-                      {stRef.current.notes.slice(-8).map((n, i) => (
-                        <div key={i} className="border-l-2 border-primary/40 pl-2 text-xs text-muted-foreground">{n}</div>
-                      ))}
-                    </div>
+                    {llm?.enabled ? (
+                      <AiNotes ai={aiRef.current} model={llm.model} listening={listening} onShow={(l) => void showLabel(l)} onRefresh={() => void refreshAi()} />
+                    ) : (
+                      <>
+                        {stRef.current.title && <div className="text-sm font-semibold">{stRef.current.title}</div>}
+                        {stRef.current.points.map((p) => (
+                          <div key={p.num} className="text-sm">{p.num}. {p.text}</div>
+                        ))}
+                        {stRef.current.notes.length === 0 && <Empty>Key lines and verses collect here. Turn on the AI summary in Settings for a real outline.</Empty>}
+                        <div className="flex flex-col gap-1">
+                          {stRef.current.notes.slice(-8).map((n, i) => (
+                            <div key={i} className="border-l-2 border-primary/40 pl-2 text-xs text-muted-foreground">{n}</div>
+                          ))}
+                        </div>
+                      </>
+                    )}
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={copyNotes}><Copy /> Copy notes</Button>
                       <Button variant="outline" size="sm" onClick={() => void emitSummary()} title="Puts the summary slide on the projector"><FileText /> Summary now</Button>
@@ -2396,7 +2582,7 @@ export default function App() {
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Settings</DialogTitle>
-              <DialogDescription>Speech model, audio input and how the console looks.</DialogDescription>
+              <DialogDescription>Speech model, AI summary, audio input and how the console looks.</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-5">
               <Section label="Speech model">
@@ -2482,6 +2668,9 @@ export default function App() {
                   </div>
                 )}
               </Section>
+              <Section label="AI summary">
+                <AiSettings onChange={setLlm} />
+              </Section>
               <Section label="Audio input">
                 <Select value={micId || "__default"} onValueChange={(v) => setMicId(v === "__default" ? "" : v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -2501,8 +2690,8 @@ export default function App() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Every time you press Listen, the service is recorded. Stop saves the recording (audio.m4a), transcript.txt and summary.md in
-                  a folder named by date and time.
+                  Every time you press Listen, the service is recorded. Stop saves the recording (audio.m4a), transcript.txt, summary.md and
+                  verses.md in a folder named by date and time.
                 </p>
               </Section>
               <Section label="Setup and problems">
