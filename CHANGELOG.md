@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+### Fixed
+
+- Deepgram no longer goes silent in the middle of a service. The quiet detector added in 0.3.0 counted speech only when it was three times louder than the quietest moment of the last half minute, and paused after 10 seconds without it. A church sound-board feed never goes that quiet between sentences (reverb, keyboard pads, "amen"), so on 2026-10-25 it paused again and again during the preaching and would have ended the session after 16 minutes, losing 81% of the words. Speech now needs to be 1.5 times louder than the floor and the pause comes after 30 quiet seconds: replayed on that service, 1% of words fall in a pause, none of the eight recorded sermons pauses at all, and the overnight recording from 2026-10-23 still stops by itself (after 65 minutes instead of 36).
+
 ## [0.3.1] - 2026-10-24
 
 ### Fixed

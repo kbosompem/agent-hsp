@@ -30,8 +30,9 @@ pub const MODEL: &str = "deepgram";
 const URL: &str = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&endpointing=300&utterance_end_ms=1000&punctuate=true";
 
 const SR: u64 = TARGET_SR as u64;
-/// Quiet this long pauses the audio. Longer than any pause for breath or effect.
-const PAUSE_AFTER: u64 = 10 * SR;
+/// Quiet this long pauses the audio. Longer than any pause for breath or
+/// effect, or a stretch of quiet prayer. (10 s cut into the 2026-10-25 service.)
+const PAUSE_AFTER: u64 = 30 * SR;
 /// On resuming, this much audio from before the first loud moment goes too,
 /// so the first word is not cut.
 const PREROLL: u64 = SR;
@@ -45,8 +46,17 @@ const KEEPALIVE_EVERY: Duration = Duration::from_secs(5);
 /// hum becomes the floor and counts as quiet.
 const FLOOR_WINDOW: u64 = 30 * SR;
 
+/// Speech is any half second this many times louder than the room's floor.
+/// A church sound-board feed never goes quiet between sentences (reverb,
+/// keyboard pads, "amen"), so speech stands only 1.5 to 2 times above it: at 3
+/// the 2026-10-25 service would have lost 81% of its words (the session
+/// stopped after 16 minutes), at 1.5 it loses 1%. A steady hum still varies
+/// less than that, so the 2026-10-23 overnight recording still stops (after 65
+/// minutes instead of 36). Replay with `examples/spend_gate.rs`.
+const VOICE_RATIO: f32 = 1.5;
+
 /// Decides whether the audio is worth paying Deepgram for. Speech is any half
-/// second louder than three times the room's floor.
+/// second VOICE_RATIO times louder than the room's floor.
 pub struct SpendGate {
     /// The floor the app last measured, used until the window has filled.
     start_floor: f32,
@@ -84,7 +94,7 @@ impl SpendGate {
         if pos < self.started + FLOOR_WINDOW {
             self.floor = self.floor.min(self.start_floor);
         }
-        let voiced = tail_rms > (self.floor * 3.0).max(0.0035);
+        let voiced = tail_rms > (self.floor * VOICE_RATIO).max(0.0035);
         if voiced {
             self.last_voiced = pos;
             if !self.sending {
@@ -366,7 +376,7 @@ mod tests {
         let mut pos = 0;
         let mut g = SpendGate::new(QUIET, pos);
         assert!(run(&mut g, &mut pos, LOUD, 5).is_empty());
-        assert!(run(&mut g, &mut pos, QUIET, 8).is_empty());
+        assert!(run(&mut g, &mut pos, QUIET, 25).is_empty());
         assert!(g.sending);
     }
 
@@ -375,7 +385,7 @@ mod tests {
         let mut pos = 0;
         let mut g = SpendGate::new(QUIET, pos);
         run(&mut g, &mut pos, LOUD, 2);
-        assert_eq!(run(&mut g, &mut pos, QUIET, 11), vec![Gate::Pause]);
+        assert_eq!(run(&mut g, &mut pos, QUIET, 31), vec![Gate::Pause]);
         assert!(!g.sending);
         pos += SR / 20;
         assert_eq!(g.step(LOUD, pos), Gate::Resume(pos - SR / 2 - PREROLL));
@@ -397,8 +407,21 @@ mod tests {
         // it must not keep Deepgram billing.
         let mut pos = 0;
         let mut g = SpendGate::new(0.002, pos);
-        let changes = run(&mut g, &mut pos, 0.01, 45);
+        let changes = run(&mut g, &mut pos, 0.01, 65);
         assert_eq!(changes, vec![Gate::Pause]);
+    }
+
+    #[test]
+    fn speech_barely_above_a_live_room_keeps_sending() {
+        // A sound-board feed in service: the gaps between sentences are reverb
+        // and music at 0.012, the preacher only twice that.
+        let mut pos = 0;
+        let mut g = SpendGate::new(0.012, pos);
+        for i in 0..2400 {
+            pos += SR / 20;
+            let level = if i % 60 < 40 { 0.024 } else { 0.012 };
+            assert!(matches!(g.step(level, pos), Gate::Send), "paused at step {i}");
+        }
     }
 
     #[test]
