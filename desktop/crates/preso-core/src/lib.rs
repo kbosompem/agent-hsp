@@ -148,6 +148,13 @@ fn default_abbrev(id: &str, name: &str) -> String {
     if a.is_empty() { name.to_string() } else { a.to_uppercase() }
 }
 
+/// Numbered books said without their number: "Corinthians fourteen two"
+/// (2026-10-25 service). They mean the first book unless the passage already
+/// open is the second (LiveLookup). Samuel, Kings, Chronicles and Peter are
+/// left out: "Samuel" and "Peter" are usually the men, and a bare "Samuel"
+/// turned "Samuel chapter 1 ... 15 verse 28" into 1 Samuel 1:28.
+const BARE_NAMES: [(&str, usize); 3] = [("corinthians", 45), ("thessalonians", 51), ("timothy", 53)];
+
 #[derive(Clone)]
 struct AliasEntry {
     tokens: Vec<String>,
@@ -294,6 +301,10 @@ impl Engine {
                 }
             }
         }
+        for (name, b) in BARE_NAMES {
+            aliases.push(AliasEntry { tokens: vec![name.to_string()], book: b });
+        }
+        // Longest first, so "first corinthians" wins over a bare "corinthians".
         aliases.sort_by(|a, b| b.tokens.len().cmp(&a.tokens.len()));
         Engine {
             translations: RwLock::new(translations),
@@ -1529,6 +1540,8 @@ impl LiveLookup {
 
     pub fn lookup(&mut self, text: &str, tr_id: Option<&str>, now_s: f64, commit: bool) -> Vec<VerseHit> {
         let eng = engine();
+        let fixed = self.with_open_number(text, now_s);
+        let text = fixed.as_deref().unwrap_or(text);
         let mut hits = self.resolve(text, tr_id, now_s, eng.lookup(text, tr_id));
         // "... First" / "John four four": the speech engine split a numbered
         // book across two transcripts. When the previous one ended on an
@@ -1584,6 +1597,30 @@ impl LiveLookup {
             }
         }
         hits
+    }
+
+    /// "Corinthians 5 17" with no number means 2 Corinthians when Second
+    /// Corinthians is the passage open: the words get their "second" back
+    /// before parsing (1 Corinthians 5:17 does not exist, so fixing the hit
+    /// afterwards is too late). Otherwise the parser's first book stands.
+    fn with_open_number(&self, text: &str, now_s: f64) -> Option<String> {
+        let (open, _, at) = self.ctx?;
+        if now_s - at > CONTEXT_TTL_S {
+            return None;
+        }
+        let &(name, _) = BARE_NAMES.iter().find(|&&(_, b)| b + 1 == open)?;
+        let tokens = rewrite_tokens(&normalize(text));
+        let numbered = |w: &str| matches!(w, "first" | "second" | "third" | "one" | "two" | "three" | "1" | "2" | "3" | "i" | "ii");
+        let mut out: Vec<&str> = Vec::with_capacity(tokens.len() + 1);
+        let mut changed = false;
+        for (i, t) in tokens.iter().enumerate() {
+            if t == name && !(i > 0 && numbered(&tokens[i - 1])) {
+                out.push("second");
+                changed = true;
+            }
+            out.push(t);
+        }
+        changed.then(|| out.join(" "))
     }
 
     /// Add follow-up verses ("verse 21 says") to the parsed hits, in the
@@ -1876,6 +1913,19 @@ mod tests {
         assert_eq!(live(&mut l, "Jeremiah chapter 2. Are you there? Verse 21 says that", 0.0), vec!["Jeremiah 2:21"]);
         assert_eq!(live(&mut l, "Luke chapter 8. From verse 18. This is about the parable", 5.0), vec!["Luke 8:18"]);
         assert_eq!(live(&mut l, "Isaiah chapter 42 verse number 16.", 9.0), vec!["Isaiah 42:16"]);
+    }
+
+    #[test]
+    fn numbered_book_without_its_number() {
+        assert_eq!(refs("Corinthians fourteen two, what does it say?"), vec!["1 Corinthians 14:2"]);
+        assert_eq!(refs("Second Timothy 2 15"), vec!["2 Timothy 2:15"]);
+        assert_eq!(refs("First Corinthians 13 4"), vec!["1 Corinthians 13:4"]);
+        let mut l = LiveLookup::new();
+        live(&mut l, "turn with me to Second Corinthians chapter 5", 0.0);
+        assert_eq!(live(&mut l, "Corinthians 5 17 says", 20.0), vec!["2 Corinthians 5:17"]);
+        let mut l = LiveLookup::new();
+        live(&mut l, "That's First Corinthians 14", 0.0);
+        assert_eq!(live(&mut l, "Corinthians fourteen two, what does it say?", 60.0), vec!["1 Corinthians 14:2"]);
     }
 
     #[test]

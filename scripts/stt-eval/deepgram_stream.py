@@ -48,8 +48,10 @@ CHUNK = 3200  # 100 ms of 16-bit mono at 16 kHz
 async def main():
     events, raw = [], []
     seg = 0
+    # No client pings: on long clips Deepgram's replies to them lag and the
+    # library dropped the connection ("keepalive ping timeout").
     async with websockets.connect(url, additional_headers={"Authorization": "Token " + os.environ["DG_KEY"]},
-                                  max_size=None) as ws:
+                                  max_size=None, ping_interval=None) as ws:
         t0 = time.monotonic()
 
         async def send():
@@ -76,8 +78,11 @@ async def main():
                 if fin:
                     seg += 1
 
-        await asyncio.gather(send(), recv())
-    json.dump({"clip": [c0, c1], "events": events}, open(os.path.join(out_dir, a.slug + ".events.json"), "w"), indent=1)
+        try:
+            await asyncio.gather(send(), recv())
+        finally:
+            # Keep what arrived even if the connection fails partway.
+            json.dump({"clip": [c0, c1], "events": events}, open(os.path.join(out_dir, a.slug + ".events.json"), "w"), indent=1)
     json.dump(raw, open(os.path.join(out_dir, a.slug + ".raw.json"), "w"))
     lag = sorted(e["t"] - e["audio_end"] for e in events if e["final"])
     print(f"{a.slug}: {len(events)} events, finals {len(lag)}, "
