@@ -67,6 +67,16 @@ fn verse_at(
     engine().verse_at(translation.as_deref(), book, chapter, verse)
 }
 
+/// The verse the end of `text` recites word for word, if any (recite.rs).
+/// Async: the first call may wait for the index, which is built at startup.
+#[tauri::command]
+async fn recite(text: String, translation: Option<String>) -> Option<VerseHit> {
+    tauri::async_runtime::spawn_blocking(move || preso_core::recite::recited(&text, translation.as_deref()).map(|r| r.hit))
+        .await
+        .ok()
+        .flatten()
+}
+
 #[tauri::command]
 fn verse_range(
     book: usize,
@@ -333,6 +343,8 @@ pub fn run() {
                 .map(|p| p.join("translations"))
                 .ok();
             preso_core::init_engine(dir.as_deref());
+            // About a second of work: off the startup path.
+            std::thread::spawn(preso_core::recite::warm);
             if let Some(w) = app.get_webview_window(projector::LABEL) {
                 projector::keep_playing(&w);
             }
@@ -357,6 +369,7 @@ pub fn run() {
             reset_live,
             set_live_context,
             verse_at,
+            recite,
             verse_range,
             list_translations,
             bible_structure,

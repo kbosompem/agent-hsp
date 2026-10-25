@@ -36,7 +36,6 @@ import { logEvent } from "./lib/log";
 import { MediaFolder, MediaItem } from "./lib/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { Embedder } from "./lib/embed";
 import {
   addNote as addSermonNote,
   buildSummary as buildSermonSummary,
@@ -108,8 +107,11 @@ const DEFAULT_THEME: OutputTheme = {
   textScale: 1,
 };
 
-// VerseCast's value from real sermon audio; tune on our sermons (issue 15).
-const QUOTE_THRESHOLD = 0.62;
+// A recited verse is looked for in the last RECITE_WORDS words heard within
+// RECITE_WINDOW_MS: long enough for a whole verse, short enough that words
+// from before a pause do not bring back a verse said minutes ago.
+const RECITE_WORDS = 35;
+const RECITE_WINDOW_MS = 30000;
 // A spoken reference is skipped if shown this recently (or still on screen).
 const REF_REPEAT_MS = 30000;
 // A quote match is not repeated within this window.
@@ -383,7 +385,6 @@ export default function App() {
   const [itemBg, setItemBg] = useState<ItemBackground | null>(null);
   const outThemeRef = useRef(outTheme);
   outThemeRef.current = outTheme;
-  const [quoteStatus, setQuoteStatus] = useState("not loaded");
   const [translations, setTranslations] = useState<TranslationInfo[]>([]);
   const [, setForce] = useState(0);
 
@@ -397,7 +398,8 @@ export default function App() {
   const cardsRef = useRef<Card[]>([]);
   // Title, points, verse log and notes for the summary slide (see lib/sermon.ts).
   const stRef = useRef(newSermonState());
-  const quoteIndexRef = useRef<{ vecs: Float32Array; refs: number[][] } | null>(null);
+  // Finished lines of the last RECITE_WINDOW_MS, for recited verses.
+  const recentRef = useRef<{ at: number; text: string }[]>([]);
   const quoteBusy = useRef(false);
   const slideRef = useRef<Slide | null>(null);
   const lastVerse = useRef<VerseHit | null>(null);
@@ -460,7 +462,6 @@ export default function App() {
     fired: [],
     out: new Set(),
   });
-  const indexLoadedRef = useRef(false);
   const dirtyRef = useRef(false);
   const seqRef = useRef<{ slides: VerseHit[]; idx: number } | null>(null);
   // Words heard since the current slide of a range went up, for following the
@@ -1029,7 +1030,6 @@ export default function App() {
       setListening(true);
       if (r === "already") setMicStatus("Already listening.");
       else setMicStatus(continueDir ? "Listening · continuing the same service recording." : "Listening · recording a new service.");
-      void loadQuoteIndex();
     } catch (e: any) {
       setMicStatus(String(e).replace(/^Error:\s*/, ""));
     }
@@ -1478,26 +1478,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function loadQuoteIndex() {
-    if (indexLoadedRef.current) return;
-    indexLoadedRef.current = true;
-    try {
-      const meta = await fetch("verse-index.json").then((r) => {
-        if (!r.ok) throw new Error("missing");
-        return r.json();
-      });
-      const buf = await fetch("verse-index.bin").then((r) => {
-        if (!r.ok) throw new Error("missing");
-        return r.arrayBuffer();
-      });
-      quoteIndexRef.current = { vecs: new Float32Array(buf), refs: meta.refs };
-      setQuoteStatus("ready · " + meta.count + " verses");
-    } catch (e) {
-      indexLoadedRef.current = false;
-      setQuoteStatus("index missing — run scripts/verse-index");
-    }
-  }
-
   // Quote matching must never interrupt scripture being read: not while a
   // range is up, and not when the line is the verse on screen read aloud.
   function readingInProgress(text: string): boolean {
@@ -1508,59 +1488,45 @@ export default function App() {
     return !!cur && readingOverlap(text, cur.text) >= 0.3;
   }
 
+  // A verse recited word for word (preso-core recite.rs): the last few
+  // lines together, since a verse often spans two of them.
   async function quoteCheck(text: string) {
-    const idx = quoteIndexRef.current;
-    if (!idx || quoteBusy.current) return;
-    if (readingInProgress(text)) return;
-    const words = text.trim().split(/\s+/).length;
-    if (words < 6) return;
+    const at = Date.now();
+    const recent = recentRef.current.filter((l) => at - l.at <= RECITE_WINDOW_MS);
+    recent.push({ at, text });
+    recentRef.current = recent;
+    if (quoteBusy.current || readingInProgress(text)) return;
+    const words = recent.map((l) => l.text).join(" ").split(/\s+/).filter(Boolean);
+    if (words.length < 6) return;
     quoteBusy.current = true;
     try {
-      const q = await Embedder.embed(cleanText(text));
-      let best = -1;
-      let bestS = 0;
-      const n = idx.refs.length;
-      for (let i = 0; i < n; i++) {
-        let dot = 0;
-        const off = i * 384;
-        for (let k = 0; k < 384; k++) dot += q[k] * idx.vecs[off + k];
-        if (dot > bestS) {
-          bestS = dot;
-          best = i;
-        }
-      }
-      if (best >= 0 && bestS >= QUOTE_THRESHOLD) {
-        const r = idx.refs[best];
-        const hit = await invoke<VerseHit | null>("verse_at", {
-          book: r[0],
-          chapter: r[1],
-          verse: r[2],
-          translation: trIdRef.current,
+      const hit = await invoke<VerseHit | null>("recite", {
+        text: words.slice(-RECITE_WORDS).join(" "),
+        translation: trIdRef.current,
+      });
+      const now = Date.now();
+      const label = hit?.label;
+      if (
+        hit &&
+        label &&
+        !(shownRef.current[label] && now - shownRef.current[label] < QUOTE_REPEAT_MS) &&
+        !readingInProgress(text) &&
+        !cardsRef.current.some((c) => c.label === label && c.status === "pending")
+      ) {
+        shownRef.current[label] = now;
+        cardsRef.current.push({
+          id: seq.current++,
+          label: label,
+          hit: hit,
+          trigger: trimWords(text, 10),
+          kind: "quote",
+          fireAt: now + FIRE_DELAY,
+          status: "pending",
         });
-        const now = Date.now();
-        if (hit) {
-          const label = hit.label;
-          if (
-            !(shownRef.current[label] && now - shownRef.current[label] < QUOTE_REPEAT_MS) &&
-            !readingInProgress(text) &&
-            !cardsRef.current.some((c) => c.label === label && c.status === "pending")
-          ) {
-            shownRef.current[label] = now;
-            cardsRef.current.push({
-              id: seq.current++,
-              label: label,
-              hit: hit,
-              trigger: trimWords(text, 10),
-              kind: "quote",
-              fireAt: now + FIRE_DELAY,
-              status: "pending",
-            });
-            sync();
-          }
-        }
+        sync();
       }
     } catch (e) {
-      /* embedding unavailable; ignore */
+      console.error(e);
     } finally {
       quoteBusy.current = false;
     }
@@ -1619,7 +1585,7 @@ export default function App() {
     noteFromLine(stRef.current, cleaned);
     sync();
     void detect(cleaned, line);
-    void loadQuoteIndex().then(() => quoteCheck(cleaned));
+    void quoteCheck(cleaned);
   }
 
   function matchCommand(text: string): boolean {
@@ -2299,7 +2265,7 @@ export default function App() {
                       <Button variant="secondary" onClick={loadModel}><Download /> Load</Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {modelStatus || (model === "deepgram" ? "Online: nothing to download." : "Press Load once to download or check the model.")} · quote matching: {quoteStatus}
+                      {modelStatus || (model === "deepgram" ? "Online: nothing to download." : "Press Load once to download or check the model.")}
                     </p>
                     {model === "deepgram" && (
                       <div className="flex flex-col gap-1.5">

@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{OnceLock, RwLock};
 
+pub mod recite;
+
 const BOOK_ALIASES: [&[&str]; 66] = [
     &["genesis", "gen", "ge"],
     &["exodus", "exo", "ex"],
