@@ -23,6 +23,11 @@ const INDEXED: [&str; 3] = ["kjv", "bsb", "web"];
 const MIN_SHARE: f32 = 0.5;
 /// And their total weight: two or three rare pairs are not a recitation.
 const MIN_WEIGHT: f32 = 25.0;
+/// A third of a long verse is enough when its wording is rare: "treasures of
+/// darkness and hidden riches of secret places" (Isaiah 45:3, 2026-10-25).
+/// On the fixtures: 17 more recitations caught, 9 more verses not in the keys.
+const PART_SHARE: f32 = 0.3;
+const PART_WEIGHT: f32 = 60.0;
 /// Pairs in more verses than this ("of the", "and he") only find candidates
 /// through rarer pairs; they still count toward a candidate's share.
 const COMMON_PAIR: usize = 1500;
@@ -71,7 +76,9 @@ fn recitations() -> &'static Recitations {
 pub fn recited(text: &str, tr_id: Option<&str>) -> Option<Recital> {
     let r = recitations();
     let (i, share, weight) = r.best(text)?;
-    if share < MIN_SHARE || weight < MIN_WEIGHT {
+    let whole = share >= MIN_SHARE && weight >= MIN_WEIGHT;
+    let part = share >= PART_SHARE && weight >= PART_WEIGHT;
+    if !whole && !part {
         return None;
     }
     let e = &r.entries[i];
@@ -234,6 +241,14 @@ mod tests {
         assert_eq!(
             label("That says the Lord your redeemer. The holy one of Israel. I am the Lord your God who teaches you to profit. Who leads you by the way you should go."),
             Some("Isaiah 48:17".into())
+        );
+    }
+
+    #[test]
+    fn rare_part_of_a_long_verse() {
+        assert_eq!(
+            label("Reveal treasures, treasures that are hidden in darkness. In the name of Jesus. Hidden riches of secret places. Treasures of darkness and hidden riches of secret places."),
+            Some("Isaiah 45:3".into())
         );
     }
 
