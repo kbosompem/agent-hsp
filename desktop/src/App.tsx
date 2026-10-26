@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
-  BookOpen, Check, Clapperboard, Copy, FolderOpen, Pause, Pencil, Play, RotateCw, Trash2, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, Minus,
+  BookOpen, Check, Clapperboard, Copy, FolderOpen, Pause, Pencil, Play, RotateCw, Trash2, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, MicOff, Minus,
   MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -238,9 +238,11 @@ function clockLeft(ms: number): string {
 function sttHealth(
   listening: boolean,
   h: { lag: number; error: string; errorAt: number; aliveAt: number; okAt: number },
-  now: number
+  now: number,
+  inputLost: { name: string; since: number } | null
 ): { label: string; cls: string; detail: string } {
   if (!listening) return { label: "IDLE", cls: "", detail: "Not listening" };
+  if (inputLost) return { label: "NO SOUND", cls: "bad", detail: "Nothing is arriving from " + inputLost.name };
   if (h.error && h.errorAt > h.okAt) {
     return { label: "NOT TRANSCRIBING", cls: "bad", detail: h.error };
   }
@@ -262,6 +264,9 @@ export default function App() {
   const [modelStatus, setModelStatus] = useState("");
   const [micStatus, setMicStatus] = useState("");
   const [micLevelPct, setMicLevelPct] = useState(0);
+  // The input device stopped sending sound (unplugged, USB dropout) while
+  // listening; capture reconnects by itself when it is back.
+  const [inputLost, setInputLost] = useState<{ name: string; since: number } | null>(null);
   // Transcription health (issue 2): lag behind live audio, last whisper error,
   // and when text or speech was last seen, so a stalled model is never silent.
   const healthRef = useRef({ lag: 0, error: "", errorAt: 0, aliveAt: 0, okAt: 0 });
@@ -944,6 +949,7 @@ export default function App() {
     if (!listeningRef.current) return;
     listeningRef.current = false;
     setListening(false);
+    setInputLost(null);
     setStillPrompt(null);
     const dir = await invoke<string | null>("stop_listening", { summary: sessionSummary() }).catch(() => null);
     if (dir) {
@@ -1028,6 +1034,7 @@ export default function App() {
       // Model loading happens inside start_listening; start the stall clock after it.
       healthRef.current.aliveAt = Date.now();
       setListening(true);
+      setInputLost(null);
       if (r === "already") setMicStatus("Already listening.");
       else setMicStatus(continueDir ? "Listening · continuing the same service recording." : "Listening · recording a new service.");
     } catch (e: any) {
@@ -1122,6 +1129,14 @@ export default function App() {
       listen<string>("listen-status", (e) => {
         setMicStatus(e.payload);
         logEvent("info", "listen: " + e.payload);
+      }),
+      listen<string>("input-lost", (e) => {
+        setInputLost({ name: e.payload, since: Date.now() });
+        logEvent("error", "input lost: no sound from " + e.payload);
+      }),
+      listen<string>("input-restored", (e) => {
+        setInputLost(null);
+        logEvent("info", "input back: " + e.payload);
       }),
       // Deepgram heard no one for five minutes.
       listen<string>("idle-stop", (e) => {
@@ -1910,7 +1925,7 @@ export default function App() {
 
   const now = Date.now();
   const preview = <SlideView slide={slide} theme={liveTheme} idle="Nothing on screen" />;
-  const hs = sttHealth(listening, healthRef.current, now);
+  const hs = sttHealth(listening, healthRef.current, now, inputLost);
   const textPct = Math.round((outTheme.textScale ?? 1) * 100);
 
   const coverButtons = (
@@ -2029,6 +2044,13 @@ export default function App() {
           </Button>
         </header>
 
+        {listening && inputLost && (
+          <div role="alert" className="flex shrink-0 items-center gap-2 bg-destructive px-4 py-2 text-sm font-medium text-white">
+            <MicOff className="size-4 shrink-0" />
+            No sound from {inputLost.name} since {new Date(inputLost.since).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Check its
+            cable and power. Listening carries on by itself when it is back.
+          </div>
+        )}
         <div className="flex h-8 shrink-0 items-center border-b bg-muted/40 px-4 text-xs text-muted-foreground">
           <span className="truncate">
             {micStatus ||

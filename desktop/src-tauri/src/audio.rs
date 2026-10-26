@@ -299,6 +299,90 @@ pub fn downmix(data: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
+/// No samples from the input for this long means it is gone (unplugged, or
+/// the USB connection dropped). On 2026-10-25 the C-Media USB input vanished
+/// at 12:52 and the console said "Listening" over silence for 46 minutes.
+const INPUT_LOST_MS: u64 = 3000;
+
+fn find_input(host: &cpal::Host, name: Option<&str>) -> Option<cpal::Device> {
+    match name {
+        Some(n) if !n.is_empty() => host
+            .input_devices()
+            .ok()
+            .and_then(|mut ds| ds.find(|d| d.name().map(|dn| dn == n).unwrap_or(false))),
+        _ => host.default_input_device(),
+    }
+}
+
+/// Start capturing from `device` into the shared buffer and the session
+/// recording. `heard` turns true at the first non-zero sample; `last_data`
+/// is the time of the latest samples, in ms since `t0`.
+fn open_input(
+    device: &cpal::Device,
+    shared: &Arc<ListenState>,
+    heard: &Arc<AtomicBool>,
+    last_data: &Arc<AtomicU64>,
+    t0: std::time::Instant,
+) -> Result<cpal::Stream, String> {
+    let cfg = device.default_input_config().map_err(|e| format!("Config error: {}", e))?;
+    let sr = cfg.sample_rate().0 as usize;
+    let channels = cfg.channels() as usize;
+    let pcm = shared.pcm.clone();
+    let level = shared.level.clone();
+    let total = shared.total.clone();
+    let heard = heard.clone();
+    let last_data = last_data.clone();
+    let push = move |data: &[f32]| {
+        last_data.store(t0.elapsed().as_millis() as u64, Ordering::Relaxed);
+        if !heard.load(Ordering::Relaxed) && data.iter().any(|x| *x != 0.0) {
+            heard.store(true, Ordering::Relaxed);
+        }
+        let mono = downmix(data, channels);
+        let chunk = resample_to_16k(&mono, sr);
+        let rms = rms_of(&chunk);
+        *level.lock().unwrap() = rms;
+        {
+            // Count under the lock so readers see buffer and total agree.
+            let mut buf = pcm.lock().unwrap();
+            buf.extend_from_slice(&chunk);
+            if buf.len() > MAX_RING {
+                let cut = buf.len() - MAX_RING;
+                buf.drain(0..cut);
+            }
+            total.fetch_add(chunk.len() as u64, Ordering::SeqCst);
+        }
+        crate::session::audio(&chunk);
+    };
+    // A lost device is noticed by its silence (INPUT_LOST_MS), which also
+    // covers drivers that stop without reporting an error.
+    let err_fn = |_e| {};
+    let stream = match cfg.sample_format() {
+        cpal::SampleFormat::F32 => device.build_input_stream(&cfg.clone().into(), move |d: &[f32], _| push(d), err_fn, None),
+        cpal::SampleFormat::I16 => device.build_input_stream(
+            &cfg.clone().into(),
+            move |d: &[i16], _| {
+                let f: Vec<f32> = d.iter().map(|x| *x as f32 / 32768.0).collect();
+                push(&f);
+            },
+            err_fn,
+            None,
+        ),
+        cpal::SampleFormat::U16 => device.build_input_stream(
+            &cfg.clone().into(),
+            move |d: &[u16], _| {
+                let f: Vec<f32> = d.iter().map(|x| (*x as f32 - 32768.0) / 32768.0).collect();
+                push(&f);
+            },
+            err_fn,
+            None,
+        ),
+        _ => return Err("Unsupported sample format.".into()),
+    }
+    .map_err(|e| format!("Capture error: {}", e))?;
+    stream.play().map_err(|_| "Could not start capture.".to_string())?;
+    Ok(stream)
+}
+
 fn spawn_capture(
     app: AppHandle,
     device_name: Option<String>,
@@ -307,123 +391,64 @@ fn spawn_capture(
 ) {
     std::thread::spawn(move || {
         let host = cpal::default_host();
-        let device = match device_name.as_deref() {
-            Some(n) if !n.is_empty() => host
-                .input_devices()
-                .ok()
-                .and_then(|mut ds| {
-                    ds.find(|d| d.name().map(|dn| dn == n).unwrap_or(false))
-                }),
-            _ => host.default_input_device(),
-        };
-        let device = match device {
-            Some(d) => d,
-            None => {
-                let _ = app.emit("listen-status", "No input device found.");
-                return;
-            }
+        let Some(device) = find_input(&host, device_name.as_deref()) else {
+            let _ = app.emit("listen-status", "No input device found.");
+            return;
         };
         let name = device.name().unwrap_or_else(|_| "input".into());
-        let cfg = match device.default_input_config() {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = app.emit("listen-status", format!("Config error: {}", e));
-                return;
-            }
-        };
-        let sr = cfg.sample_rate().0 as usize;
-        let channels = cfg.channels() as usize;
-        let pcm = shared.pcm.clone();
-        let level = shared.level.clone();
-        let total = shared.total.clone();
         // macOS hands an app without microphone permission pure digital
         // silence, with no error. Track whether any non-zero sample arrives.
         let heard = Arc::new(AtomicBool::new(false));
-        let heard_cb = heard.clone();
-        let err_fn = move |e| {
-            let _ = e;
-        };
-        let push = move |data: &[f32]| {
-            if !heard_cb.load(Ordering::Relaxed) && data.iter().any(|x| *x != 0.0) {
-                heard_cb.store(true, Ordering::Relaxed);
-            }
-            let mono = downmix(data, channels);
-            let chunk = resample_to_16k(&mono, sr);
-            let rms = rms_of(&chunk);
-            *level.lock().unwrap() = rms;
-            {
-                // Count under the lock so readers see buffer and total agree.
-                let mut buf = pcm.lock().unwrap();
-                buf.extend_from_slice(&chunk);
-                if buf.len() > MAX_RING {
-                    let cut = buf.len() - MAX_RING;
-                    buf.drain(0..cut);
-                }
-                total.fetch_add(chunk.len() as u64, Ordering::SeqCst);
-            }
-            crate::session::audio(&chunk);
-        };
-        let stream = match cfg.sample_format() {
-            cpal::SampleFormat::F32 => device.build_input_stream(
-                &cfg.clone().into(),
-                move |d: &[f32], _| push(d),
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::I16 => device.build_input_stream(
-                &cfg.clone().into(),
-                move |d: &[i16], _| {
-                    let f: Vec<f32> = d.iter().map(|x| *x as f32 / 32768.0).collect();
-                    push(&f);
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U16 => device.build_input_stream(
-                &cfg.clone().into(),
-                move |d: &[u16], _| {
-                    let f: Vec<f32> = d.iter().map(|x| (*x as f32 - 32768.0) / 32768.0).collect();
-                    push(&f);
-                },
-                err_fn,
-                None,
-            ),
-            _ => {
-                let _ = app.emit("listen-status", "Unsupported sample format.");
+        let t0 = std::time::Instant::now();
+        let last_data = Arc::new(AtomicU64::new(0));
+        let mut stream = match open_input(&device, &shared, &heard, &last_data, t0) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                let _ = app.emit("listen-status", e);
                 return;
             }
         };
-        match stream {
-            Ok(s) => {
-                if s.play().is_err() {
-                    let _ = app.emit("listen-status", "Could not start capture.");
-                    return;
-                }
-                let _ = app.emit("listen-status", format!("Capturing from {}", name));
-                let started = std::time::Instant::now();
-                let mut warned = false;
-                loop {
-                    if !shared.running.load(Ordering::SeqCst)
-                        || shared.generation.load(Ordering::SeqCst) != gen
-                    {
-                        break;
+        let _ = app.emit("listen-status", format!("Capturing from {}", name));
+        let mut warned = false;
+        let mut last_try = std::time::Instant::now();
+        loop {
+            if !shared.running.load(Ordering::SeqCst) || shared.generation.load(Ordering::SeqCst) != gen {
+                break;
+            }
+            let now_ms = t0.elapsed().as_millis() as u64;
+            if !warned && now_ms >= 3000 && !heard.load(Ordering::Relaxed) && stream.is_some() {
+                warned = true;
+                let _ = app.emit(
+                    "listen-status",
+                    format!(
+                        "No sound from {}. Allow Agent HSP in System Settings > Privacy & Security > Microphone, then press Listen again.",
+                        name
+                    ),
+                );
+            }
+            if stream.is_some() && now_ms.saturating_sub(last_data.load(Ordering::Relaxed)) >= INPUT_LOST_MS {
+                stream = None;
+                let _ = app.emit("input-lost", &name);
+                let _ = app.emit(
+                    "listen-status",
+                    format!("No sound is arriving from {}: check its cable or power. Listening carries on as soon as it is back.", name),
+                );
+            }
+            // Gone: look for it again every second, by name (the same USB
+            // device comes back as a new device).
+            if stream.is_none() && last_try.elapsed().as_millis() >= 1000 {
+                last_try = std::time::Instant::now();
+                let wanted = device_name.as_deref().filter(|n| !n.is_empty()).unwrap_or(&name);
+                if let Some(d) = find_input(&host, Some(wanted)) {
+                    last_data.store(t0.elapsed().as_millis() as u64, Ordering::Relaxed);
+                    if let Ok(s) = open_input(&d, &shared, &heard, &last_data, t0) {
+                        stream = Some(s);
+                        let _ = app.emit("input-restored", &name);
+                        let _ = app.emit("listen-status", format!("Capturing from {} again.", name));
                     }
-                    if !warned && started.elapsed().as_secs() >= 3 && !heard.load(Ordering::Relaxed) {
-                        warned = true;
-                        let _ = app.emit(
-                            "listen-status",
-                            format!(
-                                "No sound from {}. Allow Agent HSP in System Settings > Privacy & Security > Microphone, then press Listen again.",
-                                name
-                            ),
-                        );
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }
-            Err(e) => {
-                let _ = app.emit("listen-status", format!("Capture error: {}", e));
-            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
     });
 }
