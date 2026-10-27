@@ -3,7 +3,7 @@
 // window is closed, so a lost projector is never silent.
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { MonitorPlay } from "lucide-react";
+import { Projector } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,11 +27,13 @@ export default function ProjectorMenu({ open }: { open: boolean }) {
     <DropdownMenu onOpenChange={(o) => o && void invoke<Display[]>("list_displays").then(setDisplays).catch(() => setDisplays([]))}>
       <DropdownMenuTrigger asChild>
         <Button
+          size="icon"
           variant={open ? "outline" : "destructive"}
-          className={cn(!open && "animate-pulse")}
+          className={cn("size-9", !open && "animate-pulse")}
           title={open ? "Projector window: find it, reload it, or choose its display (P brings it to the front)" : "The projector window is closed"}
+          aria-label={open ? "Projector" : "Projector closed"}
         >
-          <MonitorPlay /> {open ? "Projector" : "Projector closed"}
+          <Projector />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">

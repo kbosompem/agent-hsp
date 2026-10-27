@@ -506,7 +506,7 @@ export default function Service(p: Props) {
         </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-1 p-2">
+          <div className="flex flex-col gap-0.5 p-2">
             {agenda.items.length === 0 && (
               <p className="p-2 text-sm text-muted-foreground">Add songs, readings, announcements and the sermon below.</p>
             )}
@@ -517,13 +517,25 @@ export default function Service(p: Props) {
                 <div
                   key={it.id}
                   draggable
-                  onDragStart={() => (dragId.current = it.id)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => dragId.current && moveTo(dragId.current, it.id)}
+                  onDragStart={(e) => {
+                    dragId.current = it.id;
+                    // WebKit starts a drag only when it carries data.
+                    e.dataTransfer.setData("text/plain", it.id);
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragId.current) moveTo(dragId.current, it.id);
+                    dragId.current = null;
+                  }}
                   onClick={() => setSelId(it.id)}
                   onDoubleClick={() => void goLive(it.id, 0)}
                   className={cn(
-                    "group flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-2 text-sm hover:bg-muted",
+                    "group flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-1 text-sm hover:bg-muted",
                     it.id === selId && "border-border bg-muted",
                     isLive && "border-live/60 bg-live/15"
                   )}

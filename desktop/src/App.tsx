@@ -2016,32 +2016,33 @@ export default function App() {
             </TabsList>
           </Tabs>
           <div className="flex-1" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "h-7 gap-1.5 px-2.5",
-                  hs.cls === "live" && "border-live/50 text-live",
-                  hs.cls === "warn" && "border-warning/60 text-warning",
-                  hs.cls === "bad" && "border-destructive bg-destructive text-white"
-                )}
-              >
-                <span className={cn("size-2 rounded-full bg-current", hs.cls === "live" && "animate-pulse")} />
-                {hs.label}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>{hs.detail}</TooltipContent>
-          </Tooltip>
-          <div className="flex h-7 w-24 items-center rounded-md border px-1.5" title="Input level">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-live transition-[width] duration-150" style={{ width: micLevelPct + "%" }} />
-            </div>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className={cn(
+                    "flex h-9 w-32 items-center gap-2 rounded-md border px-2",
+                    hs.cls === "live" && "border-live/50",
+                    hs.cls === "warn" && "border-warning/60 text-warning",
+                    hs.cls === "bad" && "border-destructive bg-destructive text-white"
+                  )}
+                >
+                  {hs.cls === "warn" || hs.cls === "bad" ? (
+                    <span className="truncate text-xs font-semibold">{hs.label}</span>
+                  ) : (
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-live transition-[width] duration-150" style={{ width: micLevelPct + "%" }} />
+                    </div>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{listening ? hs.detail : "Input level"}</TooltipContent>
+            </Tooltip>
+            <Button onClick={toggleListen} className={cn("w-28", listening && "bg-destructive text-white hover:bg-destructive/90")}>
+              {listening ? <><Square /> Stop</> : <><Mic /> Listen</>}
+            </Button>
           </div>
           <ProjectorMenu open={projectorOpen} />
-          <Button onClick={toggleListen} className={cn("w-28", listening && "bg-destructive text-white hover:bg-destructive/90")}>
-            {listening ? <><Square /> Stop</> : <><Mic /> Listen</>}
-          </Button>
         </header>
 
         {listening && inputLost && (
