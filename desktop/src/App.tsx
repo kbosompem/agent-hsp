@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import {
   BookOpen, Check, Clapperboard, Copy, FolderOpen, Pause, Pencil, Play, RotateCw, Trash2, X, Download, ExternalLink, EyeOff, FileText, Hand, Image as ImageIcon, ListOrdered, Mic, MicOff, Minus,
-  MonitorPlay, Palette, Plus, RotateCcw, Search, Settings2, Square, Upload,
+  Columns2, MonitorPlay, Palette, Plus, RotateCcw, Rows2, Search, Settings2, Square, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -50,7 +50,7 @@ import {
   unlogVerse,
 } from "./lib/sermon";
 import Service, { ServiceNav } from "./Service";
-import { PerSlide, groupVerses, parsePerSlide, slideHas } from "./lib/verses";
+import { FIT_CHARS, PerSlide, Second, combine, groupVerses, isVerseSlide, pairSlide, parsePerSlide, parseSecond, slideHas } from "./lib/verses";
 import { AgendaItem, ItemBackground, ItemSlide, Library, Song, emptyLibrary, parseLibrary } from "./lib/library";
 import { contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
 
@@ -322,6 +322,23 @@ export default function App() {
     }
   }, [trLabel]);
   const [editTr, setEditTr] = useState<TranslationInfo | null>(null);
+  // A second translation shown with every verse (Live page), and the default for readings.
+  const [second, setSecond] = useState<Second | null>(() => {
+    try {
+      return parseSecond(localStorage.getItem("hsp-second-translation"));
+    } catch {
+      return null;
+    }
+  });
+  const secondRef = useRef(second);
+  secondRef.current = second;
+  useEffect(() => {
+    try {
+      localStorage.setItem("hsp-second-translation", second ? JSON.stringify(second) : "");
+    } catch {
+      /* ignore */
+    }
+  }, [second]);
   const perSlideRef = useRef(perSlide);
   perSlideRef.current = perSlide;
   useEffect(() => {
@@ -532,7 +549,7 @@ export default function App() {
         to: ref.end_verse,
         translation: trIdRef.current,
       });
-      const groups = groupVerses(slides, perSlideRef.current) as VerseHit[];
+      const groups = groupVerses(slides, perSlideRef.current, fitChars(secondRef.current)) as VerseHit[];
       if (groups.length > 1) {
         seqRef.current = { slides: groups, idx: 0 };
         await showSeqSlide(0);
@@ -542,7 +559,7 @@ export default function App() {
       if (groups.length === 1) h = groups[0];
     }
     seqRef.current = null;
-    const s = await invoke<Slide>("show_verse", { hit: forScreen(h) });
+    const s = await putVerse(h);
     setSlide(s);
     slideRef.current = s;
     lastVerse.current = h;
@@ -586,7 +603,7 @@ export default function App() {
       skipSeg: partialRef.current.seg,
       skipCount: contentWords(partialRef.current.text).length,
     };
-    const s = await invoke<Slide>("show_verse", { hit: forScreen(h) });
+    const s = await putVerse(h);
     setSlide(s);
     slideRef.current = s;
     lastVerse.current = h;
@@ -709,6 +726,31 @@ export default function App() {
     const t = translationsRef.current.find((x) => x.name === h.translation || x.id === h.translation);
     if (!t) return h;
     return { ...h, translation: trLabelRef.current === "abbrev" && t.abbrev ? t.abbrev : t.name };
+  }
+
+  /** "fit" room per slide: half when a second translation shares it. */
+  function fitChars(sec: Second | null): number {
+    return sec ? FIT_CHARS / 2 : FIT_CHARS;
+  }
+
+  /** The same verse or range as `h` in translation `tr`; null when that is h's own translation. */
+  async function inTranslation(h: VerseHit, tr: string): Promise<VerseHit | null> {
+    const r = h.reference;
+    const t = translationsRef.current.find((x) => x.id === tr);
+    const same = (n: string) => n.toLowerCase() === h.translation.toLowerCase();
+    if (!r || r.verse == null || !t || same(t.name) || same(t.id) || (!!t.abbrev && same(t.abbrev))) return null;
+    if (r.end_verse != null && r.end_verse > r.verse) {
+      const hs = await invoke<VerseHit[]>("verse_range", { book: r.book, chapter: r.chapter, from: r.verse, to: r.end_verse, translation: tr });
+      return hs.length ? (combine(hs) as VerseHit) : null;
+    }
+    return invoke<VerseHit | null>("verse_at", { book: r.book, chapter: r.chapter, verse: r.verse, translation: tr });
+  }
+
+  /** Put a verse on the projector, with its second translation when one is chosen. */
+  async function putVerse(h: VerseHit, sec: Second | null = secondRef.current): Promise<Slide> {
+    const b = sec ? await inTranslation(h, sec.tr).catch(() => null) : null;
+    if (!sec || !b) return invoke<Slide>("show_verse", { hit: forScreen(h) });
+    return invoke<Slide>("show_slide", pairSlide(forScreen(h), forScreen(b), sec.layout));
   }
 
   /** Tell the parser which chapter is on screen, however it got there. */
@@ -1323,7 +1365,7 @@ export default function App() {
     let s: Slide;
     if (it.hit) {
       const h = it.hit as VerseHit;
-      s = await invoke<Slide>("show_verse", { hit: forScreen(h) });
+      s = it.kind === "verse2" ? await invoke<Slide>("show_slide", { kind: it.kind, title: it.title, body: it.body, sub: it.sub }) : await putVerse(h, null);
       lastVerse.current = h;
       openPassage(h);
     openPassage(h);
@@ -1335,7 +1377,7 @@ export default function App() {
     slideRef.current = s;
   }
 
-  async function scriptureSlides(reference: string, translation?: string, per?: PerSlide): Promise<ItemSlide[]> {
+  async function scriptureSlides(reference: string, translation?: string, per?: PerSlide, sec: Second | null = null): Promise<ItemSlide[]> {
     const tr = translation || trIdRef.current;
     const found = await invoke<VerseHit[]>("lookup", { input: reference, translation: tr });
     const h = found.find((x) => x.reference);
@@ -1356,8 +1398,14 @@ export default function App() {
         hits.push(x);
       }
     }
-    const groups = groupVerses(hits, per ?? perSlideRef.current) as VerseHit[];
-    return groups.map((x) => ({ kind: "verse", title: x.label, body: x.text, sub: x.translation, label: x.label, hit: x }));
+    const groups = groupVerses(hits, per ?? perSlideRef.current, fitChars(sec)) as VerseHit[];
+    return Promise.all(
+      groups.map(async (x): Promise<ItemSlide> => {
+        const b = sec ? await inTranslation(x, sec.tr).catch(() => null) : null;
+        if (sec && b) return { ...pairSlide(forScreen(x), forScreen(b), sec.layout), label: x.label, hit: x };
+        return { kind: "verse", title: x.label, body: x.text, sub: x.translation, label: x.label, hit: x };
+      })
+    );
   }
 
   // Going live on an agenda item. Only a sermon lets the AI change the screen.
@@ -1496,7 +1544,7 @@ export default function App() {
   // Quote matching must never interrupt scripture being read: not while a
   // range is up, and not when the line is the verse on screen read aloud.
   function readingInProgress(text: string): boolean {
-    const onScreen = !!slideRef.current && slideRef.current.kind === "verse";
+    const onScreen = isVerseSlide(slideRef.current?.kind);
     if (!onScreen) return false;
     if (seqRef.current) return true;
     const cur = lastVerse.current;
@@ -1567,7 +1615,7 @@ export default function App() {
       const last = shownRef.current[h.label];
       if (last && now - last < REF_REPEAT_MS) continue;
       if (blockedRef.current[h.label] && now - blockedRef.current[h.label] < BLOCK_MS) continue;
-      if (lastVerse.current && lastVerse.current.label === h.label && slideRef.current?.kind === "verse") continue;
+      if (lastVerse.current && lastVerse.current.label === h.label && isVerseSlide(slideRef.current?.kind)) continue;
       if (cardsRef.current.some((c) => c.label === h.label && c.status === "pending")) continue;
       shownRef.current[h.label] = now;
       line.labels.push(h.label);
@@ -1776,7 +1824,7 @@ export default function App() {
     if (!fresh.length) return;
     // Only within one book: "verse thirty" becoming "verse thirty two" is a
     // mishearing; a new book is a new reference (or context that moved).
-    const live = slideRef.current?.kind === "verse" ? lastVerse.current : null;
+    const live = isVerseSlide(slideRef.current?.kind) ? lastVerse.current : null;
     const replaces =
       live && cur.fired.includes(live.label) && !said.has(live.label) && Date.now() - verseShownAt.current <= SWAP_MS
         ? live
@@ -1835,7 +1883,7 @@ export default function App() {
         to: last.end_verse ?? last.verse,
         translation: id,
       });
-      const groups = groupVerses(slides, perSlideRef.current) as VerseHit[];
+      const groups = groupVerses(slides, perSlideRef.current, fitChars(secondRef.current)) as VerseHit[];
       if (groups.length && !superseded()) {
         seqRef.current = { slides: groups, idx: Math.min(seqr.idx, groups.length - 1) };
         await showSeqSlide(seqRef.current.idx);
@@ -2075,6 +2123,7 @@ export default function App() {
               translations={translations}
               translation={trId}
               perSlide={perSlide}
+              second={second}
               media={media}
               onEnterItem={enterItem}
               onItemAudio={itemAudio}
@@ -2633,6 +2682,23 @@ export default function App() {
                       <Button variant="outline" size="icon" title="Import a translation" onClick={() => setView("downloads")}>
                         <Upload />
                       </Button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={second?.tr ?? "__none"} onValueChange={(v) => setSecond(v === "__none" ? null : { tr: v, layout: second?.layout ?? "side" })}>
+                        <SelectTrigger className="min-w-0 flex-1" title="Show every verse in a second translation too"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none">No second translation</SelectItem>
+                          {translations.filter((t) => t.id !== trId).map((t) => (
+                            <SelectItem key={t.id} value={t.id}>With {t.abbrev && t.abbrev !== t.name ? t.abbrev + " · " + t.name : t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {second && (
+                        <ToggleGroup type="single" variant="outline" className="shrink-0" value={second.layout} onValueChange={(v) => v && setSecond({ ...second, layout: v as Second["layout"] })}>
+                          <ToggleGroupItem value="side" title="Side by side" aria-label="Side by side"><Columns2 /></ToggleGroupItem>
+                          <ToggleGroupItem value="stack" title="One above the other" aria-label="One above the other"><Rows2 /></ToggleGroupItem>
+                        </ToggleGroup>
+                      )}
                     </div>
                   </Section>
                   <Section label="Shown recently">

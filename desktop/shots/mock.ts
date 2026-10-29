@@ -3,21 +3,29 @@
 // a Playwright script via window.__hsp (see shots/README.md).
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import kjv from "../crates/preso-core/kjv.json";
+import bsb from "../crates/preso-core/assets/bsb.json";
+import web from "../crates/preso-core/assets/web.json";
 
 type Book = { n: string; c: string[][] };
 const books = (kjv as { books: Book[] }).books;
+// Real text for these three; the other listed translations show the KJV.
+const texts: Record<string, { name: string; books: Book[] }> = {
+  kjv: { name: "King James Version", books },
+  bsb: { name: "Berean Standard Bible", books: (bsb as { books: Book[] }).books },
+  web: { name: "World English Bible", books: (web as { books: Book[] }).books },
+};
 
-const verse = (b: number, c: number, v: number) => books[b]?.c[c - 1]?.[v - 1] ?? "";
+const verse = (b: number, c: number, v: number, tr = "kjv") => (texts[tr] ?? texts.kjv).books[b]?.c[c - 1]?.[v - 1] ?? "";
 const bookIndex = (name: string) => books.findIndex((x) => x.n.toLowerCase() === name.toLowerCase());
 
-function hit(b: number, c: number, v: number, end: number | null = null) {
+function hit(b: number, c: number, v: number, end: number | null = null, tr = "kjv") {
   const text = end
-    ? Array.from({ length: end - v + 1 }, (_, i) => `${v + i} ${verse(b, c, v + i)}`).join(" ")
-    : verse(b, c, v);
+    ? Array.from({ length: end - v + 1 }, (_, i) => `${v + i} ${verse(b, c, v + i, tr)}`).join(" ")
+    : verse(b, c, v, tr);
   return {
     label: `${books[b].n} ${c}:${v}${end ? `-${end}` : ""}`,
     text,
-    translation: "KJV",
+    translation: (texts[tr] ?? texts.kjv).name,
     reference: { book: b + 1, chapter: c, verse: v, end_verse: end },
   };
 }
@@ -62,10 +70,10 @@ const handlers: Record<string, (a: any) => unknown> = {
   stop_listening: () => null,
   lookup: (a) => lookup(a?.input ?? a?.query ?? ""),
   lookup_live: (a) => lookup(a?.input ?? ""),
-  verse_at: (a) => hit(a.book - 1, a.chapter, a.verse),
+  verse_at: (a) => (verse(a.book - 1, a.chapter, a.verse) ? hit(a.book - 1, a.chapter, a.verse, null, a.translation) : null),
   verse_range: (a) => {
     const out = [];
-    for (let v = a.from; v <= a.to; v++) out.push(hit(a.book - 1, a.chapter, v));
+    for (let v = a.from; v <= a.to; v++) out.push(hit(a.book - 1, a.chapter, v, null, a.translation));
     return out;
   },
   show_verse: (a) => slideFor(a?.hit ?? hit(42, 3, 16)),

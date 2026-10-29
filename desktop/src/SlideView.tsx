@@ -336,6 +336,34 @@ export default function SlideView({ slide, theme, idle, still }: { slide: Slide 
     );
   }
 
+  if (slide.kind === "verse2") {
+    let d: { layout: string; a: { text: string; tr: string }; b: { text: string; tr: string } } | null = null;
+    try {
+      d = JSON.parse(slide.body);
+    } catch {
+      d = null;
+    }
+    if (d) {
+      // Each text gets about half the room: size by the longer one as if it were half as long again.
+      const size = sizeClass("x".repeat(1.5 * Math.max(d.a.text.length, d.b.text.length)));
+      return (
+        <div className="slide verse" style={bgStyle(t)}>
+          <Background t={t} still={still} />
+          <Corners t={t} />
+          <div className={"vpair " + (d.layout === "stack" ? "stack" : "side")} style={front}>
+            {[d.a, d.b].map((x, i) => (
+              <div key={i} className="vcol">
+                <div className={"vtxt " + size} style={txt}>{x.text}</div>
+                <div className="vtr" style={accent}>{x.tr}</div>
+              </div>
+            ))}
+          </div>
+          <div className="vref" style={{ ...front, ...accent }}>{slide.title}</div>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="slide verse" style={bgStyle(t)}>
       <Background t={t} still={still} />

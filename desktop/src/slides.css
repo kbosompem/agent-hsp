@@ -55,6 +55,37 @@
 .vtxt.md { font-size: calc(1.9cqw * var(--ts, 1));
 }
 
+/* Two translations of one passage (kind "verse2"). */
+.vpair {
+  display: flex;
+  width: 100%;
+  gap: 4cqw;
+}
+
+.vpair.side { flex-direction: row; align-items: center;
+}
+
+.vpair.stack { flex-direction: column; align-items: center; gap: 2.4cqh;
+}
+
+.vcol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center;
+}
+
+.vpair .vtxt { max-width: 100%;
+}
+
+.vpair.stack .vtxt { max-width: 86%;
+}
+
+.vtr {
+  font-family: Georgia, serif;
+  font-size: calc(1.2cqw * var(--ts, 1));
+  letter-spacing: 0.28em;
+  margin-top: calc(1cqw * var(--ts, 1));
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
 .vref {
   font-family: Georgia, serif;
   font-size: calc(1.3cqw * var(--ts, 1));

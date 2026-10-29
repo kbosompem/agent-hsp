@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+### Added
+
+- The same verse in two translations at once, side by side or one above the other. On the Live page, under Translation, choose a second translation ("With BSB") and the layout; every verse then shows in both. A service reading follows that choice, or has its own (another second translation, none, or the other layout). With two translations on a slide, "as many as fit" puts half as many verses on each slide.
+
 ### Changed
 
 - The header is simpler. The Listen button sits beside the sound-level meter, and the separate IDLE badge is gone: a warning ("BEHIND 5 s", "NO SOUND") shows in the meter itself while listening. The Projector menu is an icon, last in the row.

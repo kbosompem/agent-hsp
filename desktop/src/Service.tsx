@@ -22,8 +22,8 @@ import {
 } from "./lib/library";
 import { parseVideoPsalmAgenda, parseVideoPsalmJson } from "./lib/videopsalm";
 import {
-  AudioLines, BookOpen, ChevronDown, ChevronUp, Copy, Download, EyeOff, Film, FolderInput, Package, FileText, GripVertical, Image as ImageIcon, Mic, MoreHorizontal,
-  Music, Pencil, Play, Plus, Search, Trash2, Upload,
+  AudioLines, BookOpen, ChevronDown, ChevronUp, Columns2, Copy, Download, EyeOff, Film, FolderInput, Package, FileText, GripVertical, Image as ImageIcon, Mic, MoreHorizontal,
+  Music, Pencil, Play, Plus, Rows2, Search, Trash2, Upload,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,9 +34,10 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import SlideView, { OutputTheme } from "./SlideView";
-import { PerSlide, parsePerSlide } from "./lib/verses";
+import { PerSlide, Second, parsePerSlide } from "./lib/verses";
 import { MediaItem } from "./lib/media";
 import ScripturePicker from "./ScripturePicker";
 import Backgrounds from "./Backgrounds";
@@ -61,9 +62,11 @@ type Props = {
   /** Put one slide on the projector. */
   showSlide: (s: ItemSlide) => Promise<void>;
   /** Verse slides for a scripture item ("John 3:16-18") in a translation (default: the Live page's). */
-  scriptureSlides: (reference: string, translation?: string, per?: PerSlide) => Promise<ItemSlide[]>;
+  scriptureSlides: (reference: string, translation?: string, per?: PerSlide, second?: Second | null) => Promise<ItemSlide[]>;
   /** Verses per slide from the Look page, the default for readings. */
   perSlide: PerSlide;
+  /** The Live page's second translation, the default for readings. */
+  second: Second | null;
   /** The media library, for video and audio items and background audio. */
   media: MediaItem[];
   /** Loaded translations, and the one the Live page uses. */
@@ -171,7 +174,14 @@ export default function Service(p: Props) {
       stop = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agenda, lib.songs, p.translation, p.perSlide, p.media]);
+  }, [agenda, lib.songs, p.translation, p.perSlide, p.second, p.media]);
+
+  /** A reading's second translation: its own, none, or the Live page's. */
+  function secondOf(it: AgendaItem): Second | null {
+    if (it.second === "none") return null;
+    const tr = it.second || p.second?.tr;
+    return tr ? { tr, layout: it.secondLayout ?? p.second?.layout ?? "side" } : null;
+  }
 
   async function itemSlides(it: AgendaItem): Promise<ItemSlide[]> {
     switch (it.kind) {
@@ -181,7 +191,7 @@ export default function Service(p: Props) {
       }
       case "scripture":
         return it.reference
-          ? await p.scriptureSlides(it.reference, it.translation || undefined, it.perSlide ? parsePerSlide(it.perSlide) : undefined).catch(() => [])
+          ? await p.scriptureSlides(it.reference, it.translation || undefined, it.perSlide ? parsePerSlide(it.perSlide) : undefined, secondOf(it)).catch(() => [])
           : [];
       case "text":
         return textSlides(it);
@@ -628,6 +638,35 @@ export default function Service(p: Props) {
                   </Select>
                 </div>
               )}
+              {sel.kind === "scripture" && (() => {
+                const name = (id?: string) => {
+                  const t = p.translations.find((x) => x.id === id);
+                  return t ? t.abbrev || t.name : id ?? "";
+                };
+                const sec = secondOf(sel);
+                return (
+                  <div className="flex gap-2">
+                    <Select value={sel.second || "__live"} onValueChange={(v) => updateItem(sel.id, { second: v === "__live" ? undefined : v })}>
+                      <SelectTrigger className="min-w-0 flex-1" title="A second translation shown with this reading">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__live">Second translation: same as Live ({p.second ? name(p.second.tr) : "none"})</SelectItem>
+                        <SelectItem value="none">No second translation</SelectItem>
+                        {p.translations.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>With {t.abbrev && t.abbrev !== t.name ? t.abbrev + " · " + t.name : t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {sec && (
+                      <ToggleGroup type="single" variant="outline" className="shrink-0" value={sec.layout} onValueChange={(v) => v && updateItem(sel.id, { secondLayout: v as Second["layout"] })}>
+                        <ToggleGroupItem value="side" title="Side by side" aria-label="Side by side"><Columns2 /></ToggleGroupItem>
+                        <ToggleGroupItem value="stack" title="One above the other" aria-label="One above the other"><Rows2 /></ToggleGroupItem>
+                      </ToggleGroup>
+                    )}
+                  </div>
+                );
+              })()}
               {sel.kind === "text" && (
                 <Textarea rows={5} placeholder="One slide per paragraph. Leave a blank line between slides." value={sel.body || ""} onChange={(e) => updateItem(sel.id, { body: e.target.value })} />
               )}

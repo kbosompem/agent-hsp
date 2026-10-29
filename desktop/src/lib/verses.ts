@@ -29,14 +29,15 @@ export function combine(hits: Hit[]): Hit {
   return { label, text, translation: first.translation, reference: first.reference ? { ...first.reference, verse: v1, end_verse: v2 } : null };
 }
 
-/** Split consecutive verse hits into slides. */
-export function groupVerses(hits: Hit[], per: PerSlide): Hit[] {
+/** Split consecutive verse hits into slides. `fitChars` is the "fit" limit,
+ * halved when a second translation shares the slide. */
+export function groupVerses(hits: Hit[], per: PerSlide, fitChars = FIT_CHARS): Hit[] {
   const out: Hit[] = [];
   let cur: Hit[] = [];
   let chars = 0;
   for (const h of hits) {
     const len = h.text.length + 4;
-    const full = per === "fit" ? cur.length >= FIT_MAX || (cur.length > 0 && chars + len > FIT_CHARS) : cur.length >= per;
+    const full = per === "fit" ? cur.length >= FIT_MAX || (cur.length > 0 && chars + len > fitChars) : cur.length >= per;
     if (full) {
       out.push(combine(cur));
       cur = [];
@@ -58,4 +59,32 @@ export function slideHas(h: Hit, book: number, chapter: number, verse: number): 
 
 export function parsePerSlide(v: string | null | undefined): PerSlide {
   return v === "1" || v === "2" || v === "3" || v === "4" ? (Number(v) as PerSlide) : "fit";
+}
+
+/** A second translation shown with the first: side by side or one above the other. */
+export type Second = { tr: string; layout: "side" | "stack" };
+
+export function parseSecond(v: string | null | undefined): Second | null {
+  try {
+    const d = v ? JSON.parse(v) : null;
+    return d && typeof d.tr === "string" && d.tr ? { tr: d.tr, layout: d.layout === "stack" ? "stack" : "side" } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The "verse2" slide: the same passage in two translations. Its body is
+ * JSON (SlideView draws it); its sub names both translations. */
+export function pairSlide(a: Hit, b: Hit, layout: Second["layout"]) {
+  return {
+    kind: "verse2",
+    title: a.label,
+    body: JSON.stringify({ layout, a: { text: a.text, tr: a.translation }, b: { text: b.text, tr: b.translation } }),
+    sub: a.translation + " · " + b.translation,
+  };
+}
+
+/** A verse is on screen, in one translation or two. */
+export function isVerseSlide(kind: string | undefined): boolean {
+  return kind === "verse" || kind === "verse2";
 }

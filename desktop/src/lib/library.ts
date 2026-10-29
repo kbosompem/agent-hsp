@@ -31,6 +31,10 @@ export type AgendaItem = {
   translation?: string;
   /** scripture: verses per slide ("fit", "1".."3"); empty uses the Look page setting. */
   perSlide?: string;
+  /** scripture: a second translation id beside the first; "none" for none; empty uses the Live page's. */
+  second?: string;
+  /** scripture: how the two sit; empty uses the Live page's layout. */
+  secondLayout?: "side" | "stack";
   /** text: slides separated by a blank line. */
   body?: string;
   /** video / audio: the media library item (lib/media.ts). */
