@@ -47,7 +47,8 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { toast } from "sonner";
 import { buildServiceFile, mergeServiceFile, parseServiceFile, ServiceFile } from "./lib/serviceFile";
 
-export type ServiceNav = { next: () => void; prev: () => void };
+/** Keyboard driving from App: next/previous slide, or jump to the next/previous item. */
+export type ServiceNav = { next: () => void; prev: () => void; item: (dir: 1 | -1) => void };
 
 type Props = {
   library: Library;
@@ -270,10 +271,22 @@ export default function Service(p: Props) {
     return null;
   }
 
+  // The first slide of the next or previous item, skipping the rest of this one.
+  function stepItem(dir: 1 | -1) {
+    if (!agenda || !agenda.items.length) return;
+    const items = agenda.items;
+    const at = live ? items.findIndex((i) => i.id === live.itemId) : selId ? items.findIndex((i) => i.id === selId) - dir : -dir;
+    const ni = at + dir;
+    if (ni < 0 || ni >= items.length) return;
+    void goLive(items[ni].id, 0);
+  }
+
   const stepRef = useRef(step);
   stepRef.current = step;
+  const stepItemRef = useRef(stepItem);
+  stepItemRef.current = stepItem;
   useEffect(() => {
-    p.registerNav({ next: () => stepRef.current(1), prev: () => stepRef.current(-1) });
+    p.registerNav({ next: () => stepRef.current(1), prev: () => stepRef.current(-1), item: (d) => stepItemRef.current(d) });
     return () => p.registerNav(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -596,7 +609,7 @@ export default function Service(p: Props) {
             <div>
               Select an item to see its slides.
               <br />
-              Double-click an item, or press → or Page Down, to go live.
+              Double-click an item, or press N, → or Page Down, to go live.
             </div>
           </div>
         ) : (
@@ -810,7 +823,7 @@ export default function Service(p: Props) {
         <div className="flex items-center gap-3 rounded-lg border bg-card p-2">
           <div className="w-32 shrink-0">{thumb(nextSlide)}</div>
           <div className="min-w-0 text-xs">
-            <div className="font-semibold uppercase tracking-wider text-muted-foreground">Next · → or Page Down</div>
+            <div className="font-semibold uppercase tracking-wider text-muted-foreground">Next · N or →</div>
             <div className="truncate">{nextSlide ? nextSlide.label : "End of service"}</div>
           </div>
         </div>

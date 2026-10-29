@@ -686,8 +686,8 @@ export default function App() {
     void undoLast();
   }
 
-  // Blackout ("blank") or logo. Pressing the same key again brings back the
-  // slide that was up before, and releases Hold.
+  // Blackout ("blank") or logo. While listening it turns Hold on; pressing the
+  // same key again brings back the slide that was up before, and Hold as it was.
   async function cover(kind: "blank" | "logo") {
     const cur = slideRef.current;
     if (cur && cur.kind === kind) {
@@ -699,18 +699,20 @@ export default function App() {
         setSlide(s);
         slideRef.current = s;
       }
-      setMicStatus(holdBeforeCover.current ? "Back on screen. Hold is still on." : "Back on screen. AI can change the screen again.");
+      setMicStatus(
+        !listeningRef.current ? "Back on screen." : holdBeforeCover.current ? "Back on screen. Hold is still on." : "Back on screen. AI can change the screen again."
+      );
       return;
     }
     if (!cur || (cur.kind !== "blank" && cur.kind !== "logo")) {
       beforeCover.current = cur;
       holdBeforeCover.current = holdRef.current;
     }
-    setHold(true);
+    if (listeningRef.current) setHold(true);
     const s = await invoke<Slide>("show_slide", { kind, title: "", body: "", sub: "" });
     setSlide(s);
     slideRef.current = s;
-    setMicStatus((kind === "blank" ? "Blackout" : "Logo") + " · Hold is on: detected verses wait for you.");
+    setMicStatus((kind === "blank" ? "Blackout" : "Logo") + (listeningRef.current ? " · Hold is on: detected verses wait for you." : ""));
   }
 
   async function showCard(c: Card) {
@@ -1408,7 +1410,9 @@ export default function App() {
     );
   }
 
-  // Going live on an agenda item. Only a sermon lets the AI change the screen.
+  // Going live on an agenda item. Only a sermon lets the AI change the screen:
+  // while listening, any other item turns Hold on. Hold only matters while
+  // listening, so it is left alone otherwise (it looked like it came on by itself).
   function enterItem(it: AgendaItem) {
     setItemBg(it.bg ?? null);
     itemAudio(it);
@@ -1421,8 +1425,9 @@ export default function App() {
         else void toggleListen();
       }
       setMicStatus("Sermon: listening, verses go on screen as they are named.");
-    } else {
+    } else if (listeningRef.current && !holdRef.current) {
       setHold(true);
+      setMicStatus(it.title + " · Hold is on: verses heard now wait for you. H turns it off.");
     }
   }
 
@@ -1444,7 +1449,8 @@ export default function App() {
   }
 
   // Live keys. Ignored while typing in a field.
-  //   B blackout · L logo · H hold · P projector to the front · Esc clear to logo · Right/Left next/previous verse
+  //   B blackout · L logo · H hold · F projector to the front · Esc clear to logo
+  //   N/P or Right/Left next/previous slide (or verse) · Shift+N/P next/previous service item
   //   Enter shows the oldest waiting card
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e: KeyboardEvent) => {
@@ -1458,15 +1464,18 @@ export default function App() {
       if (slideRef.current?.kind !== "logo") void cover("logo");
     } else if (k === "u" || k === "U") {
       void undoLast();
-    } else if (k === "p" || k === "P") {
+    } else if (k === "f" || k === "F") {
       void invoke("projector_show").catch((err) => toast.error(String(err)));
+    } else if ((k === "N" || k === "n" || k === "P" || k === "p") && e.shiftKey) {
+      if (viewRef.current === "service" && navRef.current) navRef.current.item(k.toLowerCase() === "n" ? 1 : -1);
+      else return;
     } else if (k === "h" || k === "H") {
       setHold(!holdRef.current);
       setMicStatus(holdRef.current ? "Hold is on: detected verses wait for you." : "Hold off: verses show as they are heard.");
-    } else if (k === "ArrowRight" || k === "PageDown") {
+    } else if (k === "ArrowRight" || k === "PageDown" || k === "n" || k === "N") {
       if (viewRef.current === "service" && navRef.current) navRef.current.next();
       else void nextVerse();
-    } else if (k === "ArrowLeft" || k === "PageUp") {
+    } else if (k === "ArrowLeft" || k === "PageUp" || k === "p" || k === "P") {
       if (viewRef.current === "service" && navRef.current) navRef.current.prev();
       else void prevVerse();
     }
@@ -2104,7 +2113,7 @@ export default function App() {
           <span className="truncate">
             {micStatus ||
               (view === "service"
-                ? "Build the order of service, then run it: → or Page Down moves through every slide."
+                ? "Build the order of service, then run it: N or → moves through every slide, P or ← goes back, Shift+N jumps to the next item."
                 : "Speak a reference and it shows at once. Say “next verse” to advance. B blackout · L logo · H hold.")}
           </span>
         </div>

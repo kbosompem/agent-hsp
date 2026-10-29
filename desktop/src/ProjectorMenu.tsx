@@ -30,7 +30,7 @@ export default function ProjectorMenu({ open }: { open: boolean }) {
           size="icon"
           variant={open ? "outline" : "destructive"}
           className={cn("size-9", !open && "animate-pulse")}
-          title={open ? "Projector window: find it, reload it, or choose its display (P brings it to the front)" : "The projector window is closed"}
+          title={open ? "Projector window: find it, reload it, or choose its display (F brings it to the front)" : "The projector window is closed"}
           aria-label={open ? "Projector" : "Projector closed"}
         >
           <Projector />
@@ -38,7 +38,7 @@ export default function ProjectorMenu({ open }: { open: boolean }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuItem onSelect={() => run("projector_show")}>
-          {open ? "Bring to front" : "Open the projector"} <DropdownMenuShortcut>P</DropdownMenuShortcut>
+          {open ? "Bring to front" : "Open the projector"} <DropdownMenuShortcut>F</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => run("projector_reopen")}>Reload (if it looks stuck)</DropdownMenuItem>
         {open && <DropdownMenuItem onSelect={() => run("projector_close")}>Close</DropdownMenuItem>}

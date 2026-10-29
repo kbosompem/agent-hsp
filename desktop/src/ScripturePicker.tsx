@@ -29,14 +29,29 @@ const short = (name: string) => SHORT[name] ?? name.slice(0, 4);
 
 let cache: { tr: string; books: BookShape[] } | null = null;
 
-/** "John 3:16-17" -> parts, given the book list. Null when it does not parse. */
+/** The book a typed name means: its full name, its short name ("Zech"),
+ * or the first book, in Bible order, whose name starts with it ("Zec", "1 co").
+ * -1 when none does. */
+export function findBook(typed: string, books: BookShape[]): number {
+  const t = typed.toLowerCase().replace(/\./g, "").replace(/^([123])\s*/, "$1 ").replace(/\s+/g, " ").trim();
+  if (!t) return -1;
+  const name = t === "psalm" ? "psalms" : t;
+  const exact = books.findIndex((b) => b.name.toLowerCase() === name || short(b.name).toLowerCase() === name);
+  if (exact >= 0) return exact;
+  return books.findIndex((b) => b.name.toLowerCase().startsWith(name));
+}
+
+/** "John 3:16-17", "Zec 2:3", "Zec 2" or just "Zec" -> parts, given the book
+ * list, so the grid follows as a reference is typed. Chapter 0 when none is
+ * typed yet. Null when no book matches. */
 export function parseRef(ref: string, books: BookShape[]): { book: number; chapter: number; from: number | null; to: number | null } | null {
-  const m = ref.trim().match(/^(.+?)\s+(\d+)(?::(\d+)(?:\s*-\s*(\d+))?)?$/);
+  // A trailing ":" or "-" is a reference still being typed ("John 3:").
+  const m = ref.trim().replace(/\s*[:\-]+$/, "").match(/^([123]?\s*[a-z][a-z .]*?)\s*(?:(\d+)(?:\s*[:.\s]\s*(\d+)(?:\s*-\s*(\d+))?)?)?$/i);
   if (!m) return null;
-  const name = m[1].toLowerCase().replace(/\s+/g, " ").replace(/^psalm$/, "psalms");
-  const book = books.findIndex((b) => b.name.toLowerCase() === name);
+  const book = findBook(m[1], books);
   if (book < 0) return null;
-  return { book, chapter: parseInt(m[2], 10), from: m[3] ? parseInt(m[3], 10) : null, to: m[4] ? parseInt(m[4], 10) : null };
+  const num = (x?: string) => (x ? parseInt(x, 10) : null);
+  return { book, chapter: num(m[2]) ?? 0, from: num(m[3]), to: num(m[4]) };
 }
 
 export function formatRef(name: string, chapter: number, from: number | null, to: number | null): string {

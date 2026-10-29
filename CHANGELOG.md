@@ -12,11 +12,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ### Changed
 
+- N and P move to the next and previous slide (as → and ← do), going on into the next or previous item at the end of one. Shift+N and Shift+P jump straight to the next or previous item. The projector's "bring to front" key moves from P to F.
+- Hold turns itself on only while listening. Going live on a song or reading, or putting up Blackout or Logo, used to turn Hold on even when nothing was being listened to, where it does nothing, so it looked like it came on by itself.
 - The header is simpler. The Listen button sits beside the sound-level meter, and the separate IDLE badge is gone: a warning ("BEHIND 5 s", "NO SOUND") shows in the meter itself while listening. The Projector menu is an icon, last in the row.
 - Service items sit closer together, so more of the order of service fits without scrolling.
 
 ### Fixed
 
+- Typing a reference under the verse picker now selects it in the picker: short and partial names ("Zec 2:3", "1cor 13", "Ps 23") and half-typed references ("John 3:") are understood, not only full book names.
 - Service items can be dragged into a new order again. The console window let macOS handle every drag as a file drop, so a dragged item never reached the list.
 - Deepgram no longer goes silent in the middle of a service. The quiet detector added in 0.3.0 counted speech only when it was three times louder than the quietest moment of the last half minute, and paused after 10 seconds without it. A church sound-board feed never goes that quiet between sentences (reverb, keyboard pads, "amen"), so on 2026-10-25 it paused again and again during the preaching and would have ended the session after 16 minutes, losing 81% of the words. Speech now needs to be 1.5 times louder than the floor and the pause comes after 30 quiet seconds: replayed on that service, 1% of words fall in a pause, none of the eight recorded sermons pauses at all, and the overnight recording from 2026-10-23 still stops by itself (after 65 minutes instead of 36).
 
