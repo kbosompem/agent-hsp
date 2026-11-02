@@ -45,6 +45,8 @@ function lookup(text: string) {
   return out;
 }
 
+// Every slide sent to the projector, for test scripts.
+const shown = <T,>(slide: T): T => (((window as any).__hspShown ??= []).push(slide), slide);
 const slideFor = (h: ReturnType<typeof hit>) => ({ kind: "verse", title: h.label, body: h.text, sub: h.translation });
 const library = (window as any).__hspLibrary ?? { version: 1, songs: [], agendas: [], currentAgendaId: null };
 
@@ -76,8 +78,17 @@ const handlers: Record<string, (a: any) => unknown> = {
     for (let v = a.from; v <= a.to; v++) out.push(hit(a.book - 1, a.chapter, v, null, a.translation));
     return out;
   },
-  show_verse: (a) => slideFor(a?.hit ?? hit(42, 3, 16)),
-  show_slide: (a) => ({ kind: a.kind, title: a.title, body: a.body, sub: a.sub }),
+  show_verse: (a) => shown(slideFor(a?.hit ?? hit(42, 3, 16))),
+  show_slide: (a) => shown({ kind: a.kind, title: a.title, body: a.body, sub: a.sub }),
+  // The AI is off unless a script sets window.__hspLlmReply (system, user) => reply.
+  llm_settings: () => ({ enabled: !!(window as any).__hspLlmReply, protocol: "openai", base_url: "mock", model: "mock", has_key: true }),
+  llm_complete: (a) => {
+    const f = (window as any).__hspLlmReply;
+    if (!f) throw "AI summary is off.";
+    return f(a.system, a.user);
+  },
+  quote_verse: (a) => lookup(a.label.replace(/:/, " "))[0] ?? null,
+  recite: () => null,
   log_event: () => null,
 };
 
