@@ -49,16 +49,22 @@ export function readPast(spoken: string[], current: string, next: string | null)
     const lastHeard = heard.has(cw[cw.length - 1]);
     if (coverage >= 0.5 && (lastHeard || (tail.length >= 3 && tailHits >= 3))) return true;
   }
-  if (next) {
-    const head = Array.from(new Set(contentWords(next))).slice(0, 4);
-    if (head.length >= 3 && head.filter((w) => heard.has(w)).length >= head.length - 1) {
-      // The opening words of the next verse must not simply be words the
-      // current verse also uses ("Blessed are ..." in every beatitude).
-      const novel = head.filter((w) => !cw.includes(w));
-      if (novel.length === 0 || novel.some((w) => heard.has(w))) return true;
-    }
-  }
-  return false;
+  return !!next && startsNext(spoken, current, next);
+}
+
+/**
+ * Has the preacher started reading the next verse? Most of its first four
+ * content words, at least one of them not in the current verse ("Blessed
+ * are ..." opens every beatitude). With a single verse on screen this alone
+ * moves on: finishing a verse and then talking about it must not.
+ */
+export function startsNext(spoken: string[], current: string, next: string): boolean {
+  const heard = new Set(spoken);
+  const cw = contentWords(current);
+  const head = Array.from(new Set(contentWords(next))).slice(0, 4);
+  if (head.length < 3 || head.filter((w) => heard.has(w)).length < head.length - 1) return false;
+  const novel = head.filter((w) => !cw.includes(w));
+  return novel.length === 0 || novel.some((w) => heard.has(w));
 }
 
 /**
@@ -122,6 +128,30 @@ const SMALL: Record<string, number> = {
   seventeen: 17, eighteen: 18, nineteen: 19, first: 1, second: 2, third: 3,
 };
 const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+
+const NUMBER_WORDS = new Set([
+  ...Object.keys(SMALL).filter((w) => !["to", "too", "for", "first", "second", "third"].includes(w)),
+  ...Object.keys(TENS),
+  "hundred",
+  "and",
+]);
+
+/**
+ * Sentences that are nothing but a number ("Twenty one."), as a preacher
+ * calls out the next verse while reading a passage (2026-11-01, Romans 4:21).
+ */
+export function bareNumbers(text: string): number[] {
+  const out: number[] = [];
+  for (const sentence of text.split(/[.?!;]+/)) {
+    const w = sentence.toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim().split(/\s+/).filter(Boolean);
+    if (!w.length || w.length > 4 || w[0] === "and") continue;
+    if (!w.every((t) => /^\d{1,3}$/.test(t) || NUMBER_WORDS.has(t))) continue;
+    if (w.length > 1 && w.some((t) => /^\d/.test(t))) continue;
+    const n = spokenNumber(w.join(" "));
+    if (n) out.push(n);
+  }
+  return out;
+}
 
 /**
  * The number at the start of a spoken phrase: "15", "fifteen", "ninety five",

@@ -154,21 +154,52 @@ pub fn download_model(app: AppHandle, model: String) {
     });
 }
 
-fn resample_to_16k(data: &[f32], sr: usize) -> Vec<f32> {
-    if sr == TARGET_SR {
-        return data.to_vec();
+/// Linear resampling to 16 kHz that carries its position from one audio
+/// callback to the next. Resampling each callback on its own dropped the
+/// fraction of a sample left over every time: 0.4% of the audio at 48 kHz
+/// with 512-frame callbacks, so a 78-minute recording came out 18 s short
+/// and its transcript times fell behind the clock (2026-11-01).
+struct Resampler {
+    /// Input samples per output sample.
+    step: f64,
+    /// Where the next output sample falls, counted from the last input
+    /// sample of the previous callback.
+    pos: f64,
+    last: Option<f32>,
+}
+
+impl Resampler {
+    fn new(sr: usize) -> Self {
+        Resampler { step: sr as f64 / TARGET_SR as f64, pos: 0.0, last: None }
     }
-    let ratio = TARGET_SR as f32 / sr as f32;
-    let n = ((data.len() as f32) * ratio) as usize;
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let x = i as f32 / ratio;
-        let i0 = x as usize;
-        let i1 = std::cmp::min(i0 + 1, data.len() - 1);
-        let f = x - i0 as f32;
-        out.push(data[i0] * (1.0 - f) + data[i1] * f);
+
+    fn push(&mut self, data: &[f32]) -> Vec<f32> {
+        if self.step == 1.0 {
+            return data.to_vec();
+        }
+        if data.is_empty() {
+            return Vec::new();
+        }
+        // The previous callback's last sample, then this one's.
+        let at = |i: usize| -> f32 {
+            match self.last {
+                Some(l) if i == 0 => l,
+                Some(_) => data[i - 1],
+                None => data[i],
+            }
+        };
+        let len = data.len() + self.last.is_some() as usize;
+        let mut out = Vec::with_capacity((data.len() as f64 / self.step) as usize + 1);
+        while self.pos + 1.0 < len as f64 {
+            let i0 = self.pos as usize;
+            let f = (self.pos - i0 as f64) as f32;
+            out.push(at(i0) * (1.0 - f) + at(i0 + 1) * f);
+            self.pos += self.step;
+        }
+        self.pos -= (len - 1) as f64;
+        self.last = data.last().copied();
+        out
     }
-    out
 }
 
 /// Transcribe 16 kHz mono samples. `partial` trades a little accuracy for
@@ -332,13 +363,14 @@ fn open_input(
     let total = shared.total.clone();
     let heard = heard.clone();
     let last_data = last_data.clone();
-    let push = move |data: &[f32]| {
+    let mut resampler = Resampler::new(sr);
+    let mut push = move |data: &[f32]| {
         last_data.store(t0.elapsed().as_millis() as u64, Ordering::Relaxed);
         if !heard.load(Ordering::Relaxed) && data.iter().any(|x| *x != 0.0) {
             heard.store(true, Ordering::Relaxed);
         }
         let mono = downmix(data, channels);
-        let chunk = resample_to_16k(&mono, sr);
+        let chunk = resampler.push(&mono);
         let rms = rms_of(&chunk);
         *level.lock().unwrap() = rms;
         {
@@ -577,7 +609,35 @@ pub fn slice_abs(buf: &[f32], total: u64, start: u64, end: u64) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{downmix, is_prompt_echo};
+    use super::{downmix, is_prompt_echo, Resampler};
+
+    #[test]
+    fn resampling_keeps_time_across_callbacks() {
+        // 10 minutes of 48 kHz audio in 512-frame callbacks.
+        let mut r = Resampler::new(48000);
+        let chunk = vec![0.1f32; 512];
+        let mut out = 0usize;
+        let calls = 48000 * 600 / 512;
+        for _ in 0..calls {
+            out += r.push(&chunk).len();
+        }
+        let expect = calls * 512 / 3;
+        assert!((out as i64 - expect as i64).abs() <= 1, "{} vs {}", out, expect);
+    }
+
+    #[test]
+    fn resampling_is_continuous_across_callbacks() {
+        // A ramp split into odd-sized callbacks must come out as one ramp.
+        let input: Vec<f32> = (0..4410).map(|i| i as f32).collect();
+        let mut r = Resampler::new(44100);
+        let mut out = Vec::new();
+        for c in input.chunks(441) {
+            out.extend(r.push(c));
+        }
+        for w in out.windows(2) {
+            assert!((w[1] - w[0] - 44100.0 / 16000.0).abs() < 1e-2, "{:?}", w);
+        }
+    }
 
     #[test]
     fn downmix_keeps_a_one_sided_mixer_feed() {

@@ -52,7 +52,7 @@ import {
 import Service, { ServiceNav } from "./Service";
 import { FIT_CHARS, PerSlide, Second, combine, groupVerses, isVerseSlide, pairSlide, parsePerSlide, parseSecond, slideHas } from "./lib/verses";
 import { AgendaItem, ItemBackground, ItemSlide, Library, Song, emptyLibrary, parseLibrary } from "./lib/library";
-import { contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, translationRequest } from "./lib/voice";
+import { bareNumbers, contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, startsNext, translationRequest } from "./lib/voice";
 
 type VerseHit = {
   label: string;
@@ -114,6 +114,10 @@ const RECITE_WORDS = 35;
 const RECITE_WINDOW_MS = 30000;
 // A spoken reference is skipped if shown this recently (or still on screen).
 const REF_REPEAT_MS = 30000;
+// A verse named this soon after "the NLT" is shown in the NLT too.
+const VOICE_TR_SAME_BREATH_MS = 4000;
+// With a single verse up, the next verse's opening must be in his last this-many content words.
+const FOLLOW_SINGLE_WORDS = 40;
 // A quote match is not repeated within this window.
 const QUOTE_REPEAT_MS = 180000;
 
@@ -445,7 +449,6 @@ export default function App() {
   // kept off the screen for a minute so they do not bounce straight back.
   const undoRef = useRef<{ before: Slide | null; label: string; at: number } | null>(null);
   const blockedRef = useRef<Record<string, number>>({});
-  const hspSegRef = useRef(-1);
   // Every verse shown while listening, for the session summary.
   const shownLogRef = useRef<{ at: number; label: string; translation: string; text: string }[]>([]);
   const sessionRef = useRef<{ dir: string; name: string; startedAt: number } | null>(null);
@@ -494,6 +497,15 @@ export default function App() {
     skipCount: 0,
   });
   const advancingRef = useRef(false);
+  // The verse after the one on screen, and both verses' text in each
+  // translation the preacher may read from, so the screen follows him into
+  // the next verse whichever Bible he holds (2026-11-01: Romans 4:20 read
+  // from the NLT was never followed).
+  const followNextRef = useRef<{ from: string; next: VerseHit; cur: string[]; nxt: string[] } | null>(null);
+  // A translation asked for from the pulpit ("the NLT"): only for the verse
+  // on screen; the next verse is back in the operator's translation (Kay,
+  // 2026-11-01). `label` is the verse it applies to.
+  const voiceTrRef = useRef<{ id: string; label: string | null; at: number } | null>(null);
 
   function sync() {
     if (dirtyRef.current) return;
@@ -531,6 +543,20 @@ export default function App() {
     let h = hit;
     undoRef.current = { before: slideRef.current, label: h.label, at: Date.now() };
     const ref = h.reference;
+    // A verse named in the same breath as a translation request ("the NLT of
+    // John 3:16") is shown in it; any other new verse ends the request,
+    // including one reached by following the reading or by "next verse".
+    const vt = voiceTrRef.current;
+    let tr = trIdRef.current;
+    if (vt && vt.label !== h.label) {
+      if (trigger && Date.now() - vt.at < VOICE_TR_SAME_BREATH_MS) {
+        vt.label = h.label;
+        tr = vt.id;
+        h = (await inTranslation(h, vt.id).catch(() => null)) ?? h;
+      } else {
+        voiceTrRef.current = null;
+      }
+    }
     // A single verse inside the range on screen: jump there and keep following.
     const seqr = seqRef.current;
     if (seqr && ref && ref.verse && !ref.end_verse) {
@@ -547,7 +573,7 @@ export default function App() {
         chapter: ref.chapter,
         from: ref.verse,
         to: ref.end_verse,
-        translation: trIdRef.current,
+        translation: tr,
       });
       const groups = groupVerses(slides, perSlideRef.current, fitChars(secondRef.current)) as VerseHit[];
       if (groups.length > 1) {
@@ -565,6 +591,8 @@ export default function App() {
     lastVerse.current = h;
     openPassage(h);
     verseShownAt.current = Date.now();
+    resetFollow();
+    void prepareFollow(h);
     if (listeningRef.current) {
       shownLogRef.current.push({ at: Date.now(), label: h.label, translation: h.translation, text: h.text });
     }
@@ -598,18 +626,66 @@ export default function App() {
     if (!seqr) return;
     seqr.idx = Math.max(0, Math.min(idx, seqr.slides.length - 1));
     const h = seqr.slides[seqr.idx];
-    followRef.current = {
-      words: [],
-      skipSeg: partialRef.current.seg,
-      skipCount: contentWords(partialRef.current.text).length,
-    };
+    resetFollow();
     const s = await putVerse(h);
     setSlide(s);
     slideRef.current = s;
     lastVerse.current = h;
     openPassage(h);
     verseShownAt.current = Date.now();
+    void prepareFollow(h);
     addNote(h.label + " — " + trimWords(h.text, 12));
+  }
+
+  /** Count words for following the reading from now on. */
+  function resetFollow() {
+    followRef.current = {
+      words: [],
+      skipSeg: partialRef.current.seg,
+      skipCount: contentWords(partialRef.current.text).length,
+    };
+  }
+
+  /** Translations a preacher reads from: what is on screen, the KJV, and the NLT or NASB when imported. */
+  function readingTranslations(): string[] {
+    const want = [trIdRef.current, secondRef.current?.tr, "kjv", "nlt", "nasb"];
+    const ids: string[] = [];
+    for (const id of want) {
+      if (id && !ids.includes(id) && translationsRef.current.some((t) => t.id === id)) ids.push(id);
+    }
+    return ids;
+  }
+
+  /** `h`'s text in each translation of `ids` ("" where it is missing). */
+  async function textsIn(h: VerseHit, ids: string[]): Promise<string[]> {
+    return Promise.all(
+      ids.map(async (tr) => {
+        if (sameTranslation(h, tr)) return h.text;
+        const x = await inTranslation(h, tr).catch(() => null);
+        return x?.text ?? "";
+      })
+    );
+  }
+
+  /** Look up the verse after `h` (the next slide of a range) and its wording, for followReading. */
+  async function prepareFollow(h: VerseHit) {
+    followNextRef.current = null;
+    const seqr = seqRef.current;
+    const r = h.reference;
+    let next: VerseHit | null = null;
+    if (seqr) next = seqr.idx < seqr.slides.length - 1 ? seqr.slides[seqr.idx + 1] : null;
+    else if (r && r.verse != null)
+      next = await invoke<VerseHit | null>("verse_at", {
+        book: r.book,
+        chapter: r.chapter,
+        verse: (r.end_verse ?? r.verse) + 1,
+        translation: trIdRef.current,
+      }).catch(() => null);
+    if (!next) return;
+    const ids = readingTranslations();
+    const [cur, nxt] = await Promise.all([textsIn(h, ids), textsIn(next, ids)]);
+    if (lastVerse.current !== h) return;
+    followNextRef.current = { from: h.label, next, cur, nxt };
   }
 
   function setHold(on: boolean) {
@@ -664,16 +740,30 @@ export default function App() {
     setMicStatus("Took down " + u.label + ". It stays off for a minute unless you show it yourself.");
   }
 
-  /** What to do with the words after "HSP". */
-  async function handleHsp(rest: string, seg: number) {
-    hspSegRef.current = seg;
+  /**
+   * The words after "HSP" when they are an instruction: "HSP wrong", "HSP
+   * clear", "HSP John 3:16". Preachers also use HSP as the operator's name
+   * ("where's my HSP?", "did you find the song? HSP"), so a bare "HSP" or
+   * one followed by anything else does nothing (2026-11-01: "where's my HSB?"
+   * took Mark 11:22 down). Returns whether it acted.
+   */
+  async function handleHsp(rest: string): Promise<boolean> {
     const norm = rest.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-    if (!norm) return void undoLast();
-    if (isClearCommand(norm) || /^(?:clear|blank|off|down|logo)\b/.test(norm)) return void clearScreen();
-    if (/^(?:black ?out|blackout)\b/.test(norm)) return void cover("blank");
-    if (/^(?:wrong|no|not that|undo|back)\b/.test(norm)) return void undoLast();
+    if (!norm) return false;
+    if (isClearCommand(norm) || /^(?:clear|blank|off|down|logo)\b/.test(norm)) {
+      void clearScreen();
+      return true;
+    }
+    if (/^(?:black ?out|blackout)\b/.test(norm)) {
+      void cover("blank");
+      return true;
+    }
+    if (/^(?:wrong|no|not that|undo|back|take it down)\b/.test(norm)) {
+      void undoLast();
+      return true;
+    }
     lastCmdAt.current = 0;
-    if (matchCommand(norm)) return;
+    if (matchCommand(norm)) return true;
     // "HSP, John 3:16": show exactly that, even if it was taken down earlier.
     const found = await invoke<VerseHit[]>("lookup_live", { input: rest, translation: trIdRef.current, commit: true }).catch(() => []);
     const hit = found.find((h) => h.reference && h.reference.verse != null);
@@ -681,9 +771,9 @@ export default function App() {
       delete blockedRef.current[hit.label];
       seqRef.current = null;
       await showVerse(hit, "");
-      return;
+      return true;
     }
-    void undoLast();
+    return false;
   }
 
   // Blackout ("blank") or logo. While listening it turns Hold on; pressing the
@@ -736,11 +826,16 @@ export default function App() {
   }
 
   /** The same verse or range as `h` in translation `tr`; null when that is h's own translation. */
+  function sameTranslation(h: VerseHit, tr: string): boolean {
+    const t = translationsRef.current.find((x) => x.id === tr);
+    const same = (n: string) => n.toLowerCase() === h.translation.toLowerCase();
+    return !!t && (same(t.name) || same(t.id) || (!!t.abbrev && same(t.abbrev)));
+  }
+
   async function inTranslation(h: VerseHit, tr: string): Promise<VerseHit | null> {
     const r = h.reference;
     const t = translationsRef.current.find((x) => x.id === tr);
-    const same = (n: string) => n.toLowerCase() === h.translation.toLowerCase();
-    if (!r || r.verse == null || !t || same(t.name) || same(t.id) || (!!t.abbrev && same(t.abbrev))) return null;
+    if (!r || r.verse == null || !t || sameTranslation(h, tr)) return null;
     if (r.end_verse != null && r.end_verse > r.verse) {
       const hs = await invoke<VerseHit[]>("verse_range", { book: r.book, chapter: r.chapter, from: r.verse, to: r.end_verse, translation: tr });
       return hs.length ? (combine(hs) as VerseHit) : null;
@@ -876,6 +971,7 @@ export default function App() {
   }
 
   function changeTr(id: string) {
+    voiceTrRef.current = null;
     setTrId(id);
     trIdRef.current = id;
   }
@@ -1697,14 +1793,26 @@ export default function App() {
       if (once()) void showInBook(Math.max(1, cur.chapter - 1), 1, "go back a chapter");
       return true;
     }
-    // A translation request switches the screen but does not consume the
-    // sentence: "the Amplified version of John 3:16" still shows John 3:16.
+    // "Twenty one." while a passage is up: the next verse or two he calls out.
+    const up = isVerseSlide(slideRef.current?.kind) ? cur : null;
+    if (up?.verse && !hasBookName(norm)) {
+      const last = up.end_verse ?? up.verse;
+      const n = bareNumbers(text).find((x) => x > last && x <= last + 3);
+      if (n) {
+        if (once()) void showInBook(up.chapter, n, "go to verse " + n);
+        return true;
+      }
+    }
+    // A translation request shows the verse on screen in it, and does not
+    // consume the sentence: "the Amplified version of John 3:16" still shows
+    // John 3:16 (in the Amplified).
     const want = translationRequest(text);
     if (want && now - lastTrAt.current >= 1500) {
       lastTrAt.current = now;
       const tr = findLoaded(want.code, translationsRef.current);
       if (tr) {
-        if (tr.id !== trIdRef.current) void switchTranslation(tr.id, tr.name);
+        // Asking for the usual translation after "the NLT" brings it back.
+        if (tr.id !== trIdRef.current || voiceTrRef.current) void showOnceIn(tr.id, tr.name);
       } else {
         setMicStatus(
           want.name + " is not loaded. Import it in Quick verse; copyrighted translations cannot ship with the app."
@@ -1802,16 +1910,9 @@ export default function App() {
     }
     const cleaned = cleanText(text);
     partialRef.current.text = cleaned;
-    // A bare "HSP" acts on the first partial: speed matters most here.
+    // "HSP <instruction>" waits for the final; a bare "HSP" is only a name.
     const hsp = hspCommand(cleaned);
-    if (hsp !== null && hspSegRef.current !== seg) {
-      if (hsp === "") {
-        hspSegRef.current = seg;
-        void undoLast();
-      }
-      return;
-    }
-    if (hsp !== null) return;
+    if (hsp) return;
     followReading(cleaned, seg);
     diagRef.current = "partial " + ms + " ms · " + trimWords(cleaned, 8);
     sync();
@@ -1847,71 +1948,62 @@ export default function App() {
     for (const lb of line.labels) if (!cur.fired.includes(lb)) cur.fired.push(lb);
   }
 
-  // While a verse range is on screen, move to the next verse as soon as the
-  // preacher has read past the current one, and stop at the end of the range.
+  // Move to the next verse as soon as the preacher reads into it, in any
+  // translation he may be reading from. In a range on screen, finishing the
+  // current slide is enough, and the range's end is the end. With a single
+  // verse up he must start the next one: finishing a verse and then talking
+  // about it is not reading on. Only his latest words count there, so a long
+  // talk cannot add up to the next verse's opening by chance.
   function followReading(partialText: string, seg: number) {
+    const fn = followNextRef.current;
+    const cur = lastVerse.current;
+    if (holdRef.current || advancingRef.current) return;
+    if (!fn || !cur || fn.from !== cur.label || !isVerseSlide(slideRef.current?.kind)) return;
     const seqr = seqRef.current;
-    if (holdRef.current) return;
-    if (!seqr || advancingRef.current || seqr.idx >= seqr.slides.length - 1) return;
     const f = followRef.current;
     let live = contentWords(partialText);
     if (seg === f.skipSeg) live = live.slice(f.skipCount);
-    const spoken = f.words.concat(live);
-    const cur = seqr.slides[seqr.idx];
-    const next = seqr.slides[seqr.idx + 1];
-    if (!readPast(spoken, cur.text, next ? next.text : null)) return;
+    let spoken = f.words.concat(live);
+    if (!seqr) spoken = spoken.slice(-FOLLOW_SINGLE_WORDS);
+    const pairs = fn.cur.map((c, i) => [c, fn.nxt[i]]).filter(([c, n]) => c && n);
+    const moved = seqr
+      ? pairs.some(([c, n]) => readPast(spoken, c, n))
+      : pairs.some(([c, n]) => startsNext(spoken, c, n));
+    if (!moved) return;
     advancingRef.current = true;
     // A "next verse" said in the same breath must not move a second time.
     lastCmdAt.current = Date.now();
-    const n = seqr.idx + 1;
-    showSeqSlide(n)
-      .then(() =>
-        setMicStatus("Following the reading: " + seqr.slides[n].label + " (" + (n + 1) + " of " + seqr.slides.length + ")")
-      )
-      .catch((e) => console.error(e))
-      .finally(() => {
-        advancingRef.current = false;
-      });
+    const go = seqr
+      ? showSeqSlide(seqr.idx + 1).then(() =>
+          setMicStatus("Following the reading: " + seqr.slides[seqr.idx].label + " (" + (seqr.idx + 1) + " of " + seqr.slides.length + ")")
+        )
+      : showVerse(fn.next, "").then(() => setMicStatus("Following the reading: " + fn.next.label));
+    go.catch((e) => console.error(e)).finally(() => {
+      advancingRef.current = false;
+    });
   }
 
-  async function switchTranslation(id: string, name: string) {
-    changeTr(id);
-    setMicStatus("Translation: " + name);
+  /** A translation asked for from the pulpit: this verse only (voiceTrRef). */
+  async function showOnceIn(id: string, name: string) {
+    const cur = isVerseSlide(slideRef.current?.kind) ? lastVerse.current : null;
+    const back = id === trIdRef.current;
+    const vt = { id, label: cur?.label ?? null, at: Date.now() };
+    voiceTrRef.current = back ? null : vt;
+    const base = translationsRef.current.find((t) => t.id === trIdRef.current);
+    setMicStatus(back ? name : name + " for this verse. The next one is back in " + (base?.abbrev || base?.name || "the usual translation") + ".");
+    if (!cur) return;
+    const h = await inTranslation(cur, id).catch(() => null);
+    if (!h || lastVerse.current !== cur) return;
+    vt.label = h.label;
+    // The same verse in other words: no new undo step, history entry or
+    // summary line, only the slide.
     const seqr = seqRef.current;
-    const shownBefore = lastVerse.current;
-    // If a new verse went up while we fetched, it already uses the new
-    // translation; do not put the old one back over it.
-    const superseded = () => seqRef.current !== seqr || lastVerse.current !== shownBefore;
-    const first = seqr?.slides[0].reference;
-    const last = seqr?.slides[seqr.slides.length - 1].reference;
-    if (seqr && first && last && first.verse && last.verse) {
-      const slides = await invoke<VerseHit[]>("verse_range", {
-        book: first.book,
-        chapter: first.chapter,
-        from: first.verse,
-        to: last.end_verse ?? last.verse,
-        translation: id,
-      });
-      const groups = groupVerses(slides, perSlideRef.current, fitChars(secondRef.current)) as VerseHit[];
-      if (groups.length && !superseded()) {
-        seqRef.current = { slides: groups, idx: Math.min(seqr.idx, groups.length - 1) };
-        await showSeqSlide(seqRef.current.idx);
-      }
-      return;
-    }
-    const ref = lastVerse.current?.reference;
-    if (ref) {
-      const hit = await invoke<VerseHit | null>("verse_at", {
-        book: ref.book,
-        chapter: ref.chapter,
-        verse: ref.verse || 1,
-        translation: id,
-      });
-      if (hit && !superseded()) {
-        seqRef.current = null;
-        await showVerse(hit);
-      }
-    }
+    if (seqr && seqr.slides[seqr.idx] === cur) seqr.slides[seqr.idx] = h;
+    const s = await putVerse(h);
+    setSlide(s);
+    slideRef.current = s;
+    lastVerse.current = h;
+    void prepareFollow(h);
   }
 
   function onTranscript(text: string, ms: number, seg: number = -1) {
@@ -1937,13 +2029,19 @@ export default function App() {
       return;
     }
     // "HSP ..." works even under Hold: it is how the pulpit corrects the screen.
+    // When the words after it are no instruction, the line is ordinary speech.
     const hsp = hspCommand(text);
-    if (hsp !== null) {
-      // The bare "HSP" of this sentence already acted on its partial.
-      if (!(hspSegRef.current === seg && hsp === "")) void handleHsp(hsp, seg);
-      sync();
+    if (hsp) {
+      void handleHsp(hsp).then((acted) => {
+        if (!acted) continueTranscript(text, firedFromPartials);
+        sync();
+      });
       return;
     }
+    continueTranscript(text, firedFromPartials);
+  }
+
+  function continueTranscript(text: string, firedFromPartials: string[]) {
     // "Clear the screen" / "clear the board" / "take it down".
     const normT = text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
     if (isClearCommand(normT)) {

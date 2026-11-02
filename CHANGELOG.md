@@ -10,8 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 - The same verse in two translations at once, side by side or one above the other. On the Live page, under Translation, choose a second translation ("With BSB") and the layout; every verse then shows in both. A service reading follows that choice, or has its own (another second translation, none, or the other layout). With two translations on a slide, "as many as fit" puts half as many verses on each slide.
 
+- The screen follows a reading into the next verse whichever Bible the preacher reads from: the translations on screen, the KJV, and the NLT or NASB when imported. With a single verse up it moves when he starts the next verse (finishing a verse and then talking about it does not move it); in a range it moves as before, when he finishes the slide. On 2026-11-01 Romans 4:20 was read from the NLT and never followed, so "next verse" showed 20 instead of 21.
+- "Twenty one." said on its own while a passage is up shows that verse, when it is one of the next three.
+
 ### Changed
 
+- "HSP" on its own does nothing. Preachers use it as the operator's name ("where's my HSP?", "did you find the song? HSP"), and on 2026-11-01 that took the right verse down twice. "HSP wrong" or "HSP no" takes the last verse down; "HSP clear the screen", "HSP next" and "HSP John 3:16" work as before, and so does U on the keyboard. A sentence with HSP that is no instruction is checked for verses like any other.
+- A translation asked for from the pulpit ("the NLT") is for the verse on screen only. The next verse is back in the translation chosen on the Live page. Choosing a translation on the Live page still changes it for good.
 - N and P move to the next and previous slide (as → and ← do), going on into the next or previous item at the end of one. Shift+N and Shift+P jump straight to the next or previous item. The projector's "bring to front" key moves from P to F.
 - Hold turns itself on only while listening. Going live on a song or reading, or putting up Blackout or Logo, used to turn Hold on even when nothing was being listened to, where it does nothing, so it looked like it came on by itself.
 - The header is simpler. The Listen button sits beside the sound-level meter, and the separate IDLE badge is gone: a warning ("BEHIND 5 s", "NO SOUND") shows in the meter itself while listening. The Projector menu is an icon, last in the row.
@@ -19,6 +24,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ### Fixed
 
+- "Psalm 119 verse 105" misheard as "Samuel one nine verse one zero five" shows Psalm 119:105 (it showed Joshua 1:1). Verse numbers read digit by digit with a zero ("one zero five", "one oh five") are understood, "Psalm one nineteen" is Psalm 119, and a verse number above 89 always means Psalm 119, the only chapter that long.
+- References written in digits keep chapter, verse and range apart: "Psalm 1:1-3" (as Deepgram writes it) was read as Psalm 113, and "verse 1-4" as verse 1.
+- A stumbled reference shows the verse meant: "Luke one thirty, one thirty seven" is Luke 1:37, not 1:31 to 37.
+- Recordings keep true time. The audio converter dropped the leftover fraction of a sample on every audio callback (0.4% at 48 kHz), so a 78-minute recording came out 18 seconds short and transcript times fell behind the verses shown.
 - Typing a reference under the verse picker now selects it in the picker: short and partial names ("Zec 2:3", "1cor 13", "Ps 23") and half-typed references ("John 3:") are understood, not only full book names.
 - Service items can be dragged into a new order again. The console window let macOS handle every drag as a file drop, so a dragged item never reached the list.
 - Deepgram no longer goes silent in the middle of a service. The quiet detector added in 0.3.0 counted speech only when it was three times louder than the quietest moment of the last half minute, and paused after 10 seconds without it. A church sound-board feed never goes that quiet between sentences (reverb, keyboard pads, "amen"), so on 2026-10-25 it paused again and again during the preaching and would have ended the session after 16 minutes, losing 81% of the words. Speech now needs to be 1.5 times louder than the floor and the pause comes after 30 quiet seconds: replayed on that service, 1% of words fall in a pause, none of the eight recorded sermons pauses at all, and the overnight recording from 2026-10-23 still stops by itself (after 65 minutes instead of 36).

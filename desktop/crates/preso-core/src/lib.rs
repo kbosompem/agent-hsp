@@ -1064,8 +1064,33 @@ fn book_index_by_name(name: &str) -> Option<usize> {
 fn normalize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut last_space = true;
-    for ch in text.chars() {
+    let chars: Vec<char> = text.chars().collect();
+    for (i, &ch) in chars.iter().enumerate() {
         let c = ch.to_ascii_lowercase();
+        // "1:1-3" keeps its shape as words, so the digits are never read as
+        // one number: "Psalm 1:1-3" became Psalm 113 when they joined.
+        let between_digits = i > 0
+            && chars[i - 1].is_ascii_digit()
+            && chars.get(i + 1).map_or(false, |n| n.is_ascii_digit());
+        if between_digits && c == ':' {
+            out.push_str(" verse ");
+            last_space = true;
+            continue;
+        }
+        // A dash is a range after a verse ("3:16-18", "verse 1-4"); with
+        // none ("Romans 16-17") it stays chapter and verse, as before.
+        if between_digits && (c == '-' || c == '\u{2013}') {
+            let mut j = i;
+            while j > 0 && chars[j - 1].is_ascii_digit() {
+                j -= 1;
+            }
+            let before: String = chars[..j].iter().collect::<String>().to_lowercase();
+            if before.ends_with(':') || before.trim_end().ends_with("verse") || before.trim_end().ends_with("verses") {
+                out.push_str(" to ");
+                last_space = true;
+                continue;
+            }
+        }
         if c.is_ascii_lowercase() || c.is_ascii_digit() {
             out.push(c);
             last_space = false;
@@ -1215,6 +1240,34 @@ fn digit_run_chapter(tokens: &[&str], k: usize, max_ch: usize) -> Option<(usize,
     (n >= 1 && n <= max_ch).then_some((n, digits.len()))
 }
 
+/// A verse number read digit by digit with a zero in it: "one zero five" or
+/// "one oh five" is 105 (2026-11-01, Psalm 119:105). Otherwise the usual
+/// spoken number.
+fn verse_number(tokens: &[&str], i: usize) -> Option<(usize, usize)> {
+    let digits: Vec<usize> = (0..3).map_while(|n| tokens.get(i + n).and_then(|w| single_digit(w, n == 0))).collect();
+    if digits.len() == 3 && digits[1..].contains(&0) {
+        return Some((digits.iter().fold(0, |a, d| a * 10 + d), 3));
+    }
+    parse_num_seq(tokens, i)
+}
+
+/// "Psalm one nineteen" is Psalm 119: a digit then a number of 10 or more,
+/// in a book that has that many chapters (only Psalms does, and Psalm 1 has
+/// six verses, so it cannot be chapter one and a verse).
+fn hundreds_chapter(tokens: &[&str], k: usize, max_ch: usize) -> Option<(usize, usize)> {
+    let d = tokens.get(k).and_then(|w| single_digit(w, true))?;
+    let (n, l) = parse_num_seq(tokens, k + 1)?;
+    let ch = d * 100 + n;
+    (max_ch >= 100 && (10..100).contains(&n) && ch <= max_ch).then_some((ch, 1 + l))
+}
+
+/// The chapters with more than this many verses: only Psalm 119 (176) has
+/// more than Numbers 7 (89). A verse number above it names Psalm 119 even
+/// when the book and chapter were misheard ("Samuel one nine verse one zero
+/// five", 2026-11-01).
+const MAX_VERSES_OUTSIDE_PSALM_119: usize = 89;
+const PSALMS: usize = 18;
+
 fn parse_ref_after_book(tokens: &[&str], j: usize, max_ch: usize) -> Option<ParsedRef> {
     let mut k = j;
     if CHAPTER_WORDS.contains(&tokens.get(k).copied().unwrap_or("")) {
@@ -1224,10 +1277,11 @@ fn parse_ref_after_book(tokens: &[&str], j: usize, max_ch: usize) -> Option<Pars
             k += 1;
         }
     }
-    let (chapter, chlen) = match digit_run_chapter(tokens, k, max_ch) {
+    let (chapter, chlen) = match digit_run_chapter(tokens, k, max_ch).or_else(|| hundreds_chapter(tokens, k, max_ch)) {
         Some(x) => x,
         None => parse_num_seq(tokens, k)?,
     };
+    let chapter_words = &tokens[k..k + chlen];
     k += chlen;
     if tokens.get(k) == Some(&"and")
         && VERSE_WORDS.contains(&tokens.get(k + 1).copied().unwrap_or(""))
@@ -1237,11 +1291,22 @@ fn parse_ref_after_book(tokens: &[&str], j: usize, max_ch: usize) -> Option<Pars
     let mut verse: Option<usize> = None;
     let mut end_verse: Option<usize> = None;
     if VERSE_WORDS.contains(&tokens.get(k).copied().unwrap_or("")) {
-        if let Some((v, l)) = parse_num_seq(tokens, k + 1) {
+        if let Some((v, l)) = verse_number(tokens, k + 1) {
             verse = Some(v);
             k += 1 + l;
         }
     } else if let Some((v, l)) = parse_num_seq(tokens, k) {
+        // A restart: "Luke one thirty, one thirty seven" read straight on is
+        // 1:31-37, because "thirty" and the repeated "one" make 31. When the
+        // verse ends with the chapter's own words and more numbers follow,
+        // the preacher started over: the second reference is the one meant.
+        let tail = k + l - chapter_words.len().min(l);
+        if l > chapter_words.len()
+            && &tokens[tail..k + l] == chapter_words
+            && parse_num_seq(tokens, k + l).is_some()
+        {
+            return parse_ref_after_book(tokens, tail, max_ch);
+        }
         verse = Some(v);
         k += l;
     }
@@ -1384,6 +1449,16 @@ fn parse_refs_impl(
             parse_num_seq(&tokens, after).map(|(v, _)| v)
         };
         push!(valid_ref_books(books, book, chap, vv, None), ci.saturating_sub(2));
+    }
+    for (i, t) in tokens.iter().enumerate() {
+        if !VERSE_WORDS.contains(t) {
+            continue;
+        }
+        if let Some((v, _)) = verse_number(&tokens, i + 1) {
+            if v > MAX_VERSES_OUTSIDE_PSALM_119 && !refs.iter().any(|r| r.verse == Some(v)) {
+                push!(valid_ref_books(books, PSALMS, 119, Some(v), None), i);
+            }
+        }
     }
     refs.sort_by_key(|r| r.pos);
     refs
@@ -1662,7 +1737,7 @@ impl LiveLookup {
                 }
             }
             if matches!(tokens[i], "verse" | "verses" | "vs" | "versus") {
-                if let Some((v, len)) = parse_num_seq(&tokens, i + 1) {
+                if let Some((v, len)) = verse_number(&tokens, i + 1) {
                     // "John 3 verse 16": the parser already has this verse.
                     let owned_by_ref = refs.iter().any(|r| r.verse.is_some() && r.pos <= i && i - r.pos <= 6);
                     let open = refs.iter().filter(|r| r.pos < i).last().map(|r| (r.book, r.chapter)).or(ctx);
@@ -1853,6 +1928,34 @@ mod tests {
         // A run that is not a real chapter falls back to the normal reading
         // (here the existing range rule: John 1:1-9).
         assert_eq!(refs("John one one nine"), vec!["John 1:1-9"]);
+    }
+
+    #[test]
+    fn misheard_references_from_the_2026_11_01_service() {
+        // Deepgram's hearing of "Psalm 119 verse 105".
+        assert_eq!(refs("Samuel one nine verse one zero five. What is it?"), vec!["Psalm 119:105"]);
+        assert_eq!(refs("Psalm one nineteen verse one zero five"), vec!["Psalm 119:105"]);
+        assert_eq!(refs("Psalm one one nine verse one oh five"), vec!["Psalm 119:105"]);
+        assert_eq!(refs("Psalms one nineteen verse one hundred and five"), vec!["Psalm 119:105"]);
+        assert_eq!(refs("Psalm one twenty one verse one"), vec!["Psalm 121:1"]);
+        // The open passage must not turn it into Joshua 1:1.
+        let mut l = LiveLookup::new();
+        live(&mut l, "And Joshua one eight meditated on the word of God.", 0.0);
+        assert_eq!(live(&mut l, "Samuel one nine verse one zero five. What is it?", 4.0), vec!["Psalm 119:105"]);
+        // A stumble: "Luke one thirty, one thirty seven".
+        assert_eq!(refs("Luke One thirty one thirty seven."), vec!["Luke 1:37"]);
+        // Still a list, and still ranges.
+        assert_eq!(refs("John three sixteen three seventeen"), vec!["John 3:16"]);
+        assert_eq!(refs("psalm 91 1-2"), vec!["Psalm 91:1-2"]);
+        assert_eq!(refs("John one twenty"), vec!["John 1:20"]);
+        // Digits with their separators are chapter, verse and range.
+        assert_eq!(refs("Psalm 1:1-3"), vec!["Psalm 1:1-3"]);
+        assert_eq!(refs("Psalm 1:1"), vec!["Psalm 1:1"]);
+        assert_eq!(refs("Psalm 119:105"), vec!["Psalm 119:105"]);
+        assert_eq!(refs("John 3:16-18"), vec!["John 3:16-18"]);
+        assert_eq!(refs("Romans 16-17. Hallelujah."), vec!["Romans 16:17"]);
+        let mut l = LiveLookup::new();
+        assert_eq!(live(&mut l, "In Exodus chapter 14, the Bible says, in verse 1-4", 0.0), vec!["Exodus 14:1-4"]);
     }
 
     #[test]
@@ -2176,3 +2279,4 @@ mod tests {
         assert!(t.books[42].chapters[2][15].starts_with("For God so loved"));
     }
 }
+
