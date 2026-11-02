@@ -77,6 +77,23 @@ async fn recite(text: String, translation: Option<String>) -> Option<VerseHit> {
         .flatten()
 }
 
+/// A verse the AI says was quoted ("Proverbs 18:21"), in `translation`,
+/// when the words spoken carry enough of it (recite::quote_supported).
+#[tauri::command]
+async fn quote_verse(label: String, spoken: String, translation: Option<String>) -> Option<VerseHit> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let hit = engine().lookup(&label, translation.as_deref()).into_iter().next()?;
+        let r = hit.reference.as_ref()?;
+        if r.end_verse.is_some() || !preso_core::recite::quote_supported(r.book, r.chapter, r.verse?, &spoken) {
+            return None;
+        }
+        Some(hit)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 #[tauri::command]
 fn verse_range(
     book: usize,
@@ -160,6 +177,7 @@ fn remove_translation(app: tauri::AppHandle, id: String) -> Result<(), String> {
         return Err("The bundled translations cannot be removed.".into());
     }
     let _ = std::fs::remove_file(translations_dir(&app)?.join(format!("{}.json", id)));
+    std::thread::spawn(preso_core::recite::rebuild);
     Ok(())
 }
 
@@ -189,6 +207,8 @@ fn import_translation(
         .join("translations");
     let _ = std::fs::create_dir_all(&dir);
     let _ = std::fs::write(dir.join(format!("{}.json", id)), &json);
+    // Quotes from the new translation are recognized from now on.
+    std::thread::spawn(preso_core::recite::rebuild);
     Ok(TranslationInfo { id, name })
 }
 
@@ -370,6 +390,7 @@ pub fn run() {
             set_live_context,
             verse_at,
             recite,
+            quote_verse,
             verse_range,
             list_translations,
             bible_structure,

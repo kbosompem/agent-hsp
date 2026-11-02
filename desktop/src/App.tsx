@@ -52,6 +52,7 @@ import {
 import Service, { ServiceNav } from "./Service";
 import { FIT_CHARS, PerSlide, Second, combine, groupVerses, isVerseSlide, pairSlide, parsePerSlide, parseSecond, slideHas } from "./lib/verses";
 import { AgendaItem, ItemBackground, ItemSlide, Library, Song, emptyLibrary, parseLibrary } from "./lib/library";
+import { QUOTE_MIN_NEW, QUOTE_SYSTEM, parseQuote, quoteMessage } from "./lib/quotecheck";
 import { bareNumbers, contentWords, findLoaded, hasBookName, hasReferenceWords, hspCommand, isClearCommand, spokenNumber, readPast, readingOverlap, startsNext, translationRequest } from "./lib/voice";
 
 type VerseHit = {
@@ -134,6 +135,8 @@ const STILL_WAIT_MS = 5 * 60 * 1000;
 // A verse taken down with "HSP" stays off the screen this long.
 const BLOCK_MS = 60000;
 const FIRE_DELAY = 600;
+// An AI quote answer this late is about words long gone: drop it.
+const AI_QUOTE_STALE_MS = 10000;
 
 function isJunk(text: string): boolean {
   const t = text.trim();
@@ -427,6 +430,8 @@ export default function App() {
   // Finished lines of the last RECITE_WINDOW_MS, for recited verses.
   const recentRef = useRef<{ at: number; text: string }[]>([]);
   const quoteBusy = useRef(false);
+  // Lines not yet sent to the AI quote check, and the words before them.
+  const aiQuoteRef = useRef<{ busy: boolean; fresh: string[]; context: string }>({ busy: false, fresh: [], context: "" });
   const slideRef = useRef<Slide | null>(null);
   const lastVerse = useRef<VerseHit | null>(null);
   const verseShownAt = useRef(0);
@@ -1657,47 +1662,90 @@ export default function App() {
   }
 
   // A verse recited word for word (preso-core recite.rs): the last few
-  // lines together, since a verse often spans two of them.
+  // lines together, since a verse often spans two of them. What it does not
+  // find goes to the AI quote check (aiQuoteLine).
   async function quoteCheck(text: string) {
     const at = Date.now();
     const recent = recentRef.current.filter((l) => at - l.at <= RECITE_WINDOW_MS);
     recent.push({ at, text });
     recentRef.current = recent;
-    if (quoteBusy.current || readingInProgress(text)) return;
+    if (readingInProgress(text)) return aiQuoteLine(text, true);
     const words = recent.map((l) => l.text).join(" ").split(/\s+/).filter(Boolean);
-    if (words.length < 6) return;
+    if (quoteBusy.current || words.length < 6) return aiQuoteLine(text, false);
     quoteBusy.current = true;
+    let found = false;
     try {
       const hit = await invoke<VerseHit | null>("recite", {
         text: words.slice(-RECITE_WORDS).join(" "),
         translation: trIdRef.current,
       });
-      const now = Date.now();
-      const label = hit?.label;
-      if (
-        hit &&
-        label &&
-        !(shownRef.current[label] && now - shownRef.current[label] < QUOTE_REPEAT_MS) &&
-        !readingInProgress(text) &&
-        !cardsRef.current.some((c) => c.label === label && c.status === "pending")
-      ) {
-        shownRef.current[label] = now;
-        cardsRef.current.push({
-          id: seq.current++,
-          label: label,
-          hit: hit,
-          trigger: trimWords(text, 10),
-          kind: "quote",
-          fireAt: now + FIRE_DELAY,
-          status: "pending",
-        });
-        sync();
-      }
+      if (hit) found = offerQuote(hit, text);
     } catch (e) {
       console.error(e);
     } finally {
       quoteBusy.current = false;
+      aiQuoteLine(text, found);
     }
+  }
+
+  const trimContext = (t: string) => t.split(/\s+/).filter(Boolean).slice(-200).join(" ");
+
+  /** Queue a quoted verse unless it was shown lately, is being read, or is already waiting. */
+  function offerQuote(hit: VerseHit, text: string): boolean {
+    const now = Date.now();
+    const label = hit.label;
+    if (
+      !label ||
+      (shownRef.current[label] && now - shownRef.current[label] < QUOTE_REPEAT_MS) ||
+      readingInProgress(text) ||
+      cardsRef.current.some((c) => c.label === label && c.status === "pending")
+    )
+      return false;
+    shownRef.current[label] = now;
+    cardsRef.current.push({
+      id: seq.current++,
+      label: label,
+      hit: hit,
+      trigger: trimWords(text, 10),
+      kind: "quote",
+      fireAt: now + FIRE_DELAY,
+      status: "pending",
+    });
+    sync();
+    return true;
+  }
+
+  // The AI quote check (lib/quotecheck.ts), when the AI model is on: once
+  // QUOTE_MIN_NEW new words have come in that the word matcher did not
+  // place, ask which verse, if any, they quote. One question at a time;
+  // lines that arrive meanwhile wait for the next one.
+  function aiQuoteLine(text: string, handled: boolean) {
+    const q = aiQuoteRef.current;
+    if (handled) {
+      q.context = trimContext(q.context + " " + q.fresh.join(" ") + " " + text);
+      q.fresh = [];
+      return;
+    }
+    q.fresh.push(text);
+    const fresh = q.fresh.join(" ");
+    if (q.busy || !llmRef.current?.enabled || fresh.split(/\s+/).filter(Boolean).length < QUOTE_MIN_NEW) return;
+    q.fresh = [];
+    const { user, newest } = quoteMessage(q.context, fresh);
+    q.context = trimContext(q.context + " " + fresh);
+    q.busy = true;
+    const asked = Date.now();
+    invoke<string>("llm_complete", { system: QUOTE_SYSTEM, user, maxTokens: 400, json: true })
+      .then(async (reply) => {
+        const verse = parseQuote(reply);
+        if (!verse || Date.now() - asked > AI_QUOTE_STALE_MS) return;
+        const hit = await invoke<VerseHit | null>("quote_verse", { label: verse, spoken: newest, translation: trIdRef.current });
+        if (hit) offerQuote(hit, newest);
+      })
+      // AI off or unreachable: word matching still runs.
+      .catch(() => {})
+      .finally(() => {
+        q.busy = false;
+      });
   }
 
   async function detect(text: string, line: TrLine) {
