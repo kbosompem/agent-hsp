@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{OnceLock, RwLock};
 
+pub mod books;
 pub mod recite;
 
 const BOOK_ALIASES: [&[&str]; 66] = [

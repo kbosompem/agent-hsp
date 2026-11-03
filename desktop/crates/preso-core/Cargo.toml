@@ -7,3 +7,5 @@ edition = "2021"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 roxmltree = "0.20"
+# Imported books (EPUB files are zip archives).
+zip = { version = "2", default-features = false, features = ["deflate"] }

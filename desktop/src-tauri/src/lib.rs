@@ -1,5 +1,6 @@
 use std::io::Read;
 pub mod audio;
+pub mod books;
 pub mod segmenter;
 pub mod session;
 pub mod deepgram;
@@ -92,6 +93,27 @@ async fn quote_verse(label: String, spoken: String, translation: Option<String>)
     .await
     .ok()
     .flatten()
+}
+
+/// Every verse named in `lines` (finished transcript lines, oldest first),
+/// found the way the live transcript finds them, so the AI summary can list
+/// verses the preacher named that never went on screen.
+#[tauri::command]
+async fn named_refs(lines: Vec<String>) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut live = LiveLookup::new();
+        let mut out: Vec<String> = Vec::new();
+        for (i, l) in lines.iter().enumerate() {
+            for h in live.lookup(l, None, i as f64 * 5.0, true) {
+                if h.reference.as_ref().is_some_and(|r| r.verse.is_some()) && !out.contains(&h.label) {
+                    out.push(h.label);
+                }
+            }
+        }
+        out
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -365,6 +387,7 @@ pub fn run() {
             preso_core::init_engine(dir.as_deref());
             // About a second of work: off the startup path.
             std::thread::spawn(preso_core::recite::warm);
+            books::load(app.handle());
             if let Some(w) = app.get_webview_window(projector::LABEL) {
                 projector::keep_playing(&w);
             }
@@ -391,6 +414,12 @@ pub fn run() {
             verse_at,
             recite,
             quote_verse,
+            named_refs,
+            books::import_books,
+            books::list_books,
+            books::remove_books,
+            books::book_quote,
+            books::book_chapters,
             verse_range,
             list_translations,
             bible_structure,

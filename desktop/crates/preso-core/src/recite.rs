@@ -149,7 +149,7 @@ fn modern(w: &str) -> &str {
 }
 
 /// "speaketh", "speaks" and "speaking" all become "speak".
-fn stem(w: &str) -> String {
+pub(crate) fn stem(w: &str) -> String {
     let w = modern(w);
     for suf in ["eth", "est", "ing", "ed", "es", "s"] {
         if w.len() > suf.len() + 2 && w.ends_with(suf) {
@@ -159,7 +159,7 @@ fn stem(w: &str) -> String {
     w.to_string()
 }
 
-fn words(text: &str) -> Vec<String> {
+pub(crate) fn words(text: &str) -> Vec<String> {
     let lower = text.to_lowercase().replace(['\'', '’'], "");
     lower
         .split(|c: char| !c.is_ascii_lowercase())
@@ -168,7 +168,7 @@ fn words(text: &str) -> Vec<String> {
         .collect()
 }
 
-fn pair_key(a: &str, b: &str) -> u64 {
+pub(crate) fn pair_key(a: &str, b: &str) -> u64 {
     // FNV-1a over "a b".
     let mut h: u64 = 0xcbf29ce484222325;
     for byte in a.bytes().chain(std::iter::once(b' ')).chain(b.bytes()) {
@@ -193,7 +193,7 @@ fn indexed_ids(trs: &[super::Translation]) -> Vec<String> {
 }
 
 /// Words that say nothing about which verse it is, for checking a quote.
-const QUOTE_STOP: &[&str] = &[
+pub(crate) const QUOTE_STOP: &[&str] = &[
     "a", "an", "the", "and", "or", "but", "of", "to", "in", "on", "at", "by", "for", "with", "from", "as", "is", "are",
     "was", "were", "be", "been", "being", "it", "its", "this", "that", "these", "those", "i", "you", "he", "she", "we",
     "they", "me", "him", "her", "us", "them", "my", "your", "his", "our", "their", "shall", "will", "would", "should",
