@@ -57,6 +57,13 @@ const handlers: Record<string, (a: any) => unknown> = {
      ["asv", "American Standard Version", "ASV"], ["bbe", "Bible in Basic English", "BBE"], ["lsv", "Literal Standard Version", "LSV"],
      ["fbv", "Free Bible Version", "FBV"]].map(([id, name, abbrev]) => ({ id, name, abbrev, edition: "", copyright: "Public domain", bundled: true })),
   list_audio_inputs: () => ["MacBook Pro Microphone", "Behringer UMC202HD 192k"],
+  // Set window.__hspBookQuote to a quote ({book, chapter, text, run, weight}) to have the next line offer it.
+  list_books: () => (window as any).__hspBooks ?? [],
+  book_quote: () => (window as any).__hspBookQuote ?? null,
+  book_chapters: () => [],
+  named_refs: () => [],
+  import_books: () => ({ added: [], skipped: [], total: 0 }),
+  remove_books: () => null,
   speech_engines: () => ({ nemotron: true }),
   media_tools: () => ({ ffmpeg: true }),
   has_deepgram_key: () => false,

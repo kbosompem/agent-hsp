@@ -16,6 +16,8 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 
 7. Media page: search YouTube or add files into the five folders. Click a result's picture (or a library item's eye button) to preview it on this computer before you download or show it; the preview starts with the sound off. On the Service page, add Video or Audio items, or give any item "Background audio" (for example piano under the prayer topics); it keeps playing across items until an item says "fade out and stop" or you press Fade out on the player bar.
 
+8. Bibles page, "Preacher's books": import Dag Heward-Mills's books once. On dagbooks.org choose English, then "Download All Books" (it asks for your name and contact details), and import the zip file with "Import books". The books stay on this computer.
+
 ## Sunday, 30 minutes before
 
 1. Connect the projector. Click Projector (top right), "Which display is which?" to see each display's number, then pick the projector's display under "Fill a display". Double-clicking the projector also fills its display or turns it back into a window.
@@ -42,7 +44,8 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 - Sermon: going live on the Sermon item turns Hold off and starts listening. Verses the preacher names go up on their own. Press H if you want to approve each one.
 - A wrong verse: press B, or just let the next verse replace it. "Turn to Mark 2" alone does not change the screen; "Mark 2 verse 5" does.
 - The summary slide only appears if you press "Summary now". It never replaces a verse on its own. With the AI summary on, it shows the AI's points.
-- AI summary (Settings, "AI summary"): an AI service writes the sermon's outline as it goes: title, big idea, and each point with its verses, under Sermon notes, every minute or two. Click a verse there to show it. Any OpenAI- or Anthropic-compatible service works (z.ai, Claude, OpenAI, or Ollama or LM Studio on this computer); "Save and test" checks the connection. Early outlines change as the sermon's structure becomes clear.
+- Book quotes: when the preacher quotes one of the imported books ("Daddy says...", "Bishop always says..."), a "book quote" card shows the book's words under Detected verses. It never goes up by itself: press "Show on screen" to put it up with "Dag Heward-Mills" and the book's name, or the X to dismiss it.
+- AI summary (Settings, "AI summary"): an AI service writes the sermon's outline as it goes: title, big idea, and each point with its verses, under Sermon notes, every minute or two. Click a verse there to show it. Any OpenAI- or Anthropic-compatible service works (z.ai, Claude, OpenAI, or Ollama or LM Studio on this computer); "Save and test" checks the connection. Early outlines change as the sermon's structure becomes clear. With books imported, the AI also sees the book chapter closest to the sermon and words a point the way the book does when he followed it; verses he named but you did not show can appear in the outline too.
 
 ## If something goes wrong
 
@@ -54,6 +57,6 @@ A checklist for the person at the projection desk. Keep it next to the laptop.
 
 ## After the service
 
-Press Stop. The recording is saved in a folder named by date and time, with four files: `audio.m4a` (the recording, about 21 MB an hour; `audio.wav` on Windows), `transcript.txt` (everything that was heard, with times), `summary.md` (with the AI summary on: the AI's final outline of the whole sermon, written a few seconds after Stop; otherwise the simple outline and key lines) and `verses.md` (only the verses shown, with times). Settings, "Open recordings folder", takes you there. On a Mac it is `~/Library/Application Support/com.agenthsp.desktop/sessions/`.
+Press Stop. The recording is saved in a folder named by date and time, with four files: `audio.m4a` (the recording, about 21 MB an hour; `audio.wav` on Windows), `transcript.txt` (everything that was heard, with times), `summary.md` (with the AI summary on: the AI's final outline of the whole sermon, written a few seconds after Stop; otherwise the simple outline and key lines) and `verses.md` (only the verses shown, with times, and any book quotes recognized). Settings, "Open recordings folder", takes you there. On a Mac it is `~/Library/Application Support/com.agenthsp.desktop/sessions/`.
 
 If you press Listen again within a few hours, the app asks whether it is the same service (it keeps adding to the same recording) or a new one. Send the folder to the developers if a verse was missed or wrong; it lets us replay the service exactly.

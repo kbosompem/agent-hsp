@@ -31,10 +31,11 @@ import MediaLibrary from "./MediaLibrary";
 import Setup from "./Setup";
 import ProjectorMenu from "./ProjectorMenu";
 import AiSettings, { LlmSettings } from "./AiSettings";
-import { AiLine, AiSummary, SUMMARY_SYSTEM, parseSummary, summaryMarkdown, summaryMessage, versesMarkdown } from "./lib/aisummary";
+import { AiBookQuote, AiExtra, AiLine, AiOutline, AiSummary, SUMMARY_SYSTEM, parseSummary, summaryMarkdown, summaryMessage, versesMarkdown } from "./lib/aisummary";
 import { logEvent } from "./lib/log";
 import { MediaFolder, MediaItem } from "./lib/media";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
   addNote as addSermonNote,
@@ -83,6 +84,11 @@ type Card = {
 };
 
 type TrLine = { text: string; labels: string[] };
+
+/** A sentence the preacher quoted from an imported book (preso-core books.rs). */
+type BookQuote = { book: string; chapter: string; text: string; run: number; weight: number };
+type BookCard = BookQuote & { id: number; at: number };
+type BookInfo = { id: string; title: string; chapters: number };
 
 
 
@@ -137,6 +143,16 @@ const BLOCK_MS = 60000;
 const FIRE_DELAY = 600;
 // An AI quote answer this late is about words long gone: drop it.
 const AI_QUOTE_STALE_MS = 10000;
+// A book quote is looked for in this many of the last words heard.
+const BOOK_WORDS = 60;
+// Book quote cards wait for the operator (they never go up by themselves),
+// this long, at most BOOK_CARDS at a time; the same passage is not offered
+// again within BOOK_REPEAT_MS.
+const BOOK_CARD_MS = 5 * 60 * 1000;
+const BOOK_CARDS = 3;
+const BOOK_REPEAT_MS = 10 * 60 * 1000;
+// The transcript words the book-chapter search reads for the AI summary.
+const BOOK_CONTEXT_WORDS = 6000;
 
 function isJunk(text: string): boolean {
   const t = text.trim();
@@ -456,6 +472,13 @@ export default function App() {
   const blockedRef = useRef<Record<string, number>>({});
   // Every verse shown while listening, for the session summary.
   const shownLogRef = useRef<{ at: number; label: string; translation: string; text: string }[]>([]);
+  // Book quotes heard while listening, for the summary and verses.md; and
+  // the ones waiting for the operator.
+  const bookLogRef = useRef<AiBookQuote[]>([]);
+  const bookCardsRef = useRef<BookCard[]>([]);
+  const bookBusy = useRef(false);
+  const [books, setBooks] = useState<BookInfo[]>([]);
+  const [booksBusy, setBooksBusy] = useState(false);
   const sessionRef = useRef<{ dir: string; name: string; startedAt: number } | null>(null);
   // The AI summary: every final line of the service (the transcript list
   // above keeps only the last 200), the latest summary, and its status.
@@ -1014,15 +1037,27 @@ export default function App() {
 
   /** Ask the AI for the summary of `lines` so far. Returns null on failure. */
   async function aiSummarize(lines: AiLine[], verses: typeof shownLogRef.current, startedAt: number, final: boolean) {
+    const extra = await summaryExtra(lines, verses);
     const reply = await invoke<string>("llm_complete", {
       system: SUMMARY_SYSTEM,
-      user: summaryMessage(lines, verses, startedAt, final),
+      user: summaryMessage(lines, verses, startedAt, final, extra),
       maxTokens: 4000,
       json: true,
     });
-    const got = parseSummary(reply, verses.map((v) => v.label));
+    const got = parseSummary(reply, [...verses.map((v) => v.label), ...extra.named]);
     if (!got) throw new Error("The AI's reply was not a summary: " + reply.slice(0, 120));
     return got;
+  }
+
+  /** Verses named but never shown, book quotes, and the book chapters nearest the sermon. */
+  async function summaryExtra(lines: AiLine[], verses: typeof shownLogRef.current): Promise<AiExtra> {
+    const named = await invoke<string[]>("named_refs", { lines: lines.map((l) => l.text) }).catch(() => [] as string[]);
+    const words = lines.map((l) => l.text).join(" ").split(/\s+/);
+    const outlines = await invoke<AiOutline[]>("book_chapters", {
+      text: words.slice(-BOOK_CONTEXT_WORDS).join(" "),
+      refs: [...verses.map((v) => v.label), ...named],
+    }).catch(() => [] as AiOutline[]);
+    return { named, quotes: bookLogRef.current.slice(), outlines };
   }
 
   /** Refresh the live summary (every 90 s while listening, or "Update now"). */
@@ -1100,7 +1135,7 @@ export default function App() {
     if (dir) {
       const heading = sessionHeading();
       const verses = shownLogRef.current.slice();
-      void invoke("save_session_file", { dir, name: "verses.md", content: versesMarkdown(verses, heading) }).catch((e) =>
+      void invoke("save_session_file", { dir, name: "verses.md", content: versesMarkdown(verses, heading, bookLogRef.current) }).catch((e) =>
         logEvent("error", "verses.md: " + e)
       );
       // One last pass over the whole sermon for the saved summary.
@@ -1155,6 +1190,8 @@ export default function App() {
       // A new service: start its notes and verse list fresh.
       stRef.current = newSermonState();
       shownLogRef.current = [];
+      bookLogRef.current = [];
+      bookCardsRef.current = [];
       aiLinesRef.current = [];
       aiRef.current = { summary: null, at: 0, words: 0, busy: false, error: "" };
       transcriptRef.current = [];
@@ -1592,6 +1629,11 @@ export default function App() {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
+  useEffect(() => {
+    if (view === "downloads") void refreshBooks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
   // Keep the transcription status chip current even when nothing else changes.
   useEffect(() => {
     if (!listening) return;
@@ -1686,6 +1728,67 @@ export default function App() {
       quoteBusy.current = false;
       aiQuoteLine(text, found);
     }
+    if (!found) void bookCheck(words.slice(-BOOK_WORDS).join(" "));
+  }
+
+  // A sentence quoted from one of the preacher's books ("Daddy says...").
+  // Offered as a card for the operator; it never goes up by itself.
+  async function bookCheck(text: string) {
+    if (bookBusy.current) return;
+    bookBusy.current = true;
+    try {
+      const q = await invoke<BookQuote | null>("book_quote", { text });
+      if (!q) return;
+      const now = Date.now();
+      if (bookLogRef.current.some((l) => l.text === q.text && now - l.at < BOOK_REPEAT_MS)) return;
+      if (listeningRef.current) bookLogRef.current.push({ at: now, book: q.book, chapter: q.chapter, text: q.text });
+      const kept = bookCardsRef.current.filter((c) => now - c.at < BOOK_CARD_MS && c.text !== q.text);
+      bookCardsRef.current = [{ ...q, id: seq.current++, at: now }, ...kept].slice(0, BOOK_CARDS);
+      logEvent("info", "book quote: " + q.book + " · " + trimWords(q.text, 12));
+      sync();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      bookBusy.current = false;
+    }
+  }
+
+  /** Put a book quote on screen: the book's words, then "Dag Heward-Mills, <book>". */
+  async function showBookCard(c: BookCard) {
+    bookCardsRef.current = bookCardsRef.current.filter((x) => x.id !== c.id);
+    beforeCover.current = null;
+    const s = await invoke<Slide>("show_slide", { kind: "text", title: "", body: c.text, sub: "Dag Heward-Mills, " + c.book });
+    setSlide(s);
+    slideRef.current = s;
+    sync();
+  }
+
+  async function refreshBooks() {
+    setBooks(await invoke<BookInfo[]>("list_books").catch(() => [] as BookInfo[]));
+  }
+
+  async function importBooks(folder: boolean) {
+    const picked = await openDialog(
+      folder ? { directory: true } : { multiple: false, filters: [{ name: "Books", extensions: ["zip", "epub", "pdf"] }] }
+    );
+    if (!picked || Array.isArray(picked)) return;
+    setBooksBusy(true);
+    try {
+      const r = await invoke<{ added: string[]; skipped: string[]; total: number }>("import_books", { path: picked });
+      toast.success(r.added.length + " book" + (r.added.length === 1 ? "" : "s") + " indexed" + (r.skipped.length ? ", " + r.skipped.length + " skipped" : ""));
+      if (r.skipped.length) logEvent("info", "books skipped: " + r.skipped.join("; "));
+    } catch (e) {
+      toast.error("Import failed: " + String(e).replace(/^Error:\s*/, ""));
+    } finally {
+      setBooksBusy(false);
+      await refreshBooks();
+    }
+  }
+
+  async function removeBooks(id: string | null) {
+    if (!id && !window.confirm("Remove all " + books.length + " books from Agent HSP?")) return;
+    await invoke("remove_books", { id }).catch((e) => toast.error(String(e)));
+    await refreshBooks();
   }
 
   const trimContext = (t: string) => t.split(/\s+/).filter(Boolean).slice(-200).join(" ");
@@ -2367,6 +2470,47 @@ export default function App() {
                     Slides show the short name after the reference (JOHN 3:16 · NLT), as most publishers ask. Switch to full names on the Look page.
                   </p>
                 </Panel>
+                <Panel title="Preacher's books">
+                  <p className="text-sm text-muted-foreground">
+                    Import Dag Heward-Mills's books so Agent HSP can recognize a sentence the preacher quotes from one
+                    ("Daddy says...") and offer it as a card, and so the AI summary can follow the book chapter he is
+                    preaching from. Download them free from dagbooks.org: choose English, then Download All Books, and
+                    import the zip file. The books stay on this computer.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <LinkCard title="dagbooks.org" sub="Dag Heward-Mills's books, free to download as EPUB or PDF." onOpen={() => openLink("https://dagbooks.org")} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button disabled={booksBusy} onClick={() => void importBooks(false)}>
+                      <Upload /> {booksBusy ? "Indexing…" : "Import books (.zip / .epub / .pdf)"}
+                    </Button>
+                    <Button variant="outline" disabled={booksBusy} onClick={() => void importBooks(true)}>
+                      <FolderOpen /> Import a folder
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {books.length} book{books.length === 1 ? "" : "s"} indexed.
+                    </span>
+                    {books.length > 0 && (
+                      <Button variant="outline" size="sm" className="ml-auto" onClick={() => void removeBooks(null)}>
+                        <Trash2 /> Remove all
+                      </Button>
+                    )}
+                  </div>
+                  {books.length > 0 && (
+                    <div className="max-h-64 divide-y overflow-y-auto rounded-md border">
+                      {books.map((b) => (
+                        <div key={b.id} className="flex items-center gap-3 px-3 py-1.5 text-sm">
+                          <BookOpen className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">{b.title}</span>
+                          <span className="text-xs text-muted-foreground">{b.chapters} chapters</span>
+                          <button className="text-muted-foreground hover:text-foreground" title="Remove this book" onClick={() => void removeBooks(b.id)}>
+                            <X className="size-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Panel>
                 <Panel title="Songs and lyrics">
                   <p className="text-sm text-muted-foreground">
                     Import songs on the Service page (VideoPsalm, OpenLyrics, OpenSong or plain text). Showing song
@@ -2770,7 +2914,32 @@ export default function App() {
                   </div>
                   <ScrollArea className="min-h-0 flex-1">
                     <div className="flex flex-col gap-2 p-3">
-                      {cardsRef.current.length === 0 && (
+                      {bookCardsRef.current
+                        .filter((c) => now - c.at < BOOK_CARD_MS)
+                        .map((c) => (
+                          <div key={"b" + c.id} className="rounded-md border border-dashed border-primary/60 bg-background p-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate font-semibold">{c.book}</span>
+                              <Badge variant="secondary">book quote</Badge>
+                              <button
+                                className="ml-auto text-muted-foreground hover:text-foreground"
+                                title="Dismiss"
+                                onClick={() => {
+                                  bookCardsRef.current = bookCardsRef.current.filter((x) => x.id !== c.id);
+                                  sync();
+                                }}
+                              >
+                                <X className="size-4" />
+                              </button>
+                            </div>
+                            {c.chapter && <div className="text-xs text-muted-foreground">{c.chapter}</div>}
+                            <div className="mt-1.5 line-clamp-3 text-xs">{c.text}</div>
+                            <Button size="sm" variant="outline" className="mt-2" onClick={() => void showBookCard(c)}>
+                              <MonitorPlay /> Show on screen
+                            </Button>
+                          </div>
+                        ))}
+                      {cardsRef.current.length === 0 && !bookCardsRef.current.some((c) => now - c.at < BOOK_CARD_MS) && (
                         <Empty>{held ? "Verses the preacher names will wait here." : "Verses go straight to the screen. Quote matches wait here for a moment first."}</Empty>
                       )}
                       {cardsRef.current.map((c) => {

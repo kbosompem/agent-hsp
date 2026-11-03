@@ -7,8 +7,14 @@ export type AiPoint = { point: string; detail: string; verses: string[] };
 export type AiSummary = { title: string; big_idea: string; points: AiPoint[] };
 export type AiLine = { at: number; text: string };
 export type AiVerse = { at: number; label: string; text: string; translation: string };
+/** A sentence the preacher quoted from one of the imported books. */
+export type AiBookQuote = { at: number; book: string; chapter: string; text: string };
+/** A book chapter close to the sermon (preso-core books.rs). */
+export type AiOutline = { book: string; chapter: string; heads: string[]; refs: string[]; score: number };
+/** What the console knows besides the transcript: verses named but never shown, and the preacher's books. */
+export type AiExtra = { named: string[]; quotes: AiBookQuote[]; outlines: AiOutline[] };
 
-export const SUMMARY_SYSTEM = `You keep a live summary of a church sermon for the church's media team. You receive the Bible verses that were put on screen and the transcript so far. The transcript is raw speech-to-text: expect misheard words, missing punctuation, and parts of the service that are not the sermon. Return the updated summary as JSON only.
+export const SUMMARY_SYSTEM = `You keep a live summary of a church sermon for the church's media team. You receive the Bible verses that were put on screen, other verses the preacher named, and the transcript so far. The transcript is raw speech-to-text: expect misheard words, missing punctuation, and parts of the service that are not the sermon. Return the updated summary as JSON only.
 
 What to capture
 - title: the title the preacher announces ("my message today is...", "I've titled this..."). If none is announced, a short title from the main theme. At most 8 words.
@@ -19,7 +25,13 @@ What to capture
 - Several examples of one idea are one point: if the preacher lists signs, kinds or ways of something ("absence is a sign of dishonor... stubbornness is a sign of dishonor..."), make one point that names them ("Absence, stubbornness and ignoring advice are signs of dishonor").
 - point: a short line of at most 12 words, in plain language, written as a statement the way the preacher would put it on a slide. Write the point itself, not its number or a description of it: "Hear from God", not "The first step is to hear from God"; "God finishes what He starts", not "The pastor talks about God's faithfulness".
 - detail: one sentence of at most 25 words on how the preacher developed the point.
-- verses: the references from the verses list that the preacher used for this point, written exactly as they appear in the list. Only references from the list. An empty list if the point has none.
+- verses: the references the preacher used for this point, written exactly as they appear in the two verse lists (put on screen, or named). Only references from those lists. An empty list if the point has none.
+- When a point rests on a Bible story ("the young prophet who disobeyed God and was killed by a lion"), say so in detail, with the book and chapter if he named them.
+
+The preacher's books
+- Preachers in this church often preach from and quote the books of Dag Heward-Mills (they call him Bishop Dag, Daddy or the Prophet). You may receive sentences the preacher quoted from a book, and the outline (title, headings, numbered points, verses) of book chapters whose words and verses are close to this sermon.
+- Use a chapter only where the preacher clearly followed it: when he preached one of its points, you may word that point as the book does. Never add a point, verse or idea from a book that he did not preach. If a chapter does not match what he preached, ignore it.
+- When he quoted a book, name it in that point's detail ("as Dag Heward-Mills writes in Loyalty and Disloyalty").
 
 What to leave out
 - Worship songs, announcements, greetings, the offering, prayer requests, and anything said before the sermon starts or after it ends. If the sermon has not started yet, return an empty points list and empty title and big_idea.
@@ -49,12 +61,26 @@ function firstWords(text: string, n: number): string {
 // Each summary is built from the whole transcript, with no earlier summary
 // in the message: replays showed an earlier draft anchors the model to points
 // it guessed during the introduction.
-export function summaryMessage(lines: AiLine[], verses: AiVerse[], startedAt: number, final: boolean): string {
+export function summaryMessage(lines: AiLine[], verses: AiVerse[], startedAt: number, final: boolean, extra?: AiExtra): string {
   const out: string[] = [];
   out.push("Verses put on screen (time, reference, first words):");
   if (!verses.length) out.push("(none yet)");
   for (const v of verses) out.push(clock(v.at - startedAt) + " · " + v.label + " · " + firstWords(v.text, 10));
   out.push("");
+  const shown = new Set(verses.map((v) => norm(v.label)));
+  const named = (extra?.named ?? []).filter((l) => !shown.has(norm(l)));
+  if (named.length) out.push("Other verses the preacher named (heard in the transcript, not put on screen; some may be misheard):", named.join(", "), "");
+  if (extra?.quotes.length) {
+    out.push("Sentences the preacher quoted from a book (time, book, the book's words):");
+    for (const q of extra.quotes) out.push(clock(q.at - startedAt) + " · " + q.book + (q.chapter ? ", " + q.chapter : "") + " · " + q.text);
+    out.push("");
+  }
+  for (const o of extra?.outlines ?? []) {
+    out.push("A book chapter close to this sermon (a guide only): " + o.book + ", chapter \"" + o.chapter + "\"");
+    if (o.heads.length) out.push("Its headings and points:", ...o.heads.map((h) => "- " + h));
+    if (o.refs.length) out.push("Its verses: " + o.refs.join(", "));
+    out.push("");
+  }
   // Keep the newest lines within the word budget.
   const kept: string[] = [];
   let words = 0;
@@ -74,7 +100,7 @@ export function summaryMessage(lines: AiLine[], verses: AiVerse[], startedAt: nu
 
 const norm = (l: string) => l.toLowerCase().replace(/\bpsalms\b/, "psalm").replace(/\s+/g, " ").trim();
 
-/** The model's reply as a summary, or null if it is not one. Verses not shown are dropped. */
+/** The model's reply as a summary, or null if it is not one. Verses not in `shown` (shown or named) are dropped. */
 export function parseSummary(reply: string, shown: string[]): AiSummary | null {
   const a = reply.indexOf("{");
   const b = reply.lastIndexOf("}");
@@ -120,11 +146,15 @@ export function summaryMarkdown(s: AiSummary, heading: string, by: string): stri
   return out.join("\n") + "\n";
 }
 
-/** verses.md: only the verses shown, in order. */
-export function versesMarkdown(verses: AiVerse[], heading: string): string {
+/** verses.md: only the verses shown, in order, then any book quotes recognized. */
+export function versesMarkdown(verses: AiVerse[], heading: string, quotes: AiBookQuote[] = []): string {
   const t = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const out = ["# Verses shown", "", heading, ""];
   if (!verses.length) out.push("None.");
   for (const v of verses) out.push("- " + t(v.at) + " · **" + v.label + "** (" + v.translation + ") " + v.text);
+  if (quotes.length) {
+    out.push("", "## Quoted from books", "");
+    for (const q of quotes) out.push("- " + t(q.at) + " · **" + q.book + "**" + (q.chapter ? " (" + q.chapter + ")" : "") + " " + q.text);
+  }
   return out.join("\n") + "\n";
 }
