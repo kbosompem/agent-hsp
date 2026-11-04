@@ -86,7 +86,7 @@ type Card = {
 type TrLine = { text: string; labels: string[] };
 
 /** A sentence the preacher quoted from an imported book (preso-core books.rs). */
-type BookQuote = { book: string; chapter: string; text: string; run: number; weight: number };
+type BookQuote = { book: string; chapter: string; text: string; passage: number; run: number; weight: number };
 type BookCard = BookQuote & { id: number; at: number };
 type BookInfo = { id: string; title: string; chapters: number };
 
@@ -476,6 +476,9 @@ export default function App() {
   // the ones waiting for the operator.
   const bookLogRef = useRef<AiBookQuote[]>([]);
   const bookCardsRef = useRef<BookCard[]>([]);
+  // When each book passage was last offered: the same passage heard over
+  // several lines is one quote.
+  const bookSeenRef = useRef<Record<number, number>>({});
   const bookBusy = useRef(false);
   const [books, setBooks] = useState<BookInfo[]>([]);
   const [booksBusy, setBooksBusy] = useState(false);
@@ -1192,6 +1195,7 @@ export default function App() {
       shownLogRef.current = [];
       bookLogRef.current = [];
       bookCardsRef.current = [];
+      bookSeenRef.current = {};
       aiLinesRef.current = [];
       aiRef.current = { summary: null, at: 0, words: 0, busy: false, error: "" };
       transcriptRef.current = [];
@@ -1740,9 +1744,18 @@ export default function App() {
       const q = await invoke<BookQuote | null>("book_quote", { text });
       if (!q) return;
       const now = Date.now();
-      if (bookLogRef.current.some((l) => l.text === q.text && now - l.at < BOOK_REPEAT_MS)) return;
+      // Still quoting the same passage: the card shows the longer stretch.
+      const same = bookCardsRef.current.find((c) => c.passage === q.passage);
+      if (same) {
+        if (q.text.length > same.text.length) same.text = q.text;
+        sync();
+        return;
+      }
+      const seen = bookSeenRef.current[q.passage];
+      bookSeenRef.current[q.passage] = now;
+      if (seen && now - seen < BOOK_REPEAT_MS) return;
       if (listeningRef.current) bookLogRef.current.push({ at: now, book: q.book, chapter: q.chapter, text: q.text });
-      const kept = bookCardsRef.current.filter((c) => now - c.at < BOOK_CARD_MS && c.text !== q.text);
+      const kept = bookCardsRef.current.filter((c) => now - c.at < BOOK_CARD_MS);
       bookCardsRef.current = [{ ...q, id: seq.current++, at: now }, ...kept].slice(0, BOOK_CARDS);
       logEvent("info", "book quote: " + q.book + " · " + trimWords(q.text, 12));
       sync();

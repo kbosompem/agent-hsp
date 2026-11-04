@@ -41,13 +41,16 @@ pub struct Para {
     /// A Bible passage the book quotes, not the author's own words.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub scripture: bool,
+    /// Its class in the EPUB, while the chapter is put together.
+    #[serde(skip)]
+    pub class: String,
 }
 
 /// A piece of a book's text before it is split into chapters.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
     Head(String),
-    Para(String),
+    Para(String, Style),
     /// The end of one file of an EPUB.
     Break,
 }
@@ -66,6 +69,8 @@ pub struct BookQuote {
     pub chapter: String,
     /// The sentences he quoted, as the book has them.
     pub text: String,
+    /// Which passage: the same one heard again is the same quote.
+    pub passage: u32,
     /// Word pairs in a row that matched, and their weight.
     pub run: usize,
     pub weight: f32,
@@ -93,25 +98,115 @@ pub struct ImportReport {
 
 // ---------------------------------------------------------------- reading
 
+/// How a paragraph is set: its class, and whether nearly all of it is bold
+/// or italic (from <b> and <i> tags or the book's CSS). Dag Heward-Mills's
+/// EPUBs mark headings either by class ("SUB-TITLE-", "MAIN-POINT") or only
+/// by style (a bold centered paragraph), and quoted scripture by class
+/// ("BIBLE-VERSE") or as italic paragraphs above the reference.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Style {
+    pub class: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub scripture: bool,
+}
+
+/// CSS class -> (bold, italic).
+pub type Css = HashMap<String, (bool, bool)>;
+
+/// Add the bold and italic classes of a stylesheet to `into`.
+pub fn parse_css(css: &str, into: &mut Css) {
+    let mut s = String::new();
+    let mut rest = css;
+    while let Some(i) = rest.find("/*") {
+        s.push_str(&rest[..i]);
+        rest = rest[i..].find("*/").map(|e| &rest[i + e + 2..]).unwrap_or("");
+    }
+    s.push_str(rest);
+    for rule in s.split('}') {
+        let Some((sel, decl)) = rule.split_once('{') else { continue };
+        let (bold, italic) = decl_flags(decl);
+        if !bold && !italic {
+            continue;
+        }
+        for one in sel.split(',') {
+            // The element styled is the last one in the selector: "p.sgc-5".
+            let last = one.split_whitespace().last().unwrap_or("");
+            for class in last.split('.').skip(1) {
+                let class = class.split(':').next().unwrap_or("").to_ascii_lowercase();
+                if class.is_empty() {
+                    continue;
+                }
+                let e = into.entry(class).or_default();
+                e.0 |= bold;
+                e.1 |= italic;
+            }
+        }
+    }
+}
+
+/// Whether CSS declarations ("font-weight: bold; ...") make text bold, italic.
+fn decl_flags(decl: &str) -> (bool, bool) {
+    let d = decl.to_ascii_lowercase().replace([' ', '\t', '\n'], "");
+    let bold = ["font-weight:bold", "font-weight:600", "font-weight:700", "font-weight:800", "font-weight:900"]
+        .iter()
+        .any(|k| d.contains(k));
+    (bold, d.contains("font-style:italic") || d.contains("font-style:oblique"))
+}
+
+struct Frame {
+    head: bool,
+    style: Style,
+}
+
 /// Text blocks of an XHTML file: headings (h1 to h6, or a paragraph whose
-/// class names a heading) and paragraphs, with entities decoded.
-pub fn html_blocks(html: &str) -> Vec<Block> {
+/// class names a heading) and styled paragraphs, with entities decoded.
+/// `css` holds the book's stylesheets; a <style> in the file adds to it.
+pub fn html_blocks(html: &str, css: &Css) -> Vec<Block> {
+    let mut css = css.clone();
     let mut out = Vec::new();
     let mut buf = String::new();
-    // Kind of each open block element: true for a heading.
-    let mut stack: Vec<bool> = Vec::new();
+    // Characters of the open block, and how many of them are bold, italic.
+    let (mut chars, mut bold_chars, mut italic_chars) = (0usize, 0usize, 0usize);
+    let mut stack: Vec<Frame> = Vec::new();
+    // Open inline elements that set bold or italic: (name, bold, italic).
+    let mut inline: Vec<(String, bool, bool)> = Vec::new();
     let mut skip = 0usize;
-    let flush = |buf: &mut String, head: bool, out: &mut Vec<Block>| {
-        let t = clean_space(&decode_entities(buf));
+    let mut in_style = false;
+    let mut style_buf = String::new();
+    let flush = |buf: &mut String, top: Option<&Frame>, counts: &mut (usize, usize, usize), out: &mut Vec<Block>| {
+        let t = clean_space(buf);
         buf.clear();
-        if !t.is_empty() {
-            out.push(if head { Block::Head(t) } else { Block::Para(t) });
+        let (n, b, i) = *counts;
+        *counts = (0, 0, 0);
+        if t.is_empty() {
+            return;
         }
+        let (head, mut style) = top.map(|f| (f.head, f.style.clone())).unwrap_or_default();
+        if n > 0 {
+            style.bold |= b * 10 >= n * 9;
+            style.italic |= i * 10 >= n * 9;
+        }
+        out.push(if head { Block::Head(t) } else { Block::Para(t, style) });
     };
     let mut rest = html;
     while let Some(lt) = rest.find('<') {
-        if skip == 0 {
-            buf.push_str(&rest[..lt]);
+        let text = &rest[..lt];
+        if in_style {
+            style_buf.push_str(text);
+        } else if skip == 0 && !text.is_empty() {
+            let t = decode_entities(text);
+            let n = t.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').count();
+            let top_b = stack.last().is_some_and(|f| f.style.bold);
+            let top_i = stack.last().is_some_and(|f| f.style.italic);
+            chars += n;
+            if top_b || inline.iter().any(|x| x.1) {
+                bold_chars += n;
+            }
+            if top_i || inline.iter().any(|x| x.2) {
+                italic_chars += n;
+            }
+            buf.push_str(&t);
         }
         let after = &rest[lt + 1..];
         if after.starts_with("!--") {
@@ -122,6 +217,7 @@ pub fn html_blocks(html: &str) -> Vec<Block> {
         let tag = &after[..gt];
         rest = &after[gt + 1..];
         let closing = tag.starts_with('/');
+        let self_closing = tag.ends_with('/');
         let name: String = tag
             .trim_start_matches('/')
             .chars()
@@ -129,10 +225,20 @@ pub fn html_blocks(html: &str) -> Vec<Block> {
             .collect::<String>()
             .to_ascii_lowercase();
         let name = name.rsplit(':').next().unwrap_or("").to_string();
-        if matches!(name.as_str(), "script" | "style" | "head") {
+        if name == "style" {
+            if closing {
+                parse_css(&style_buf, &mut css);
+                style_buf.clear();
+                in_style = false;
+            } else if !self_closing {
+                in_style = true;
+            }
+            continue;
+        }
+        if matches!(name.as_str(), "script" | "head") {
             if closing {
                 skip = skip.saturating_sub(1);
-            } else if !tag.ends_with('/') {
+            } else if !self_closing {
                 skip += 1;
             }
             continue;
@@ -140,30 +246,71 @@ pub fn html_blocks(html: &str) -> Vec<Block> {
         if skip > 0 {
             continue;
         }
+        let mut counts = (chars, bold_chars, italic_chars);
         match name.as_str() {
             "br" => buf.push(' '),
+            "b" | "strong" | "i" | "em" | "span" => {
+                if closing {
+                    if let Some(at) = inline.iter().rposition(|x| x.0 == name) {
+                        inline.remove(at);
+                    }
+                } else if !self_closing {
+                    let (sb, si) = decl_flags(&attr(tag, "style"));
+                    let (mut b, mut i) = (name == "b" || name == "strong" || sb, name == "i" || name == "em" || si);
+                    for c in attr(tag, "class").to_ascii_lowercase().split_whitespace() {
+                        if let Some(&(cb, ci)) = css.get(c) {
+                            b |= cb;
+                            i |= ci;
+                        }
+                    }
+                    inline.push((name.clone(), b, i));
+                }
+            }
             "p" | "div" | "li" | "blockquote" | "section" | "tr" | "td" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "dt"
             | "dd" | "figcaption" | "body" => {
-                let cur = stack.last().copied().unwrap_or(false);
-                flush(&mut buf, cur, &mut out);
+                flush(&mut buf, stack.last(), &mut counts, &mut out);
                 if closing {
                     stack.pop();
-                } else if !tag.ends_with('/') {
+                    inline.clear();
+                } else if !self_closing {
                     let class = attr(tag, "class").to_ascii_lowercase();
-                    let head_class = class.split_whitespace().any(|c| {
-                        ["head", "title", "chapter"].iter().any(|k| c.contains(k)) && !["text", "body", "para"].iter().any(|k| c.contains(k))
-                    });
+                    let tokens: Vec<&str> = class.split_whitespace().collect();
+                    let has = |keys: &[&str]| tokens.iter().any(|c| keys.iter().any(|k| c.contains(k)));
+                    let scripture = has(&["verse", "bible", "scripture"]);
+                    let head_class = !scripture
+                        && has(&["head", "title", "point", "chapter"])
+                        && !tokens.iter().any(|c| ["text", "body", "para"].iter().any(|k| c.contains(k)));
                     let head = name.starts_with('h') && name != "body" || (name == "p" || name == "div") && head_class;
-                    stack.push(head);
+                    let parent = stack.last().map(|f| f.style.clone()).unwrap_or_default();
+                    // Books styled inline ("margin:0pt 14.15pt ...") tell a
+                    // verse from his text only by that: it counts as the class.
+                    let inline_style = attr(tag, "style");
+                    let (sb, si) = decl_flags(&inline_style);
+                    let key = if inline_style.is_empty() { class.clone() } else { format!("{}|{}", class, inline_style.to_ascii_lowercase()) };
+                    let mut style = Style {
+                        class: key,
+                        bold: parent.bold || sb,
+                        italic: parent.italic || si,
+                        scripture: parent.scripture || scripture,
+                    };
+                    for c in &tokens {
+                        if let Some(&(b, i)) = css.get(*c) {
+                            style.bold |= b;
+                            style.italic |= i;
+                        }
+                    }
+                    stack.push(Frame { head, style });
                 }
             }
             _ => {}
         }
+        (chars, bold_chars, italic_chars) = counts;
     }
     if skip == 0 {
-        buf.push_str(rest);
+        buf.push_str(&decode_entities(rest));
     }
-    flush(&mut buf, stack.last().copied().unwrap_or(false), &mut out);
+    let mut counts = (chars, bold_chars, italic_chars);
+    flush(&mut buf, stack.last(), &mut counts, &mut out);
     out
 }
 
@@ -316,7 +463,7 @@ pub fn text_blocks(text: &str) -> Vec<Block> {
     let mut buf: Vec<&str> = Vec::new();
     let flush = |buf: &mut Vec<&str>, out: &mut Vec<Block>| {
         if !buf.is_empty() {
-            out.push(Block::Para(buf.join(" ")));
+            out.push(Block::Para(buf.join(" "), Style::default()));
             buf.clear();
         }
     };
@@ -388,15 +535,15 @@ const MIN_CHAPTER_WORDS: usize = 80;
 /// them (anything before the first is front matter), otherwise at each file.
 pub fn assemble(id: &str, title: &str, blocks: Vec<Block>) -> Book {
     let text_of = |b: &Block| match b {
-        Block::Head(t) | Block::Para(t) => Some(t.clone()),
+        Block::Head(t) | Block::Para(t, _) => Some(t.clone()),
         Block::Break => None,
     };
     let has_chapters = blocks.iter().filter_map(text_of).filter(|t| chapter_heading(t).is_some()).count() >= 2;
     let mut chapters: Vec<Chapter> = Vec::new();
     let mut cur: Option<Chapter> = if has_chapters { None } else { Some(Chapter::default()) };
     let mut want_title = !has_chapters;
-    for b in blocks {
-        if b == Block::Break {
+    for (i, b) in blocks.iter().enumerate() {
+        if *b == Block::Break {
             if !has_chapters {
                 chapters.extend(cur.take());
                 cur = Some(Chapter::default());
@@ -404,8 +551,22 @@ pub fn assemble(id: &str, title: &str, blocks: Vec<Block>) -> Book {
             }
             continue;
         }
-        let head = matches!(b, Block::Head(_));
-        let t = text_of(&b).unwrap_or_default();
+        let t = text_of(b).unwrap_or_default();
+        let style = match b {
+            Block::Para(_, s) => s.clone(),
+            _ => Style::default(),
+        };
+        // A short bold paragraph is a heading, unless it is the verse above
+        // a reference.
+        let next_is_ref = matches!(blocks.get(i + 1), Some(Block::Para(n, _)) if is_ref_line(n));
+        let styled_head = style.bold
+            && !style.italic
+            && !style.scripture
+            && word_count(&t) <= 14
+            && !t.ends_with(['.', ',', ';'])
+            && !next_is_ref
+            && !is_ref_line(&t);
+        let head = matches!(b, Block::Head(_)) || styled_head;
         if has_chapters {
             if let Some(rest) = chapter_heading(&t) {
                 chapters.extend(cur.take());
@@ -416,18 +577,23 @@ pub fn assemble(id: &str, title: &str, blocks: Vec<Block>) -> Book {
         }
         let Some(c) = cur.as_mut() else { continue };
         if want_title && (head || looks_like_heading(&t)) {
-            c.title = t;
+            // "Chapter 3" over the title, in a file of its own.
+            match chapter_heading(&t) {
+                Some(rest) if rest.is_empty() => continue,
+                Some(rest) => c.title = rest,
+                None => c.title = t,
+            }
             want_title = false;
             continue;
         }
         want_title = false;
-        if head {
+        if head && !numbered(&t) {
             c.heads.push(t);
         } else {
             if numbered(&t) {
                 c.heads.push(t.clone());
             }
-            c.paras.push(Para { text: t, scripture: false });
+            c.paras.push(Para { text: t, scripture: style.scripture, class: style.class });
         }
     }
     chapters.extend(cur.take());
@@ -442,16 +608,47 @@ pub fn assemble(id: &str, title: &str, blocks: Vec<Block>) -> Book {
     Book { id: id.to_string(), title: clean_space(title), chapters }
 }
 
-/// Mark quoted scripture (the paragraph above a reference line), list the
-/// chapter's references, and cap its headings.
+/// Paragraphs of one quoted passage above a reference, at most.
+const MAX_VERSE_PARAS: usize = 12;
+
+/// Mark quoted scripture: the paragraph above a reference line, and the
+/// paragraphs before it set the same way when that is not how the chapter's
+/// own text is set (a passage of several verses). Then list the chapter's
+/// references and cap its headings.
 fn finish_chapter(c: &mut Chapter) {
     let eng = engine();
+    // The class most of the chapter's words are set in: the author's own text.
+    let mut by_class: HashMap<&str, usize> = HashMap::new();
+    for p in &c.paras {
+        *by_class.entry(p.class.as_str()).or_default() += word_count(&p.text);
+    }
+    let body = by_class.into_iter().max_by_key(|x| x.1).map(|x| x.0.to_string()).unwrap_or_default();
     for i in 0..c.paras.len() {
-        if is_ref_line(&c.paras[i].text) {
-            c.paras[i].scripture = true;
-            if i > 0 {
-                c.paras[i - 1].scripture = true;
-            }
+        if !is_ref_line(&c.paras[i].text) {
+            continue;
+        }
+        c.paras[i].scripture = true;
+        if i == 0 {
+            continue;
+        }
+        // A numbered point set like the verse under it is still his.
+        if numbered(&c.paras[i - 1].text) {
+            continue;
+        }
+        c.paras[i - 1].scripture = true;
+        let class = c.paras[i - 1].class.clone();
+        if class == body {
+            continue;
+        }
+        let mut j = i - 1;
+        while j > 0
+            && i - j < MAX_VERSE_PARAS
+            && c.paras[j - 1].class == class
+            && !is_ref_line(&c.paras[j - 1].text)
+            && !numbered(&c.paras[j - 1].text)
+        {
+            j -= 1;
+            c.paras[j].scripture = true;
         }
     }
     let mut seen = HashSet::new();
@@ -500,11 +697,20 @@ pub fn epub_book<R: Read + Seek>(zip: &mut zip::ZipArchive<R>, fallback_id: &str
         .filter(|n| n.tag_name().name() == "itemref")
         .filter_map(|n| manifest.get(n.attribute("idref")?).cloned())
         .collect();
+    // The book's stylesheets: which classes are bold or italic.
+    let mut css = Css::new();
+    let mut sheets: Vec<&String> = manifest.values().filter(|h| h.to_ascii_lowercase().ends_with(".css")).collect();
+    sheets.sort();
+    for href in sheets {
+        if let Some(sheet) = read(zip, &format!("{}{}", base, percent_decode(href))) {
+            parse_css(&sheet, &mut css);
+        }
+    }
     let mut blocks = Vec::new();
     for href in spine {
         let path = format!("{}{}", base, percent_decode(href.split('#').next().unwrap_or("")));
         if let Some(html) = read(zip, &path) {
-            blocks.extend(html_blocks(&html));
+            blocks.extend(html_blocks(&html, &css));
             blocks.push(Block::Break);
         }
     }
@@ -758,10 +964,20 @@ const FILLER: &[&str] = &[
 ];
 const MAX_POINTS_SHOWN: usize = 25;
 
+/// A passage that can be quoted: a paragraph, or a chapter title or
+/// heading ("If You Are Too Busy to Pray Then You Are Too Busy" is a
+/// chapter of How to Pray, and the line preachers repeat).
 struct Passage {
     book: u16,
     chapter: u16,
-    para: u32,
+    part: Part,
+}
+
+#[derive(Clone, Copy)]
+enum Part {
+    Title,
+    Head(u32),
+    Para(u32),
 }
 
 #[derive(Default)]
@@ -776,6 +992,8 @@ pub struct Library {
     chapters: Vec<(u16, u16)>,
     /// (Bible book, chapter) -> (chapter index, first verse, last verse).
     verse_index: HashMap<(usize, usize), Vec<(u32, usize, usize)>>,
+    ref_idf: HashMap<(usize, usize), f32>,
+    ref_norm: Vec<f32>,
     /// Term -> (chapter index, normalized tf-idf weight).
     terms: HashMap<String, Vec<(u32, f32)>>,
     idf: HashMap<String, f32>,
@@ -841,18 +1059,24 @@ impl Library {
                         *tf.entry(t).or_default() += 2.0 * n;
                     }
                 }
+                let mut parts: Vec<(Part, &str)> = vec![(Part::Title, c.title.as_str())];
+                // Numbered points are paragraphs too: index them once.
+                parts.extend(c.heads.iter().enumerate().filter(|(_, h)| !numbered(h)).map(|(i, h)| (Part::Head(i as u32), h.as_str())));
                 for (pi, p) in c.paras.iter().enumerate() {
                     if !p.scripture {
                         for (t, n) in terms_of(&p.text, &skip_terms) {
                             *tf.entry(t).or_default() += n;
                         }
-                        let n = passages.len() as u32;
-                        passages.push(Passage { book: bi as u16, chapter: ci as u16, para: pi as u32 });
-                        let mut ks = index_pairs(&p.text, &stop);
-                        ks.sort_unstable();
-                        ks.dedup();
-                        postings.extend(ks.into_iter().map(|k| (k, n)));
+                        parts.push((Part::Para(pi as u32), p.text.as_str()));
                     }
+                }
+                for (part, text) in parts {
+                    let n = passages.len() as u32;
+                    passages.push(Passage { book: bi as u16, chapter: ci as u16, part });
+                    let mut ks = index_pairs(text, &stop);
+                    ks.sort_unstable();
+                    ks.dedup();
+                    postings.extend(ks.into_iter().map(|k| (k, n)));
                 }
                 ch_tf.push(tf);
             }
@@ -876,7 +1100,27 @@ impl Library {
                 terms.entry(t.clone()).or_default().push((chi as u32, x / norm));
             }
         }
-        Library { books, passages, keys, vals, stop, chapters, verse_index, terms, idf }
+        // How rare each Bible chapter is among the books' chapters, and the
+        // length of each chapter's verse vector, for a cosine over verses.
+        let nch = chapters.len().max(1) as f32;
+        let ref_idf: HashMap<(usize, usize), f32> = verse_index
+            .iter()
+            .map(|(k, list)| {
+                let mut chs: Vec<u32> = list.iter().map(|x| x.0).collect();
+                chs.dedup();
+                (*k, (nch / chs.len() as f32).ln().max(0.1))
+            })
+            .collect();
+        let mut ref_norm = vec![0f32; chapters.len()];
+        for (k, list) in &verse_index {
+            for &(ch, _, _) in list {
+                ref_norm[ch as usize] += ref_idf[k] * ref_idf[k];
+            }
+        }
+        for x in ref_norm.iter_mut() {
+            *x = x.sqrt();
+        }
+        Library { books, passages, keys, vals, stop, chapters, verse_index, ref_idf, ref_norm, terms, idf }
     }
 
     fn postings(&self, k: u64) -> &[u32] {
@@ -897,10 +1141,15 @@ impl Library {
         ((n / (1.0 + df as f32)).ln() / top).clamp(0.0, 1.0)
     }
 
-    fn para(&self, p: &Passage) -> (&Book, &Chapter, &Para) {
+    fn passage(&self, p: &Passage) -> (&Book, &Chapter, &str) {
         let b = &self.books[p.book as usize];
         let c = &b.chapters[p.chapter as usize];
-        (b, c, &c.paras[p.para as usize])
+        let text = match p.part {
+            Part::Title => c.title.as_str(),
+            Part::Head(i) => c.heads[i as usize].as_str(),
+            Part::Para(i) => c.paras[i as usize].text.as_str(),
+        };
+        (b, c, text)
     }
 }
 
@@ -916,10 +1165,9 @@ fn index_pairs(text: &str, stop: &HashSet<String>) -> Vec<u64> {
 /// always says", "the Prophet said", "in his book".
 pub fn cued(text: &str) -> bool {
     let t = format!(" {} ", text.to_lowercase().replace(|c: char| !c.is_ascii_alphanumeric(), " ").split_whitespace().collect::<Vec<_>>().join(" "));
-    const CUES: [&str; 12] = [
-        " daddy ", " papa ", " bishop ", " the prophet ", " dag ", " heward ", " his book ", " this book ", " the book ",
-        " he wrote ", " he writes ", " man of god ",
-    ];
+    // Not "the book" or "this book": the book of life, the book of Acts.
+    const CUES: [&str; 10] =
+        [" daddy ", " papa ", " bishop ", " the prophet ", " dag ", " heward ", " his book ", " he wrote ", " he writes ", " man of god "];
     CUES.iter().any(|c| t.contains(c))
 }
 
@@ -932,6 +1180,10 @@ const WEIGHT: f32 = 7.5;
 /// Pairs in more passages than this only find candidates through rarer ones.
 const COMMON_PAIR: usize = 1500;
 const CANDIDATES: usize = 8;
+/// Pairs missed in a row inside a run, and at most one miss per this many
+/// pairs found (the first miss is free).
+const MAX_GAP: usize = 2;
+const MISS_RATIO: usize = 3;
 /// Longest quote put on a slide.
 const MAX_QUOTE_WORDS: usize = 80;
 
@@ -963,48 +1215,64 @@ pub fn quoted(text: &str) -> Option<BookQuote> {
     let mut ranked: Vec<(u32, f32)> = cand.into_iter().collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then(a.0.cmp(&b.0)));
     let cue = cued(text);
-    let mut best: Option<(u32, usize, f32)> = None;
+    // The longest run wins; on a tie, the passage more of which was said
+    // (a chapter title over a paragraph that repeats it).
+    let mut best: Option<(u32, usize, f32, f32)> = None;
     for (pi, _) in ranked.into_iter().take(CANDIDATES) {
-        let (_, _, para) = lib.para(&lib.passages[pi as usize]);
-        let mut have = index_pairs(&para.text, &lib.stop);
+        let (_, _, text) = lib.passage(&lib.passages[pi as usize]);
+        let mut have = index_pairs(text, &lib.stop);
         have.sort_unstable();
+        have.dedup();
         let (run, weight) = longest_run(&spoken, &have, &lib);
-        if best.map_or(true, |(_, r, w)| (run, weight) > (r, w)) {
-            best = Some((pi, run, weight));
+        let share = run as f32 / have.len().max(1) as f32;
+        if best.map_or(true, |(_, r, w, sh)| (run, weight, share) > (r, w, sh)) {
+            best = Some((pi, run, weight, share));
         }
     }
-    let (pi, run, weight) = best?;
+    let (pi, run, weight, _) = best?;
     let ok = if cue { run >= CUE_RUN && weight >= CUE_WEIGHT } else { run >= RUN && weight >= WEIGHT };
     if !ok {
         return None;
     }
-    let (b, c, para) = lib.para(&lib.passages[pi as usize]);
-    let text_out = quoted_sentences(&para.text, &spoken, &lib);
+    let (b, c, text) = lib.passage(&lib.passages[pi as usize]);
+    let text_out = quoted_sentences(text, &spoken, &lib);
     // The book quoting a verse in the author's own paragraph: still a verse.
     if recite::recited(&text_out, None).is_some_and(|r| r.share >= 0.5) {
         return None;
     }
-    Some(BookQuote { book: b.title.clone(), chapter: c.title.clone(), text: text_out, run, weight })
+    Some(BookQuote { book: b.title.clone(), chapter: c.title.clone(), text: text_out, passage: pi, run, weight })
 }
 
-/// The longest stretch of spoken pairs found in the passage, allowing one
-/// misheard pair inside it: (pairs found, their weight).
+/// The longest stretch of spoken pairs found in the passage, allowing a
+/// changed word here and there ("how the heavenly father" for "how our
+/// heavenly father": two pairs missed in a row) as long as most pairs match:
+/// (distinct pairs found, their weight). A pair
+/// said again counts once: "In your time. In your time. In your time."
+/// repeated seven times matched a book on 2013-07-09.
 fn longest_run(spoken: &[u64], have: &[u64], lib: &Library) -> (usize, f32) {
     let mut best = (0usize, 0f32);
     let mut cur = (0usize, 0f32);
-    let mut missed = false;
+    let mut seen: HashSet<u64> = HashSet::new();
+    // Misses in a row, and in the whole run.
+    let (mut gap, mut misses) = (0usize, 0usize);
     for &k in spoken {
         if have.binary_search(&k).is_ok() {
-            cur.0 += 1;
-            cur.1 += lib.weight(k);
+            if seen.insert(k) {
+                cur.0 += 1;
+                cur.1 += lib.weight(k);
+            }
+            gap = 0;
             if cur > best {
                 best = cur;
             }
-        } else if cur.0 > 0 && !missed {
-            missed = true;
+        } else if cur.0 > 0 && gap < MAX_GAP && (misses + 1) * MISS_RATIO <= cur.0 + MISS_RATIO {
+            gap += 1;
+            misses += 1;
         } else {
             cur = (0, 0.0);
-            missed = false;
+            seen.clear();
+            gap = 0;
+            misses = 0;
         }
     }
     best
@@ -1054,20 +1322,28 @@ fn trim_words(text: &str, n: usize) -> String {
 
 // ---------------------------------------------------------------- chapters
 
-/// Each verse the sermon shares with a chapter counts this much (times how
-/// rare that Bible chapter is in the books); the same Bible chapter, a
-/// different verse, counts a third.
+/// In the verse cosine, a verse of the same Bible chapter that is not the
+/// same verse counts this much of a shared verse.
 const SAME_CHAPTER: f32 = 0.3;
-/// The verse score is divided by this before it is added to the word score
-/// (a cosine, 0 to 1).
-const VERSE_SCALE: f32 = 25.0;
-/// Below this a chapter is too far from the sermon to show the AI.
+/// Both scores are cosines (0 to 1); the verse one counts this much.
+const VERSE_WEIGHT: f32 = 0.5;
+/// A chapter goes to the AI when its score is at least MIN_SCORE and its
+/// words alone at least MIN_WORDS, or its score at least STRONG_SCORE. On
+/// 22 recorded sermons the chapters a sermon was preached from scored 0.32
+/// to 0.66 (Backsliding, Those Who Leave You, Those Who Honour You), with
+/// words 0.21 to 0.29; the best chapter of the others 0.20 to 0.37, with
+/// words mostly under 0.15.
 pub const MIN_SCORE: f32 = 0.3;
+const MIN_WORDS: f32 = 0.2;
+const STRONG_SCORE: f32 = 0.45;
 
 /// The `n` chapters closest to a sermon whose transcript is `text` and which
 /// used the verses `refs` ("Romans 4:21"), best first, above MIN_SCORE.
 pub fn related(text: &str, refs: &[String], n: usize) -> Vec<Outline> {
     related_above(text, refs, n, MIN_SCORE)
+        .into_iter()
+        .filter(|o| o.words >= MIN_WORDS || o.score >= STRONG_SCORE)
+        .collect()
 }
 
 /// The same, with no minimum score: for measuring (examples/books.rs).
@@ -1081,29 +1357,34 @@ fn related_above(text: &str, refs: &[String], n: usize, min: f32) -> Vec<Outline
         return Vec::new();
     }
     let eng = engine();
-    let nch = lib.chapters.len() as f32;
-    let mut verse_score = vec![0f32; lib.chapters.len()];
+    // A cosine between the sermon's verses and each chapter's, weighted by
+    // how rare each Bible chapter is in the books: a chapter that lists a
+    // hundred verses no longer matches every sermon.
+    let rare = (lib.chapters.len() as f32).ln();
+    let mut dot = vec![0f32; lib.chapters.len()];
+    let mut norm = 0f32;
     let mut seen = HashSet::new();
     for label in refs {
         let Some(r) = eng.parse_refs(label).into_iter().next() else { continue };
         if !seen.insert((r.book, r.chapter, r.verse)) {
             continue;
         }
+        let idf = lib.ref_idf.get(&(r.book, r.chapter)).copied().unwrap_or(rare);
+        norm += idf * idf;
         let Some(list) = lib.verse_index.get(&(r.book, r.chapter)) else { continue };
-        let mut chs: Vec<u32> = list.iter().map(|x| x.0).collect();
-        chs.dedup();
-        let idf = (nch / (1.0 + chs.len() as f32)).ln().max(0.1);
         let v = r.verse.unwrap_or(0);
         let mut best: HashMap<u32, f32> = HashMap::new();
         for &(ch, a, b) in list {
             let s = if v > 0 && a <= v && v <= b { 1.0 } else { SAME_CHAPTER };
             let e = best.entry(ch).or_default();
-            *e = e.max(s * idf);
+            *e = e.max(s * idf * idf);
         }
         for (ch, s) in best {
-            verse_score[ch as usize] += s;
+            dot[ch as usize] += s;
         }
     }
+    let norm = norm.sqrt().max(1e-6);
+    let verse_score: Vec<f32> = dot.iter().zip(&lib.ref_norm).map(|(d, n)| d / (norm * n.max(1e-6))).collect();
     let mut skip_terms = stems(recite::QUOTE_STOP);
     skip_terms.extend(stems(FILLER));
     skip_terms.extend(lib.stop.iter().cloned());
@@ -1121,7 +1402,7 @@ fn related_above(text: &str, refs: &[String], n: usize, min: f32) -> Vec<Outline
         }
     }
     let mut ranked: Vec<(usize, f32)> =
-        (0..lib.chapters.len()).map(|i| (i, word_score[i] + verse_score[i] / VERSE_SCALE)).collect();
+        (0..lib.chapters.len()).map(|i| (i, word_score[i] + VERSE_WEIGHT * verse_score[i])).collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     ranked
         .into_iter()
@@ -1137,7 +1418,7 @@ fn related_above(text: &str, refs: &[String], n: usize, min: f32) -> Vec<Outline
                 heads: c.heads.iter().take(MAX_POINTS_SHOWN).cloned().collect(),
                 refs: c.refs.iter().take(40).cloned().collect(),
                 score: s,
-                verses: verse_score[i] / VERSE_SCALE,
+                verses: VERSE_WEIGHT * verse_score[i],
                 words: word_score[i],
             }
         })
@@ -1211,6 +1492,62 @@ mod tests {
     }
 
     #[test]
+    fn styled_headings_and_scripture_from_real_epubs() {
+        // Backsliding: headings are bold paragraphs (by CSS class or <b>),
+        // the verse an italic paragraph above its reference.
+        let sigil = r#"<html><head><style type="text/css">
+  p.sgc-5 {font-weight: bold; text-align: center}
+  p.sgc-6 {font-style: italic; font-weight: bold}
+  p.sgc-7 {font-style: italic; font-weight: bold; text-align: right}
+</style></head><body>
+<h1 class="sgc-3"><a href="../Text/TOC.xhtml"><span class="c6">Chapter 3</span></a></h1>
+<h2 class="sgc-4"><span>Principal Causes of Backsliding</span></h2>
+<h1 id="heading_id_4" title="Chapter 3: Principal Causes of Backsliding"></h1>
+<p>&nbsp;I know that there are many causes of backsliding, but in this chapter, I will try to give you the predominant causes, as the Lord has shown me, and many of them are found in the parable of the sower.</p>
+<p class="sgc-5">&nbsp;Shallowness</p>
+<p class="sgc-6">... and these have NO ROOT, which for a while believe...</p>
+<p class="sgc-7">Luke 8:13&nbsp;</p>
+<p>The parable of the sower gives various reasons why some of the seeds could not grow. &nbsp;Some seeds could not grow because they fell on rocky soil.</p>
+<p class="sgc-2">&nbsp;<b>Everyone Will Be Tested</b></p>
+<p>A time of testing will surely come for every Christian. &nbsp;If you are <i>shallow</i>, in the time of testing, you will fall. <b>They have no convictions of their own.</b></p>
+</body></html>"#;
+        let b = assemble("b", "Backsliding", html_blocks(sigil, &Css::new()));
+        let c = &b.chapters[0];
+        assert_eq!(c.title, "Principal Causes of Backsliding");
+        assert_eq!(c.heads, vec!["Shallowness", "Everyone Will Be Tested"]);
+        assert_eq!(c.refs, vec!["Luke 8:13"]);
+        let scr: Vec<bool> = c.paras.iter().map(|p| p.scripture).collect();
+        assert_eq!(scr, vec![false, true, true, false, false]);
+        // Tasters and Partakers: classes say what each paragraph is, and a
+        // passage of several verses sits above one reference.
+        let classed = r#"<html><body>
+<h3 class="CHAPTER-TITLE-NO-LINES" title="CHAPTER 2: What it Means to Become a Partaker">CHAPTER 2</h3>
+<h2 class="CHAPTER-TITLE-NO-LINES">What it Means to Become a Partaker</h2>
+<p class="DROP-CAP">To become a partaker is to become many things. In this chapter, you will discover many things that you can go deeper into and become a partaker of, and there is no need to be a taster only.</p>
+<p class="MAIN-POINT">1.	It means to become a partaker of Christ.</p>
+<p class="BODY-TEXT">Perhaps, the most important thing is for you to become a partaker of Christ. You must not only taste of the Lord to see that He is good. You must partake of Christ and go deeper.</p>
+<p class="BODY-TEXT">This know also, that in the last days perilous times shall come, said the apostle, and so they did.</p>
+<p class="BIBLE-VERSE-PLAIN">For the wrath of God is revealed from heaven against all ungodliness and unrighteousness of men;</p>
+<p class="BIBLE-VERSE-PLAIN">Because that which may be known of God is manifest in them; for God hath shewed it unto them.</p>
+<p class="Bible-Ref-Plain">Romans 1:18-19</p>
+<p class="SUB-TITLE-">Six Ways to Partake</p>
+</body></html>"#;
+        let b = assemble("t", "Tasters", html_blocks(classed, &Css::new()));
+        let c = &b.chapters[0];
+        assert_eq!(c.title, "What it Means to Become a Partaker");
+        assert_eq!(c.heads, vec!["1. It means to become a partaker of Christ.", "Six Ways to Partake"]);
+        let scr: Vec<bool> = c.paras.iter().map(|p| p.scripture).collect();
+        assert_eq!(scr, vec![false, false, false, false, true, true, true]);
+        // A stylesheet's bold classes.
+        let mut css = Css::new();
+        parse_css("/* x */ p.p8, span.big { font-weight: 700 } .p9 {font-style:italic} p.p11 {text-align: justify}", &mut css);
+        assert_eq!(css.get("p8"), Some(&(true, false)));
+        assert_eq!(css.get("big"), Some(&(true, false)));
+        assert_eq!(css.get("p9"), Some(&(false, true)));
+        assert_eq!(css.get("p11"), None);
+    }
+
+    #[test]
     fn plain_text_from_a_pdf() {
         let text = "Labour to be blessed\nDAG HEWARD-MILLS\n\nContents\nCHAPTER 1: Labour to be Blessed!\nCHAPTER 2: Labour Not to be Rich\n\nCHAPTER 1\n\nLabour to be Blessed!\nThere is one alone, and there is not a second; yea, he hath\nneither child nor brother: yet is there no end of all his labour.\nEcclesiastes 4:8\nSolomon, the wisest man to ever live, made an observation that we\nmust consider deeply. He wondered why people were working\nendlessly and fighting and labouring and suffering and sweating in this world and\nwhy they never asked what it was all for, and what they were building.\n1. What are you in school for?\n2. What are you working for?\nThese are also questions that come into my mind whenever I see\npeople struggling, hustling, working and suffering in our dark and\ndifficult world. Many people achieve their goals several times over.\n\x0cCHAPTER 2\n\nLabour Not to be Rich\nIt is amazing that there is a scripture that says we should not labour\nto be rich. Riches have wings and fly away like an eagle towards heaven and\nthe man who labours for riches will find that his treasure is never enough\nfor him, because riches cannot satisfy a soul that was made for blessings, and so\nhe goes on and on working for money that he will never use in this life.\nThey build houses they cannot live in and buy cars they cannot drive, and still\nthey want more and more of the same things, and they never stop to ask why.\n";
         let b = assemble("t", "Labour to be blessed", text_blocks(text));
@@ -1237,6 +1574,8 @@ mod tests {
         assert!(quoted("Daddy says, labour not to be rich, cease from thine own wisdom.").is_none());
         // Ordinary preaching.
         assert!(quoted("Praise the Lord. Today we are going to talk about money and riches and blessing.").is_none());
+        // A phrase said over and over is not a long quote.
+        assert!(quoted("fight for a blessing, fight for a blessing, fight for a blessing, fight for a blessing, fight for a blessing").is_none());
         let r = related_above("we will talk about labour for riches, riches have wings, labour not to be rich", &["Proverbs 23:4".into()], 2, 0.0);
         assert_eq!(r[0].chapter, "Labour Not to be Rich");
         set_books(Vec::new());
